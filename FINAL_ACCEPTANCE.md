@@ -6,9 +6,9 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | `4efd4692290bd1dcb2e0326a9076d991a63bd841` |
-| Source package SHA-256 | `d1061d6615ded55d3ef792282b58703661c04245087adf92cf6af32217798e4f` |
-| Evidence-pack commit | `5528140f3821196b57e195db200b3efbb7dca83f` |
+| Source release Git SHA | `bf29682e6e41046516d7cc98bb9b493d25e26d30` |
+| Source package SHA-256 | `3c99b3bab0b040b4b5a50636684e7545238290a78e551a75df23cb1af57141d2` |
+| Evidence-pack commit | `6c1bdd5183f9397751223076a68e1f4c62ccc470` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
@@ -26,7 +26,7 @@ READY_FOR_VALIDATED_CLAIMS=NO
 READY_FOR_NORMATIVE_PERCENTILES=NO
 ```
 
-`READY_FOR_ENGINEERING_100` remains `NO` until the clean Linux CI job and a clean release checkout have produced evidence. The other four statuses remain `NO` because they require external content/legal/operations, public authentication/live payment, psychometric validation, and approved norms respectively. No status is promoted by documentation alone.
+`READY_FOR_ENGINEERING_100` remains `NO` until the external GitHub Actions clean Linux CI job passes. The release archive has now passed a clean Linux Node 22.13.0 checkout and reproducibility verification. The other four statuses remain `NO` because they require external content/legal/operations, public authentication/live payment, psychometric validation, and approved norms respectively. No status is promoted by documentation alone.
 
 ## Requirement evidence
 
@@ -103,7 +103,7 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | `npx tsc --noEmit` | PASS | CI/local command output |
 | `npm test` | PASS | 32 unit/contract/property/fault/routing/queue tests |
 | `npm run test:coverage` | PASS | total lib branches 88.67%; critical modules meet 90% gate |
-| `npm run test:e2e` | PASS — current run `sess_e41c9918d5da4f96a9cff699` | Full local Worker/D1/R2 smoke, restart/resume and retention recovery |
+| `npm run test:e2e` | PASS — current run `sess_a97030cb0ef5491aa66fc6e6` | Full local Worker/D1/R2 smoke, restart/resume and retention recovery |
 | `npm run test:browser` | PASS | Real browser hydration, strict CSP nonce, navigation and checkout redirect |
 | `npm run test:pdf-visual` | PASS | 4 deterministic 24-page A4 fixtures; visual render QA PASS |
 | `npm run test:load` | PASS | 275 requests; lost=0, duplicated=0, idempotency=PASS |
@@ -111,7 +111,8 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | `npm run build` | PASS | Vinext production build |
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx` |
-| Docker Node 22.13.0 `release:verify` | PASS | exact-Git archive reproduced twice; manifest SHA `d1061d6615ded...17798e4f` |
+| Docker clean-room release archive | PASS | Linux Node 22.13.0: locked install, lint, typecheck, 32 tests, coverage, migration check, build, retention plan, backup/restore, E2E and load |
+| Docker Node 22.13.0 `release:verify` | PASS | exact-Git archive reproduced twice; manifest SHA `3c99b3bab0b0...57141d2` |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register
