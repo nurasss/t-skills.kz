@@ -1,10 +1,22 @@
 import { NextResponse } from "next/server";
 
-import { regenerateReport } from "@/lib/api-store";
+import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
+import { regenerateReportForUser } from "@/lib/durable-store";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
   const { id } = await params;
-  const report = regenerateReport(id);
-  if (!report) return NextResponse.json({ error: "REPORT_NOT_FOUND" }, { status: 404 });
-  return NextResponse.json({ id: report.id, status: report.status, score_unchanged: true, report: report.report });
+  try {
+    const report = await regenerateReportForUser(id, viewer);
+    return NextResponse.json({
+      id: report.id,
+      status: report.status,
+      score_unchanged: true,
+      report: report.report,
+      pdf_available: report.pdfAvailable,
+    }, { status: report.status === "COMPLETE" ? 200 : 202 });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }

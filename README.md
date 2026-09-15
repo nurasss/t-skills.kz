@@ -1,6 +1,8 @@
-# vinext-starter
+# ORBITA—30
 
-A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
+Production-ready foundation for the ORBITA—30 strengths assessment: a 300-item Russian item bank, deterministic scoring, validated adaptive selection, protected ChatGPT identity, durable Cloudflare D1 state, R2 report artifacts, PDF generation, Stripe Checkout/webhooks, exports and deletion workflows, telemetry, and a private Sites deployment.
+
+The assessment is an original developmental product. It is not a Gallup/CliftonStrengths® implementation, a diagnosis, or a high-stakes decision tool. Items are marked `draft for pilot` until independent psychometric validation is completed.
 
 ## Prerequisites
 
@@ -36,17 +38,46 @@ Local previews use Miniflare's placeholder `Request.cf` metadata without a netwo
 
 Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=true` to opt in.
 
-## Included Shape
+## Project shape
 
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `@cloudflare/workers-types` provides Worker types; `cloudflare-env.d.ts` declares optional `DB`/`BUCKET` bindings—update these declarations if binding names change
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- `app/orbita-app.tsx` — client assessment flow, account, checkout, reports and WebMCP tools.
+- `lib/assessment-engine.ts` and `lib/item-bank.ts` — scoring, quality flags, report inputs and the 300-item bank.
+- `lib/durable-store.ts` — all user-owned state transitions and ownership checks.
+- `lib/payment-provider.ts` — Stripe Checkout creation and signed, idempotent webhook handling.
+- `lib/report-provider.ts` — deterministic approved-library reports by default, with an optional strict OpenAI Responses API provider.
+- `lib/pdf-generator.ts` — 24-page A4 PDF report generation with embedded Roboto TTF.
+- `db/schema.ts` and `drizzle/` — D1 schema and append-only migrations.
+- `.openai/hosting.json` — logical Sites bindings (`DB` and `BUCKET`) and the existing private project ID.
+
+The production site is owner-private. User identity comes from the Sites/ChatGPT headers; local preview-only auth is available only when `ORBITA_ENV=development`.
+
+## Production configuration
+
+Set runtime values in Sites, never in `.openai/hosting.json` or source control. Non-secret baseline:
+
+```text
+ORBITA_ENV=production
+PAYMENT_PROVIDER=stripe
+ASSESSMENT_CURRENCY=KZT
+APP_BASE_URL=https://orbita-30.yzh905284.chatgpt.site
+REPORT_PROVIDER=approved-library
+RETENTION_DAYS=365
+```
+
+Required before accepting real payments:
+
+- `ASSESSMENT_PRICE_MINOR` — exact price in minor units; for example, 1,500 KZT is `150000`.
+- secret `STRIPE_SECRET_KEY`.
+- secret `STRIPE_WEBHOOK_SECRET` for the endpoint `/api/payments/webhook`.
+
+Optional AI narrative provider:
+
+- `REPORT_PROVIDER=openai` and secret `OPENAI_API_KEY`.
+- Optional `REPORT_MODEL` (defaults to `gpt-5`) and `OPENAI_BASE_URL`.
+
+The default `approved-library` provider is deterministic and safe to run without an AI key. It never pretends that an AI call happened. Set `ORBITA_ADMIN_USER_IDS` only for the ChatGPT user IDs that should access aggregate admin metrics.
+
+See [`.env.example`](./.env.example) for the complete variable list.
 
 ## Workspace Auth Headers
 
@@ -107,6 +138,20 @@ node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1
 ```
 
 Replace the filename with the pending migration and `DB` with your D1 binding name if different. Use `.wrangler/state`, not `.wrangler/state/v3`; Wrangler adds the versioned directories. Do not replay migrations already applied locally. This updates only the preview database; publishing applies production migrations separately.
+
+## Local QA flow
+
+After building and applying the migrations, run the Worker with `npm start`. For local-only authenticated requests, start it with `--var ORBITA_ENV:development` and send `x-orbita-preview-user`. Production-mode requests must provide both `oai-authenticated-user-id` and `oai-authenticated-user-email`.
+
+The critical contract checks are:
+
+- unauthenticated account/API requests return `401`;
+- assessment creation without a paid entitlement returns `402`;
+- answers are server-persisted and replaying the same `Idempotency-Key` is harmless;
+- invalid answers are rejected with `422`;
+- Stripe signatures are required, events are idempotent, and a failure event cannot downgrade a paid order;
+- reports freeze the score JSON, retry only the report layer, and produce a 24-page PDF;
+- export is owner-scoped and deletion removes R2 artifacts before soft-deleting the identity.
 
 ## Diagnostic Commands
 

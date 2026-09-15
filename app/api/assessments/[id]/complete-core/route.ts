@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 
-import { completeCore } from "@/lib/api-store";
+import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
+import { completeCoreForUser } from "@/lib/durable-store";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
   const { id } = await params;
-  const result = completeCore(id);
-  if (!result) return NextResponse.json({ error: "SESSION_NOT_FOUND" }, { status: 404 });
-  if ("error" in result) return NextResponse.json(result, { status: 422 });
-  return NextResponse.json({ state: result.session.state, preliminary_score: result.session.profile, adaptive: result.selection });
+  try {
+    const result = await completeCoreForUser(id, viewer);
+    return NextResponse.json({ state: result.session.state, preliminary_score: result.session.profile, adaptive: result.selection, reused: result.reused });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }

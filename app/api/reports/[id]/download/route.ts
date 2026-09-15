@@ -1,10 +1,23 @@
-import { NextResponse } from "next/server";
+import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
+import { getReportPdfForUser, recordTelemetry } from "@/lib/durable-store";
 
-import { getReport } from "@/lib/api-store";
-
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
   const { id } = await params;
-  const report = getReport(id);
-  if (!report) return NextResponse.json({ error: "REPORT_NOT_FOUND" }, { status: 404 });
-  return NextResponse.json({ status: "storage_not_configured_in_preview", report_id: id, signed_url: null, note: "Use the browser print flow in preview; production uses a short-lived signed object URL." }, { status: 200 });
+  try {
+    const object = await getReportPdfForUser(id, viewer);
+    await recordTelemetry({ viewer, name: "pdf_downloaded" });
+    return new Response(object.body, {
+      status: 200,
+      headers: {
+        "Content-Type": object.httpMetadata?.contentType ?? "application/pdf",
+        "Content-Disposition": object.httpMetadata?.contentDisposition ?? ('attachment; filename="orbita-30-' + id + '.pdf"'),
+        "Cache-Control": "private, max-age=300",
+        ETag: object.httpEtag,
+      },
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }

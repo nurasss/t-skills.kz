@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 
-import { receivePaymentEvent } from "@/lib/api-store";
+import { errorResponse } from "@/lib/api-response";
+import { PaymentProviderError, processStripeWebhook } from "@/lib/payment-provider";
 
 export async function POST(request: Request) {
+  const payload = await request.text();
   try {
-    const body = (await request.json()) as { provider_event_id?: string; order_id?: string; status?: "PAID" | "PAYMENT_FAILED" };
-    if (!body.provider_event_id || !body.order_id || !body.status) return NextResponse.json({ error: "INVALID_WEBHOOK" }, { status: 422 });
-    const result = receivePaymentEvent({ providerEventId: body.provider_event_id, orderId: body.order_id, status: body.status });
-    return NextResponse.json(result, { status: result.ok ? 200 : 404 });
-  } catch {
-    return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+    const result = await processStripeWebhook(payload, request.headers.get("stripe-signature"));
+    return NextResponse.json(result, { status: 200 });
+  } catch (error) {
+    if (error instanceof PaymentProviderError && error.code === "STRIPE_SIGNATURE_INVALID") {
+      return NextResponse.json({ error: error.code }, { status: 400 });
+    }
+    return errorResponse(error);
   }
 }

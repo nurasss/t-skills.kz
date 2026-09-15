@@ -1,11 +1,24 @@
 import { NextResponse } from "next/server";
 
-import { completeAssessment } from "@/lib/api-store";
+import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
+import { completeAssessmentForUser, generateReportForUser } from "@/lib/durable-store";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
   const { id } = await params;
-  const result = completeAssessment(id);
-  if (!result) return NextResponse.json({ error: "SESSION_NOT_FOUND" }, { status: 404 });
-  if ("error" in result) return NextResponse.json(result, { status: 422 });
-  return NextResponse.json({ state: result.session.state, report_id: result.reportId, score: result.session.profile });
+  try {
+    const result = await completeAssessmentForUser(id, viewer);
+    const report = await generateReportForUser(result.reportId, viewer);
+    return NextResponse.json({
+      state: report.status === "COMPLETE" ? "COMPLETE" : "REPORT_FAILED_RETRYABLE",
+      report_id: result.reportId,
+      report_status: report.status,
+      score: report.score,
+      report: report.report,
+      pdf_available: report.pdfAvailable,
+    }, { status: report.status === "COMPLETE" ? 200 : 202 });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }

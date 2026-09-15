@@ -1,0 +1,1087 @@
+import { getD1, getR2 } from "@/db";
+import {
+  scoreAssessment,
+  selectAdaptiveItems,
+  type AdaptiveSelection,
+  type ReportJSON,
+  type ResponseMap,
+  type ScoreProfile,
+} from "@/lib/assessment-engine";
+import { ITEM_BANK, type Item } from "@/lib/item-bank";
+import { buildReportPdf } from "@/lib/pdf-generator";
+import { generateReportContent } from "@/lib/report-provider";
+import type { Viewer } from "@/lib/server-auth";
+
+export type SessionState =
+  | "CREATED"
+  | "PAYMENT_PENDING"
+  | "PAID"
+  | "CONSENTED"
+  | "CORE_IN_PROGRESS"
+  | "CORE_COMPLETE"
+  | "ADAPTIVE_SELECTING"
+  | "ADAPTIVE_IN_PROGRESS"
+  | "SCORING"
+  | "REPORT_GENERATING"
+  | "COMPLETE"
+  | "PAYMENT_FAILED"
+  | "EXPIRED"
+  | "CANCELLED"
+  | "INVALIDATED"
+  | "REPORT_FAILED_RETRYABLE";
+
+export type DurableSession = {
+  id: string;
+  userId: string;
+  testId: string;
+  entitlementId: string;
+  state: SessionState;
+  versions: {
+    assessment: string;
+    itemBank: string;
+    scoring: string;
+    norms: string;
+  };
+  responses: ResponseMap;
+  responseTimes: Record<string, number>;
+  clientSeq: number;
+  adaptiveItemIds: string[];
+  selectionMode?: "deterministic-fallback";
+  profile?: ScoreProfile;
+  reportId?: string;
+  updatedAt: string;
+};
+
+export type OrderRecord = {
+  id: string;
+  testId: string;
+  amountMinor: number;
+  currency: string;
+  status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED";
+  provider: string;
+  checkoutUrl: string | null;
+  createdAt: string;
+};
+
+export type ReportRecord = {
+  id: string;
+  assessmentId: string;
+  status: string;
+  provider: string | null;
+  score: ScoreProfile;
+  report: ReportJSON | null;
+  pdfAvailable: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export class StoreError extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly status: number,
+    message = code,
+  ) {
+    super(message);
+    this.name = "StoreError";
+  }
+}
+
+type AssessmentRow = {
+  id: string;
+  user_id: string;
+  entitlement_id: string | null;
+  test_id: string;
+  state: SessionState;
+  versions_json: string;
+  adaptive_item_ids_json: string;
+  selection_mode: "deterministic-fallback" | null;
+  preliminary_score_json: string | null;
+  final_score_json: string | null;
+  report_id: string | null;
+  client_seq: number;
+  created_at: number;
+  consented_at: number | null;
+  completed_at: number | null;
+  updated_at: number;
+};
+
+type ResponseRow = {
+  item_id: string;
+  response: number;
+  response_time_ms: number;
+};
+
+type OrderRow = {
+  id: string;
+  test_id: string;
+  amount_minor: number;
+  currency: string;
+  status: OrderRecord["status"];
+  provider: string;
+  provider_checkout_url: string | null;
+  created_at: number;
+};
+
+type ReportRow = {
+  id: string;
+  assessment_id: string;
+  status: string;
+  provider: string | null;
+  score_json: string;
+  report_json: string | null;
+  pdf_key: string | null;
+  created_at: number;
+  updated_at: number;
+};
+
+const itemById = new Map<string, Item>(ITEM_BANK.map((item) => [item.id, item]));
+
+function now() {
+  return Date.now();
+}
+
+function iso(value: number) {
+  return new Date(value).toISOString();
+}
+
+function newId(prefix: string) {
+  return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
+}
+
+function parseJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function isCoreItem(itemId: string) {
+  const item = itemById.get(itemId);
+  return Boolean(item && Number(item.id.slice(1)) <= 250);
+}
+
+function isAdaptiveItem(itemId: string) {
+  const item = itemById.get(itemId);
+  return Boolean(
+    item &&
+      (item.type === "adaptive_likert" || item.type === "adaptive_forced") &&
+      Number(item.id.slice(1)) >= 251 &&
+      Number(item.id.slice(1)) <= 300,
+  );
+}
+
+function validResponse(itemId: string, value: number) {
+  const item = itemById.get(itemId);
+  if (!item || !Number.isFinite(value) || !Number.isInteger(value)) return false;
+  if (item.type === "forced" || item.type === "adaptive_forced") {
+    return value >= -2 && value <= 2;
+  }
+  return value >= 1 && value <= 7;
+}
+
+function responseMap(rows: ResponseRow[]) {
+  return Object.fromEntries(rows.map((row) => [row.item_id, row.response])) as ResponseMap;
+}
+
+function responseTimes(rows: ResponseRow[]) {
+  return Object.fromEntries(rows.map((row) => [row.item_id, row.response_time_ms])) as Record<string, number>;
+}
+
+function ensureDatabase() {
+  try {
+    return getD1();
+  } catch {
+    throw new StoreError(
+      "DATABASE_UNAVAILABLE",
+      503,
+      "Persistent storage is not configured for this deployment.",
+    );
+  }
+}
+
+async function ensureUser(viewer: Viewer) {
+  const database = ensureDatabase();
+  const timestamp = now();
+  const existing = await database
+    .prepare(`SELECT deleted_at FROM users WHERE id = ? LIMIT 1`)
+    .bind(viewer.userId)
+    .first<{ deleted_at: number | null }>();
+  if (existing?.deleted_at) throw new StoreError("ACCOUNT_DELETED", 410);
+  await database
+    .prepare(
+      `INSERT INTO users (id, email, full_name, locale, created_at, updated_at, deleted_at)
+       VALUES (?, ?, ?, 'ru', ?, ?, NULL)
+       ON CONFLICT(id) DO UPDATE SET
+         email = excluded.email,
+         full_name = excluded.full_name,
+         updated_at = excluded.updated_at
+       WHERE users.deleted_at IS NULL`,
+    )
+    .bind(viewer.userId, viewer.email, viewer.fullName, timestamp, timestamp)
+    .run();
+}
+
+async function audit(
+  viewerId: string | null,
+  action: string,
+  entityType: string,
+  entityId: string | null,
+  metadata?: Record<string, string | number | boolean | null>,
+) {
+  try {
+    const database = ensureDatabase();
+    await database
+      .prepare(
+        `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, metadata_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        newId("aud"),
+        viewerId,
+        action,
+        entityType,
+        entityId,
+        metadata ? JSON.stringify(metadata) : null,
+        now(),
+      )
+      .run();
+  } catch (error) {
+    console.error("audit_write_failed", error);
+  }
+}
+
+async function loadSession(sessionId: string, userId: string): Promise<DurableSession | null> {
+  const database = ensureDatabase();
+  const row = await database
+    .prepare(
+      `SELECT id, user_id, entitlement_id, test_id, state, versions_json,
+              adaptive_item_ids_json, selection_mode, preliminary_score_json,
+              final_score_json, report_id, client_seq, created_at,
+              consented_at, completed_at, updated_at
+       FROM assessments
+       WHERE id = ? AND user_id = ?
+       LIMIT 1`,
+    )
+    .bind(sessionId, userId)
+    .first<AssessmentRow>();
+  if (!row || !row.entitlement_id) return null;
+
+  const responseResult = await database
+    .prepare(
+      `SELECT item_id, response, response_time_ms
+       FROM assessment_responses
+       WHERE assessment_id = ?
+       ORDER BY client_seq ASC`,
+    )
+    .bind(sessionId)
+    .all<ResponseRow>();
+  const rows = responseResult.results ?? [];
+  return {
+    id: row.id,
+    userId: row.user_id,
+    testId: row.test_id,
+    entitlementId: row.entitlement_id,
+    state: row.state,
+    versions: parseJson(row.versions_json, {
+      assessment: "orbita30_ru_v1",
+      itemBank: "draft-pilot-v1",
+      scoring: "mvp-0.3",
+      norms: "within-sample-preview",
+    }),
+    responses: responseMap(rows),
+    responseTimes: responseTimes(rows),
+    clientSeq: row.client_seq,
+    adaptiveItemIds: parseJson<string[]>(row.adaptive_item_ids_json, []),
+    selectionMode: row.selection_mode ?? undefined,
+    profile: parseJson<ScoreProfile | undefined>(row.final_score_json ?? row.preliminary_score_json, undefined),
+    reportId: row.report_id ?? undefined,
+    updatedAt: iso(row.updated_at),
+  };
+}
+
+function nextItemId(session: DurableSession) {
+  const core = ITEM_BANK.filter((item) => isCoreItem(item.id));
+  const nextCore = core.find((item) => typeof session.responses[item.id] !== "number");
+  if (nextCore) return nextCore.id;
+  const nextAdaptive = session.adaptiveItemIds.find((itemId) => typeof session.responses[itemId] !== "number");
+  return nextAdaptive ?? null;
+}
+
+function publicOrder(row: OrderRow): OrderRecord {
+  return {
+    id: row.id,
+    testId: row.test_id,
+    amountMinor: row.amount_minor,
+    currency: row.currency,
+    status: row.status,
+    provider: row.provider,
+    checkoutUrl: row.provider_checkout_url,
+    createdAt: iso(row.created_at),
+  };
+}
+
+export async function createPendingOrder(input: {
+  viewer: Viewer;
+  testId: string;
+  amountMinor: number;
+  currency: string;
+  provider: string;
+  idempotencyKey: string;
+}) {
+  await ensureUser(input.viewer);
+  const database = ensureDatabase();
+  const existing = await database
+    .prepare(
+      `SELECT id, test_id, amount_minor, currency, status, provider,
+              provider_checkout_url, created_at
+       FROM orders WHERE user_id = ? AND idempotency_key = ? LIMIT 1`,
+    )
+    .bind(input.viewer.userId, input.idempotencyKey)
+    .first<OrderRow>();
+  if (existing) return { order: publicOrder(existing), reused: true };
+
+  const timestamp = now();
+  const orderId = newId("ord");
+  try {
+    await database
+      .prepare(
+        `INSERT INTO orders
+          (id, user_id, test_id, amount_minor, currency, status, provider,
+           provider_checkout_id, provider_checkout_url, provider_payment_id,
+           provider_event_id, idempotency_key, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'PAYMENT_PENDING', ?, NULL, NULL, NULL, NULL, ?, ?, ?)`,
+      )
+      .bind(
+        orderId,
+        input.viewer.userId,
+        input.testId,
+        input.amountMinor,
+        input.currency,
+        input.provider,
+        input.idempotencyKey,
+        timestamp,
+        timestamp,
+      )
+      .run();
+  } catch (error) {
+    const race = await database
+      .prepare(
+        `SELECT id, test_id, amount_minor, currency, status, provider,
+                provider_checkout_url, created_at
+         FROM orders WHERE user_id = ? AND idempotency_key = ? LIMIT 1`,
+      )
+      .bind(input.viewer.userId, input.idempotencyKey)
+      .first<OrderRow>();
+    if (race) return { order: publicOrder(race), reused: true };
+    console.error("order_insert_failed", error);
+    throw new StoreError("ORDER_CREATE_FAILED", 500);
+  }
+  await audit(input.viewer.userId, "ORDER_CREATED", "order", orderId, {
+    testId: input.testId,
+    amountMinor: input.amountMinor,
+    currency: input.currency,
+  });
+  return {
+    order: {
+      id: orderId,
+      testId: input.testId,
+      amountMinor: input.amountMinor,
+      currency: input.currency,
+      status: "PAYMENT_PENDING" as const,
+      provider: input.provider,
+      checkoutUrl: null,
+      createdAt: iso(timestamp),
+    },
+    reused: false,
+  };
+}
+
+export async function attachCheckoutSession(input: {
+  viewer: Viewer;
+  orderId: string;
+  providerCheckoutId: string;
+  checkoutUrl: string;
+}) {
+  const database = ensureDatabase();
+  const result = await database
+    .prepare(
+      `UPDATE orders
+       SET provider_checkout_id = ?, provider_checkout_url = ?, updated_at = ?
+       WHERE id = ? AND user_id = ?`,
+    )
+    .bind(input.providerCheckoutId, input.checkoutUrl, now(), input.orderId, input.viewer.userId)
+    .run();
+  if (!result.success) throw new StoreError("ORDER_UPDATE_FAILED", 500);
+  await audit(input.viewer.userId, "CHECKOUT_SESSION_CREATED", "order", input.orderId);
+}
+
+export async function markOrderPaymentFailed(orderId: string, reason: string) {
+  const database = ensureDatabase();
+  await database
+    .prepare(
+      `UPDATE orders SET status = 'PAYMENT_FAILED', updated_at = ?
+       WHERE id = ? AND status = 'PAYMENT_PENDING'`,
+    )
+    .bind(now(), orderId)
+    .run();
+  await audit(null, "PAYMENT_PROVIDER_FAILED", "order", orderId, { reason });
+}
+
+export async function handlePaymentEvent(input: {
+  providerEventId: string;
+  eventType: string;
+  orderId: string;
+  status: "PAID" | "PAYMENT_FAILED";
+  providerPaymentId?: string | null;
+  payloadHash: string;
+}) {
+  const database = ensureDatabase();
+  const existing = await database
+    .prepare(`SELECT id FROM payment_events WHERE id = ? LIMIT 1`)
+    .bind(input.providerEventId)
+    .first<{ id: string }>();
+  if (existing) return { duplicate: true, entitlementCreated: false };
+
+  const order = await database
+    .prepare(`SELECT id, status FROM orders WHERE id = ? LIMIT 1`)
+    .bind(input.orderId)
+    .first<{ id: string; status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED" }>();
+  if (!order) throw new StoreError("ORDER_NOT_FOUND", 404);
+
+  const entitlementId = newId("ent");
+  const timestamp = now();
+  try {
+    await database.batch([
+      database
+        .prepare(
+          `INSERT INTO payment_events
+            (id, order_id, provider, event_type, status, payload_hash, received_at)
+           VALUES (?, ?, 'stripe', ?, ?, ?, ?)`,
+        )
+        .bind(
+          input.providerEventId,
+          input.orderId,
+          input.eventType,
+          input.status,
+          input.payloadHash,
+          timestamp,
+        ),
+      database
+        .prepare(
+          `UPDATE orders
+           SET status = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID' THEN status ELSE ? END,
+               provider_payment_id = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID'
+                 THEN provider_payment_id ELSE COALESCE(?, provider_payment_id) END,
+               provider_event_id = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID'
+                 THEN provider_event_id ELSE ? END,
+               updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(
+          input.status,
+          input.status,
+          input.status,
+          input.providerPaymentId ?? null,
+          input.status,
+          input.providerEventId,
+          timestamp,
+          input.orderId,
+        ),
+      ...(input.status === "PAID"
+        ? [
+            database
+              .prepare(
+                `INSERT OR IGNORE INTO entitlements
+                  (id, order_id, user_id, test_id, status, created_at, revoked_at)
+                 SELECT ?, id, user_id, test_id, 'ACTIVE', ?, NULL
+                 FROM orders WHERE id = ?`,
+              )
+              .bind(entitlementId, timestamp, input.orderId),
+          ]
+        : []),
+    ]);
+  } catch (error) {
+    const race = await database
+      .prepare(`SELECT id FROM payment_events WHERE id = ? LIMIT 1`)
+      .bind(input.providerEventId)
+      .first<{ id: string }>();
+    if (race) return { duplicate: true, entitlementCreated: false };
+    console.error("payment_event_write_failed", error);
+    throw new StoreError("PAYMENT_EVENT_WRITE_FAILED", 500);
+  }
+  await audit(null, "PAYMENT_EVENT_ACCEPTED", "order", input.orderId, {
+    providerEventId: input.providerEventId,
+    status: input.status,
+    orderStatusBeforeEvent: order.status,
+  });
+  return { duplicate: false, entitlementCreated: input.status === "PAID" };
+}
+
+export async function createAssessmentForUser(input: { viewer: Viewer; testId: string }) {
+  await ensureUser(input.viewer);
+  const database = ensureDatabase();
+  const existing = await database
+    .prepare(
+      `SELECT a.id
+       FROM assessments a
+       JOIN entitlements e ON e.id = a.entitlement_id
+       WHERE a.user_id = ? AND a.test_id = ? AND a.state NOT IN ('COMPLETE', 'CANCELLED', 'INVALIDATED')
+       ORDER BY a.updated_at DESC LIMIT 1`,
+    )
+    .bind(input.viewer.userId, input.testId)
+    .first<{ id: string }>();
+  if (existing) {
+    const resumed = await loadSession(existing.id, input.viewer.userId);
+    if (resumed) return { session: resumed, reused: true };
+  }
+
+  const entitlement = await database
+    .prepare(
+      `SELECT id FROM entitlements
+       WHERE user_id = ? AND test_id = ? AND status = 'ACTIVE'
+         AND id NOT IN (SELECT entitlement_id FROM assessments WHERE entitlement_id IS NOT NULL)
+       ORDER BY created_at ASC LIMIT 1`,
+    )
+    .bind(input.viewer.userId, input.testId)
+    .first<{ id: string }>();
+  if (!entitlement) throw new StoreError("PAYMENT_REQUIRED", 402);
+
+  const timestamp = now();
+  const sessionId = newId("sess");
+  const versions = {
+    assessment: "orbita30_ru_v1",
+    itemBank: "draft-pilot-v1",
+    scoring: "mvp-0.3",
+    norms: "within-sample-preview",
+  };
+  await database
+    .prepare(
+      `INSERT INTO assessments
+        (id, user_id, entitlement_id, test_id, state, versions_json,
+         adaptive_item_ids_json, selection_mode, preliminary_score_json,
+         final_score_json, report_id, client_seq, created_at, consented_at,
+         completed_at, updated_at)
+       VALUES (?, ?, ?, ?, 'PAID', ?, '[]', NULL, NULL, NULL, NULL, 0, ?, NULL, NULL, ?)`,
+    )
+    .bind(
+      sessionId,
+      input.viewer.userId,
+      entitlement.id,
+      input.testId,
+      JSON.stringify(versions),
+      timestamp,
+      timestamp,
+    )
+    .run();
+  await audit(input.viewer.userId, "ASSESSMENT_CREATED", "assessment", sessionId, { testId: input.testId });
+  const session = await loadSession(sessionId, input.viewer.userId);
+  if (!session) throw new StoreError("ASSESSMENT_CREATE_FAILED", 500);
+  return { session, reused: false };
+}
+
+export async function getSessionForUser(sessionId: string, viewer: Viewer) {
+  await ensureUser(viewer);
+  return loadSession(sessionId, viewer.userId);
+}
+
+export async function consentSessionForUser(sessionId: string, viewer: Viewer) {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  const timestamp = now();
+  const result = await database
+    .prepare(
+      `UPDATE assessments SET state = 'CONSENTED', consented_at = ?, updated_at = ?
+       WHERE id = ? AND user_id = ? AND state IN ('PAID', 'CONSENTED')`,
+    )
+    .bind(timestamp, timestamp, sessionId, viewer.userId)
+    .run();
+  if (!result.success) throw new StoreError("CONSENT_SAVE_FAILED", 500);
+  const session = await loadSession(sessionId, viewer.userId);
+  if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
+  await audit(viewer.userId, "ASSESSMENT_CONSENTED", "assessment", sessionId);
+  return session;
+}
+
+export async function saveResponse(input: {
+  sessionId: string;
+  viewer: Viewer;
+  itemId: string;
+  response: number;
+  responseTimeMs?: number;
+  clientSeq?: number;
+  idempotencyKey?: string;
+}) {
+  await ensureUser(input.viewer);
+  const session = await loadSession(input.sessionId, input.viewer.userId);
+  if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
+  if (!["CONSENTED", "CORE_IN_PROGRESS", "ADAPTIVE_IN_PROGRESS"].includes(session.state)) {
+    throw new StoreError("SESSION_NOT_ACCEPTING_RESPONSES", 409);
+  }
+  if (!validResponse(input.itemId, input.response)) throw new StoreError("INVALID_RESPONSE", 422);
+  const allowed = isCoreItem(input.itemId) || session.adaptiveItemIds.includes(input.itemId) && isAdaptiveItem(input.itemId);
+  if (!allowed) throw new StoreError("ITEM_NOT_ALLOWED", 422);
+
+  const database = ensureDatabase();
+  if (input.idempotencyKey) {
+    const replay = await database
+      .prepare(
+        `SELECT client_seq FROM assessment_responses
+         WHERE assessment_id = ? AND idempotency_key = ? LIMIT 1`,
+      )
+      .bind(input.sessionId, input.idempotencyKey)
+      .first<{ client_seq: number }>();
+    if (replay) {
+      return {
+        saved: true,
+        replay: true,
+        serverSeq: replay.client_seq,
+        nextItemId: nextItemId(session),
+      };
+    }
+  }
+  if (typeof session.responses[input.itemId] === "number") throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
+
+  const timestamp = now();
+  const serverSeq = session.clientSeq + 1;
+  const nextState = isCoreItem(input.itemId) ? "CORE_IN_PROGRESS" : "ADAPTIVE_IN_PROGRESS";
+  try {
+    await database.batch([
+      database
+        .prepare(
+          `INSERT INTO assessment_responses
+            (id, assessment_id, item_id, response, response_time_ms,
+             client_seq, idempotency_key, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          `${input.sessionId}:${input.itemId}`,
+          input.sessionId,
+          input.itemId,
+          input.response,
+          Math.max(0, Math.round(input.responseTimeMs ?? 0)),
+          serverSeq,
+          input.idempotencyKey ?? null,
+          timestamp,
+        ),
+      database
+        .prepare(
+          `UPDATE assessments SET state = ?, client_seq = ?, updated_at = ?
+           WHERE id = ? AND user_id = ?`,
+        )
+        .bind(nextState, serverSeq, timestamp, input.sessionId, input.viewer.userId),
+    ]);
+  } catch (error) {
+    const race = await database
+      .prepare(
+        `SELECT client_seq FROM assessment_responses
+         WHERE assessment_id = ? AND item_id = ? LIMIT 1`,
+      )
+      .bind(input.sessionId, input.itemId)
+      .first<{ client_seq: number }>();
+    if (race) throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
+    console.error("response_write_failed", error);
+    throw new StoreError("RESPONSE_SAVE_FAILED", 500);
+  }
+  return { saved: true, replay: false, serverSeq, nextItemId: nextItemId({ ...session, responses: { ...session.responses, [input.itemId]: input.response } }) };
+}
+
+export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
+  const session = await getSessionForUser(sessionId, viewer);
+  if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
+  if (session.adaptiveItemIds.length && session.profile && session.state === "ADAPTIVE_IN_PROGRESS") {
+    return { session, selection: { selectedItemIds: session.adaptiveItemIds, targetCount: session.adaptiveItemIds.length, mode: "deterministic-fallback" as const, validation: "passed" as const, reasonCodes: {} } satisfies AdaptiveSelection, reused: true };
+  }
+  const coreAnswered = Object.keys(session.responses).filter(isCoreItem).length;
+  if (coreAnswered < 250) throw new StoreError("CORE_INCOMPLETE", 422);
+  const preliminary = scoreAssessment(session.responses);
+  const selection = selectAdaptiveItems(preliminary, Object.keys(session.responses), 12);
+  const database = ensureDatabase();
+  const timestamp = now();
+  await database
+    .prepare(
+      `UPDATE assessments
+       SET state = 'ADAPTIVE_IN_PROGRESS', adaptive_item_ids_json = ?,
+           selection_mode = ?, preliminary_score_json = ?, updated_at = ?
+       WHERE id = ? AND user_id = ?`,
+    )
+    .bind(JSON.stringify(selection.selectedItemIds), selection.mode, JSON.stringify(preliminary), timestamp, sessionId, viewer.userId)
+    .run();
+  await audit(viewer.userId, "ADAPTIVE_SELECTED", "assessment", sessionId, {
+    count: selection.selectedItemIds.length,
+    mode: selection.mode,
+  });
+  const updated = await loadSession(sessionId, viewer.userId);
+  if (!updated) throw new StoreError("SESSION_NOT_FOUND", 404);
+  return { session: updated, selection, reused: false };
+}
+
+export async function completeAssessmentForUser(sessionId: string, viewer: Viewer) {
+  const session = await getSessionForUser(sessionId, viewer);
+  if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
+  if (session.reportId && ["REPORT_GENERATING", "REPORT_FAILED_RETRYABLE", "COMPLETE"].includes(session.state)) {
+    return { session, reportId: session.reportId, reused: true };
+  }
+  if (!session.adaptiveItemIds.length) throw new StoreError("ADAPTIVE_NOT_SELECTED", 422);
+  const missing = session.adaptiveItemIds.filter((itemId) => typeof session.responses[itemId] !== "number");
+  if (missing.length) throw new StoreError("ADAPTIVE_INCOMPLETE", 422);
+
+  const profile = scoreAssessment(session.responses);
+  const reportId = newId("rep");
+  const database = ensureDatabase();
+  const timestamp = now();
+  try {
+    await database.batch([
+      database
+        .prepare(
+          `INSERT INTO reports
+            (id, assessment_id, user_id, status, score_json, report_json,
+             pdf_key, provider, error_code, created_at, updated_at)
+           VALUES (?, ?, ?, 'REPORT_GENERATING', ?, NULL, NULL, NULL, NULL, ?, ?)`,
+        )
+        .bind(reportId, sessionId, viewer.userId, JSON.stringify(profile), timestamp, timestamp),
+      database
+        .prepare(
+          `UPDATE assessments
+           SET state = 'REPORT_GENERATING', final_score_json = ?, report_id = ?, updated_at = ?
+           WHERE id = ? AND user_id = ?`,
+        )
+        .bind(JSON.stringify(profile), reportId, timestamp, sessionId, viewer.userId),
+    ]);
+  } catch (error) {
+    const existing = await database
+      .prepare(`SELECT report_id FROM assessments WHERE id = ? AND user_id = ? LIMIT 1`)
+      .bind(sessionId, viewer.userId)
+      .first<{ report_id: string | null }>();
+    if (existing?.report_id) return { session, reportId: existing.report_id, reused: true };
+    console.error("report_create_failed", error);
+    throw new StoreError("REPORT_CREATE_FAILED", 500);
+  }
+  await audit(viewer.userId, "SCORING_COMPLETED", "assessment", sessionId, { reportId });
+  const updated = await loadSession(sessionId, viewer.userId);
+  if (!updated) throw new StoreError("SESSION_NOT_FOUND", 404);
+  return { session: updated, reportId, reused: false, profile };
+}
+
+export async function generateReportForUser(reportId: string, viewer: Viewer) {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  const row = await database
+    .prepare(
+      `SELECT id, assessment_id, status, provider, score_json, report_json,
+              pdf_key, created_at, updated_at
+       FROM reports WHERE id = ? AND user_id = ? LIMIT 1`,
+    )
+    .bind(reportId, viewer.userId)
+    .first<ReportRow>();
+  if (!row) throw new StoreError("REPORT_NOT_FOUND", 404);
+  if (row.status === "COMPLETE" && row.report_json) return getReportForUser(reportId, viewer);
+
+  const score = parseJson<ScoreProfile | null>(row.score_json, null);
+  if (!score) throw new StoreError("SCORE_NOT_FOUND", 500);
+  try {
+    const generated = await generateReportContent(score);
+    const pdfKey = `reports/${viewer.userId}/${reportId}.pdf`;
+    const pdf = await buildReportPdf(score, generated.report);
+    const bucket = getR2();
+    await bucket.put(pdfKey, pdf, {
+      httpMetadata: {
+        contentType: "application/pdf",
+        contentDisposition: `attachment; filename="orbita-30-${reportId}.pdf"`,
+        cacheControl: "private, max-age=300",
+      },
+      customMetadata: { reportId, userId: viewer.userId, scoreVersion: score.versions.scoring },
+    });
+    const timestamp = now();
+    await database
+      .prepare(
+        `UPDATE reports SET status = 'COMPLETE', provider = ?, report_json = ?,
+                pdf_key = ?, error_code = NULL, updated_at = ?
+         WHERE id = ? AND user_id = ?`,
+      )
+      .bind(generated.provider, JSON.stringify(generated.report), pdfKey, timestamp, reportId, viewer.userId)
+      .run();
+    await database
+      .prepare(
+        `UPDATE assessments SET state = 'COMPLETE', completed_at = ?, updated_at = ?
+         WHERE id = ? AND user_id = ?`,
+      )
+      .bind(timestamp, timestamp, row.assessment_id, viewer.userId)
+      .run();
+    await audit(viewer.userId, "REPORT_COMPLETED", "report", reportId, { provider: generated.provider });
+  } catch (error) {
+    const code = error instanceof StoreError ? error.code : "REPORT_GENERATION_FAILED";
+    await database
+      .prepare(
+        `UPDATE reports SET status = 'REPORT_FAILED_RETRYABLE', error_code = ?, updated_at = ?
+         WHERE id = ? AND user_id = ?`,
+      )
+      .bind(code, now(), reportId, viewer.userId)
+      .run();
+    console.error("report_generation_failed", { reportId, code, error });
+  }
+  return getReportForUser(reportId, viewer);
+}
+
+export async function getReportForUser(reportId: string, viewer: Viewer): Promise<ReportRecord> {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  const row = await database
+    .prepare(
+      `SELECT id, assessment_id, status, provider, score_json, report_json,
+              pdf_key, created_at, updated_at
+       FROM reports WHERE id = ? AND user_id = ? LIMIT 1`,
+    )
+    .bind(reportId, viewer.userId)
+    .first<ReportRow>();
+  if (!row) throw new StoreError("REPORT_NOT_FOUND", 404);
+  return {
+    id: row.id,
+    assessmentId: row.assessment_id,
+    status: row.status,
+    provider: row.provider,
+    score: parseJson<ScoreProfile>(row.score_json, scoreAssessment({})),
+    report: parseJson<ReportJSON | null>(row.report_json, null),
+    pdfAvailable: Boolean(row.pdf_key),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+  };
+}
+
+export async function regenerateReportForUser(reportId: string, viewer: Viewer) {
+  const database = ensureDatabase();
+  await getReportForUser(reportId, viewer);
+  await database
+    .prepare(`UPDATE reports SET status = 'REPORT_GENERATING', error_code = NULL, updated_at = ? WHERE id = ? AND user_id = ?`)
+    .bind(now(), reportId, viewer.userId)
+    .run();
+  return generateReportForUser(reportId, viewer).catch(async (error) => {
+    console.error("report_regeneration_failed", { reportId, error });
+    return getReportForUser(reportId, viewer);
+  });
+}
+
+export async function getReportPdfForUser(reportId: string, viewer: Viewer) {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  const row = await database
+    .prepare(`SELECT pdf_key FROM reports WHERE id = ? AND user_id = ? LIMIT 1`)
+    .bind(reportId, viewer.userId)
+    .first<{ pdf_key: string | null }>();
+  if (!row) throw new StoreError("REPORT_NOT_FOUND", 404);
+  if (!row.pdf_key) throw new StoreError("PDF_NOT_READY", 409);
+  let object;
+  try {
+    object = await getR2().get(row.pdf_key);
+  } catch (error) {
+    console.error("pdf_storage_read_failed", { reportId, error });
+    throw new StoreError("PDF_STORAGE_UNAVAILABLE", 503);
+  }
+  if (!object) throw new StoreError("PDF_NOT_FOUND", 404);
+  return object;
+}
+
+export async function getAccountOverview(viewer: Viewer) {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  const orderResult = await database
+    .prepare(
+      `SELECT id, test_id, amount_minor, currency, status, provider,
+              provider_checkout_url, created_at
+       FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+    )
+    .bind(viewer.userId)
+    .all<OrderRow>();
+  const assessmentResult = await database
+    .prepare(
+      `SELECT id, test_id, state, client_seq, adaptive_item_ids_json,
+              report_id, created_at, updated_at
+       FROM assessments WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50`,
+    )
+    .bind(viewer.userId)
+    .all<{
+      id: string;
+      test_id: string;
+      state: SessionState;
+      client_seq: number;
+      adaptive_item_ids_json: string;
+      report_id: string | null;
+      created_at: number;
+      updated_at: number;
+    }>();
+  return {
+    user: {
+      id: viewer.userId,
+      email: viewer.email,
+      displayName: viewer.displayName,
+    },
+    orders: (orderResult.results ?? []).map(publicOrder),
+    assessments: (assessmentResult.results ?? []).map((row) => ({
+      id: row.id,
+      testId: row.test_id,
+      state: row.state,
+      clientSeq: row.client_seq,
+      adaptiveCount: parseJson<string[]>(row.adaptive_item_ids_json, []).length,
+      reportId: row.report_id,
+      createdAt: iso(row.created_at),
+      updatedAt: iso(row.updated_at),
+    })),
+  };
+}
+
+export async function recordTelemetry(input: {
+  viewer: Viewer;
+  name: string;
+  assessmentId?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+}) {
+  const allowedNames = new Set([
+    "catalog_viewed",
+    "checkout_started",
+    "checkout_redirected",
+    "assessment_started",
+    "answer_saved",
+    "block_completed",
+    "adaptive_selected",
+    "report_viewed",
+    "pdf_downloaded",
+    "support_opened",
+  ]);
+  if (!allowedNames.has(input.name)) throw new StoreError("TELEMETRY_EVENT_NOT_ALLOWED", 422);
+  await ensureUser(input.viewer);
+  const database = ensureDatabase();
+  await database
+    .prepare(
+      `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      newId("tel"),
+      input.name,
+      input.viewer.userId,
+      input.assessmentId ?? null,
+      input.metadata ? JSON.stringify(input.metadata) : null,
+      now(),
+    )
+    .run();
+  return { accepted: true };
+}
+
+export async function requestDataExport(viewer: Viewer) {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  const requestId = newId("privacy");
+  const key = `exports/${viewer.userId}/${requestId}.json`;
+  const overview = await getAccountOverview(viewer);
+  const sessionResult = await database
+    .prepare(
+      `SELECT id, test_id, state, versions_json, adaptive_item_ids_json,
+              preliminary_score_json, final_score_json, report_id, client_seq,
+              created_at, consented_at, completed_at, updated_at
+       FROM assessments WHERE user_id = ? ORDER BY created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>();
+  const responseResult = await database
+    .prepare(
+      `SELECT r.assessment_id, r.item_id, r.response, r.response_time_ms, r.client_seq, r.created_at
+       FROM assessment_responses r
+       JOIN assessments a ON a.id = r.assessment_id
+       WHERE a.user_id = ? ORDER BY r.created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>();
+  const reportResult = await database
+    .prepare(
+      `SELECT id, assessment_id, status, provider, score_json, report_json, created_at, updated_at
+       FROM reports WHERE user_id = ? ORDER BY created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>();
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    user: overview.user,
+    orders: overview.orders,
+    assessments: sessionResult.results ?? [],
+    responses: responseResult.results ?? [],
+    reports: reportResult.results ?? [],
+  };
+  const bucket = getR2();
+  await bucket.put(key, JSON.stringify(payload, null, 2), {
+    httpMetadata: { contentType: "application/json", contentDisposition: `attachment; filename="orbita-data-${requestId}.json"` },
+    customMetadata: { requestId, userId: viewer.userId },
+  });
+  await database
+    .prepare(
+      `INSERT INTO privacy_requests (id, user_id, type, status, artifact_key, created_at, completed_at)
+       VALUES (?, ?, 'EXPORT', 'COMPLETE', ?, ?, ?)`,
+    )
+    .bind(requestId, viewer.userId, key, now(), now())
+    .run();
+  await audit(viewer.userId, "DATA_EXPORT_CREATED", "privacy_request", requestId);
+  return { requestId, downloadPath: `/api/account/export/${requestId}` };
+}
+
+export async function getExportForUser(requestId: string, viewer: Viewer) {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  const row = await database
+    .prepare(`SELECT artifact_key FROM privacy_requests WHERE id = ? AND user_id = ? AND type = 'EXPORT' LIMIT 1`)
+    .bind(requestId, viewer.userId)
+    .first<{ artifact_key: string | null }>();
+  if (!row?.artifact_key) throw new StoreError("EXPORT_NOT_FOUND", 404);
+  const object = await getR2().get(row.artifact_key);
+  if (!object) throw new StoreError("EXPORT_NOT_FOUND", 404);
+  return object;
+}
+
+export async function deleteAccount(viewer: Viewer) {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  const reportResult = await database
+    .prepare(`SELECT pdf_key FROM reports WHERE user_id = ? AND pdf_key IS NOT NULL`)
+    .bind(viewer.userId)
+    .all<{ pdf_key: string }>();
+  const privacyArtifactResult = await database
+    .prepare(`SELECT artifact_key FROM privacy_requests WHERE user_id = ? AND artifact_key IS NOT NULL`)
+    .bind(viewer.userId)
+    .all<{ artifact_key: string }>();
+  const requestId = newId("privacy");
+  const timestamp = now();
+  await database
+    .prepare(
+      `INSERT INTO privacy_requests (id, user_id, type, status, artifact_key, created_at, completed_at)
+       VALUES (?, ?, 'DELETE', 'PROCESSING', NULL, ?, NULL)`,
+    )
+    .bind(requestId, viewer.userId, timestamp)
+    .run();
+  let bucket: R2Bucket;
+  try {
+    bucket = getR2();
+    const keys = [
+      ...(reportResult.results ?? []).map((row) => row.pdf_key),
+      ...(privacyArtifactResult.results ?? []).map((row) => row.artifact_key),
+    ];
+    await Promise.all(keys.map((key) => bucket.delete(key)));
+  } catch (error) {
+    await database
+      .prepare(`UPDATE privacy_requests SET status = 'FAILED_RETRYABLE' WHERE id = ? AND user_id = ?`)
+      .bind(requestId, viewer.userId)
+      .run();
+    console.error("account_artifact_delete_failed", { userId: viewer.userId, error });
+    throw new StoreError("ACCOUNT_ARTIFACT_DELETE_FAILED", 503);
+  }
+  await database.batch([
+    database.prepare(`DELETE FROM assessment_responses WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
+    database.prepare(`DELETE FROM reports WHERE user_id = ?`).bind(viewer.userId),
+    database.prepare(`DELETE FROM assessments WHERE user_id = ?`).bind(viewer.userId),
+    database.prepare(`DELETE FROM entitlements WHERE user_id = ?`).bind(viewer.userId),
+    database.prepare(`DELETE FROM orders WHERE user_id = ?`).bind(viewer.userId),
+    database.prepare(`DELETE FROM telemetry_events WHERE user_id = ?`).bind(viewer.userId),
+    database.prepare(`UPDATE users SET email = ?, full_name = NULL, deleted_at = ?, updated_at = ? WHERE id = ?`).bind(`${viewer.userId}@deleted.invalid`, timestamp, timestamp, viewer.userId),
+    database.prepare(`UPDATE privacy_requests SET status = 'COMPLETE', completed_at = ? WHERE id = ? AND user_id = ?`).bind(timestamp, requestId, viewer.userId),
+  ]);
+  await audit(null, "ACCOUNT_DELETED", "privacy_request", requestId);
+  return { requestId, deleted: true };
+}

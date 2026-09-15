@@ -524,6 +524,18 @@ p, h1, h2, h3 { margin: 0; }
 .account-stat span, .account-stat small { color: var(--muted); display: block; font-size: 11px; }
 .account-stat strong { display: block; font-size: 28px; letter-spacing: -.06em; margin-top: 12px; }
 .account-stat small { font-family: ui-monospace, monospace; font-size: 9px; margin-top: 4px; }
+.account-history-grid { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; margin-top: 18px; }
+.account-history-list { border-top: 1px solid var(--line); }
+.account-history-row { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 18px; justify-content: space-between; min-height: 56px; }
+.account-history-row:first-child { border-top: 0; }
+.account-history-row strong, .account-history-row small { display: block; }
+.account-history-row strong { font-size: 12px; }
+.account-history-row small { color: var(--muted); font-family: ui-monospace, monospace; font-size: 9px; margin-top: 3px; }
+.account-history-row > span:last-of-type { text-align: right; }
+.account-muted { color: var(--muted); font-size: 13px; }
+.account-data-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; margin-top: 24px; }
+.global-error { align-items: center; background: #fff0ec; border: 1px solid #edc0b4; border-radius: 8px; color: #8d493a; display: flex; font-size: 12px; gap: 14px; justify-content: space-between; margin: 14px auto -26px; max-width: 1180px; padding: 10px 14px; position: relative; width: calc(100% - 48px); z-index: 5; }
+.global-error button { background: transparent; border: 0; color: inherit; cursor: pointer; font-size: 18px; line-height: 1; }
 
 .methodology-page .section-heading { max-width: 790px; }
 .method-layout { display: grid; gap: 65px; grid-template-columns: 160px minmax(0,1fr); margin-top: 70px; }
@@ -681,6 +693,7 @@ p, h1, h2, h3 { margin: 0; }
   .score-name strong { font-size: 13px; }
   .interpretation-grid { grid-template-columns: 1fr; }
   .account-grid { grid-template-columns: 1fr; }
+  .account-history-grid { grid-template-columns: 1fr; }
   .account-footer-grid { grid-template-columns: 1fr; }
   .account-stat, .account-stat:not(:first-child) { border-bottom: 1px solid var(--line); border-right: 0; padding: 15px 0; }
   .account-stat:last-child { border-bottom: 0; }
@@ -694,6 +707,8 @@ p, h1, h2, h3 { margin: 0; }
   .admin-metrics { grid-template-columns: repeat(2,1fr); }
   .admin-table-head, .admin-table-row { grid-template-columns: 1fr 1fr 40px; }
   .admin-table-head span:last-child, .admin-table-row [data-slot="badge"] { display: none; }
+  .account-data-actions { align-items: stretch; flex-direction: column; }
+  .account-data-actions .orbita-button { width: 100%; }
 }
 @media print {
   .orbita-header, .orbita-footer, .results-head-actions, .admin-secret { display: none !important; }

@@ -2,12 +2,51 @@ import { env } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
-export function getDb() {
-  if (!env.DB) {
+export type OrbitaRuntimeEnv = {
+  DB?: D1Database;
+  BUCKET?: R2Bucket;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
+  OPENAI_BASE_URL?: string;
+  PAYMENT_PROVIDER?: string;
+  ASSESSMENT_PRICE_MINOR?: string;
+  ASSESSMENT_CURRENCY?: string;
+  APP_BASE_URL?: string;
+  REPORT_PROVIDER?: string;
+  REPORT_MODEL?: string;
+  REPORT_TIMEOUT_MS?: string;
+  RETENTION_DAYS?: string;
+  ORBITA_ENV?: string;
+  ORBITA_ADMIN_USER_IDS?: string;
+  ORBITA_INTERNAL_TOKEN?: string;
+};
+
+export function getRuntimeEnv() {
+  return env as unknown as OrbitaRuntimeEnv;
+}
+
+export function getD1() {
+  const database = getRuntimeEnv().DB;
+  if (!database) {
     throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
+      "Cloudflare D1 binding `DB` is unavailable. Configure the logical DB binding before using persistent routes.",
     );
   }
+  return database;
+}
 
-  return drizzle(env.DB, { schema });
+export function getR2() {
+  const bucket = getRuntimeEnv().BUCKET;
+  if (!bucket) {
+    throw new Error(
+      "Cloudflare R2 binding `BUCKET` is unavailable. Configure the logical BUCKET binding before using file routes.",
+    );
+  }
+  return bucket;
+}
+
+export function getDb() {
+  return drizzle(getD1(), { schema });
 }

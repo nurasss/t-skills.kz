@@ -1,16 +1,38 @@
 import { NextResponse } from "next/server";
 
-import { saveSessionResponse } from "@/lib/api-store";
+import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
+import { getSessionForUser, saveResponse } from "@/lib/durable-store";
 
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
+  const { id } = await params;
+  try {
+    const session = await getSessionForUser(id, viewer);
+    if (!session) return NextResponse.json({ error: "SESSION_NOT_FOUND" }, { status: 404 });
+    return NextResponse.json({ responses: session.responses, response_times: session.responseTimes, server_seq: session.clientSeq });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
   const { id } = await params;
   try {
     const body = (await request.json()) as { item_id?: string; response?: number; response_time_ms?: number; client_seq?: number };
     if (!body.item_id || typeof body.response !== "number") return NextResponse.json({ error: "INVALID_RESPONSE_PAYLOAD" }, { status: 422 });
-    const result = saveSessionResponse({ sessionId: id, itemId: body.item_id, response: body.response, responseTimeMs: body.response_time_ms, clientSeq: body.client_seq, idempotencyKey: request.headers.get("Idempotency-Key") ?? undefined });
-    if (!result.ok) return NextResponse.json(result, { status: result.status });
+    const result = await saveResponse({
+      sessionId: id,
+      viewer,
+      itemId: body.item_id,
+      response: body.response,
+      responseTimeMs: body.response_time_ms,
+      clientSeq: body.client_seq,
+      idempotencyKey: request.headers.get("Idempotency-Key") ?? undefined,
+    });
     return NextResponse.json({ saved: result.saved, replay: result.replay, server_seq: result.serverSeq, next_item_id: result.nextItemId });
-  } catch {
-    return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+  } catch (error) {
+    return errorResponse(error);
   }
 }

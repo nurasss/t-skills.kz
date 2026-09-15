@@ -1,10 +1,25 @@
 import { NextResponse } from "next/server";
 
-import { getReport } from "@/lib/api-store";
+import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
+import { getReportForUser } from "@/lib/durable-store";
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
   const { id } = await params;
-  const report = getReport(id);
-  if (!report) return NextResponse.json({ error: "REPORT_NOT_FOUND" }, { status: 404 });
-  return NextResponse.json({ id: report.id, session_id: report.sessionId, status: report.status, score: report.score, report: report.report });
+  try {
+    const report = await getReportForUser(id, viewer);
+    return NextResponse.json({
+      id: report.id,
+      assessment_id: report.assessmentId,
+      status: report.status,
+      provider: report.provider,
+      score: report.score,
+      report: report.report,
+      pdf_available: report.pdfAvailable,
+      updated_at: report.updatedAt,
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }

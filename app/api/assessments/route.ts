@@ -1,14 +1,38 @@
 import { NextResponse } from "next/server";
 
-import { createAssessment } from "@/lib/api-store";
+import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
+import { createAssessmentForUser, getAccountOverview } from "@/lib/durable-store";
 
-export async function POST(request: Request) {
-  let body: { user_id?: string; test_id?: string } = {};
+export async function GET(request: Request) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
   try {
-    body = await request.json();
-  } catch {
-    // Preview defaults keep the contract easy to exercise.
+    return NextResponse.json(await getAccountOverview(viewer));
+  } catch (error) {
+    return errorResponse(error);
   }
-  const session = createAssessment({ userId: body.user_id, testId: body.test_id });
-  return NextResponse.json({ id: session.id, state: session.state, versions: session.versions, next_item_id: "Q001" }, { status: 201 });
+}
+export async function POST(request: Request) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
+  let body: { test_id?: string } = {};
+  try {
+    body = (await request.json()) as { test_id?: string };
+  } catch {
+    return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+  }
+  const testId = body.test_id ?? "orbita30";
+  if (testId !== "orbita30") return NextResponse.json({ error: "TEST_NOT_FOUND" }, { status: 404 });
+  try {
+    const result = await createAssessmentForUser({ viewer, testId });
+    return NextResponse.json({
+      id: result.session.id,
+      state: result.session.state,
+      versions: result.session.versions,
+      next_item_id: result.session.responses.Q001 === undefined ? "Q001" : null,
+      reused: result.reused,
+    }, { status: result.reused ? 200 : 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }
