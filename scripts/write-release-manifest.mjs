@@ -54,7 +54,7 @@ const manifest = {
     consent: "privacy-2026-09",
   },
   acceptance_gates: {
-    ready_for_engineering_100: "PENDING_CLEAN_LINUX_RELEASE_VERIFICATION",
+    ready_for_engineering_100: "PENDING_GITHUB_ACTIONS_CLEAN_LINUX_CI",
     ready_for_closed_pilot: "NO_EXTERNAL_APPROVALS",
     ready_for_public_paid_launch: "NO_PUBLIC_AUTH_LIVE_STRIPE_LEGAL_OPERATIONS",
     ready_for_validated_claims: "NO_PSYCHOMETRIC_VALIDATION",
