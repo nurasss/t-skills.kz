@@ -141,6 +141,9 @@ function profilePage(pdf: PDFDocument, font: PDFFont, traits: ScoreProfile["trai
 
 export async function buildReportPdf(profile: ScoreProfile, report: ReportJSON) {
   const pdf = await PDFDocument.create();
+  pdf.setCreationDate(new Date(0));
+  pdf.setModificationDate(new Date(0));
+  pdf.setProducer("ORBITA-30 deterministic report generator");
   pdf.registerFontkit(fontkit);
   const font = await pdf.embedFont(await fontBytes(), { subset: true });
   coverPage(pdf, font, profile, report);
