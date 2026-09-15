@@ -28,7 +28,7 @@ test("legacy normalization covers malformed and versioned snapshot branches", ()
     responseQuality: "bad",
     normStatus: "pilot",
   });
-  assert.equal(malformed.normStatus, "pilot");
+  assert.equal(malformed.normStatus, "unvalidated");
   assert.equal(malformed.traits.length, 1);
   assert.deepEqual(malformed.traits[0].uncertaintyRange, [1, 99]);
   assert.equal(malformed.domains.length, 1);
@@ -40,7 +40,7 @@ test("legacy normalization covers malformed and versioned snapshot branches", ()
     versions: { assessment: "a", itemBank: "i", scoring: "s", norms: "n" },
     responseQuality: { metrics: { attentionFailures: 3 } },
   });
-  assert.equal(versioned.normStatus, "normed");
+  assert.equal(versioned.normStatus, "unvalidated");
   assert.deepEqual(
     {
       assessment: versioned.versions.assessment,

@@ -30,7 +30,7 @@ const manifest = {
   source_package: {
     file: "orbita-30-source-release.tar.gz",
     sha256: sha256(readFileSync(archive)),
-    packaging_rule: "tracked blobs from exact source_git_sha; generated release evidence excluded",
+    packaging_rule: "tracked blobs from exact source_git_sha; generated release evidence and PROJECT_HANDOFF.md excluded",
   },
   runtime: {
     node: process.version.replace(/^v/, ""),

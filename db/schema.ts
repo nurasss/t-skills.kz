@@ -122,6 +122,7 @@ export const assessmentResponses = sqliteTable(
     responseTimeMs: integer("response_time_ms").notNull().default(0),
     clientSeq: integer("client_seq").notNull(),
     idempotencyKey: text("idempotency_key"),
+    presentationMetadataJson: text("presentation_metadata_json").notNull().default("{}"),
     createdAt: integer("created_at", { mode: "number" }).notNull(),
   },
   (table) => [

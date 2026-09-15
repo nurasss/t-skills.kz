@@ -1,0 +1,1 @@
+ALTER TABLE `assessment_responses` ADD `presentation_metadata_json` text DEFAULT '{}' NOT NULL;

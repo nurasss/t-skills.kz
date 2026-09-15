@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-16 — Release hardening follow-up
+
+- Forced the current unvalidated norm provider at score-snapshot read boundaries so legacy or malformed persisted data cannot promote itself to `normed`.
+- Required a bounded `Idempotency-Key` for every response submit and persisted server-derived presentation metadata with the response/export record.
+- Removed the PDF signing fallback to `ORBITA_INTERNAL_TOKEN`; PDF links now require the dedicated `PDF_SIGNING_SECRET`.
+- Recorded clean-room release evidence separately from the handoff and corrected the security review to match the nonce-based CSP.
+
 ## 2026-09-15 — ORBITA-30 MASTER remediation release
 
 - Preserved the existing `Q001`–`Q300` item bank, scoring architecture and private Sites deployment model.

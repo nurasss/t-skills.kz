@@ -77,6 +77,8 @@ function publicMessage(code: string) {
     SESSION_NOT_FOUND: "Сессия не найдена или больше недоступна.",
     SESSION_NOT_ACCEPTING_RESPONSES: "Сессия больше не принимает ответы.",
     ITEM_NOT_ALLOWED: "Этот вопрос не входит в текущую сессию.",
+    IDEMPOTENCY_KEY_REQUIRED: "Для сохранения ответа нужен ключ повторяемости запроса.",
+    IDEMPOTENCY_KEY_INVALID: "Ключ повторяемости запроса имеет некорректный формат.",
     INVALID_RESPONSE: "Ответ имеет некорректный формат.",
     CORE_INCOMPLETE: "Сначала завершите основной блок вопросов.",
     ADAPTIVE_INCOMPLETE: "Сначала завершите адаптивный блок вопросов.",

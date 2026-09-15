@@ -440,7 +440,9 @@ export function normalizeScoreProfile(value: unknown): ScoreProfile {
       report: VERSION_IDS.report,
       translation: VERSION_IDS.translation,
     },
-    normStatus: raw.normStatus === "pilot" || raw.normStatus === "normed" ? raw.normStatus : "unvalidated",
+    // The current release has no validated norm table. Never trust a persisted
+    // or provider-supplied status to promote this release into a normed state.
+    normStatus: UNVALIDATED_NORM_PROVIDER.status,
     traits,
     domains,
     responseQuality: {

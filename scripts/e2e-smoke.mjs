@@ -168,6 +168,10 @@ try {
   for (let number = 1; number <= 250; number += 1) {
     const itemId = `Q${String(number).padStart(3, "0")}`;
     const value = number === 241 ? 5 : number === 244 ? 2 : number === 247 ? 6 : number >= 241 ? 2 : number <= 150 ? 0 : 4;
+    if (number === 1) {
+      const missingIdempotencyKey = await request(`/api/assessments/${sessionId}/responses`, { method: "POST", body: JSON.stringify({ item_id: itemId, response: value }) });
+      assert(missingIdempotencyKey.response.status === 422 && missingIdempotencyKey.body?.error === "IDEMPOTENCY_KEY_REQUIRED", "response submit requires an idempotency key");
+    }
     const response = await request(`/api/assessments/${sessionId}/responses`, { method: "POST", headers: { "Idempotency-Key": `${sessionId}:${itemId}` }, body: JSON.stringify({ item_id: itemId, response: value, response_time_ms: 1000, client_seq: sequence }) });
     assert(response.response.status === 200, `save ${itemId} (${response.response.status}): ${JSON.stringify(response.body)}`);
     if (number === 1) {
@@ -234,7 +238,7 @@ try {
   const exported = await request("/api/account/export", { method: "POST", body: "{}" });
   assert(exported.response.status === 201 && typeof exported.body?.downloadPath === "string", "data export");
   const exportedFile = await request(exported.body.downloadPath);
-  assert(exportedFile.response.status === 200 && exportedFile.buffer.includes(Buffer.from("responses")), "export artifact");
+  assert(exportedFile.response.status === 200 && exportedFile.buffer.includes(Buffer.from("responses")) && exportedFile.buffer.includes(Buffer.from("presentation_metadata_json")) && exportedFile.buffer.includes(Buffer.from("itemBankVersion")), "export artifact includes response presentation metadata");
   const otherExportFile = await request(exported.body.downloadPath, { headers: { "x-orbita-preview-user": `${userId}_other` } });
   assert(otherExportFile.response.status === 404, "user B cannot read user A export");
 

@@ -16,7 +16,7 @@ The assessment is an original developmental product. It is not a Gallup/CliftonS
 This repository is an engineering-complete candidate for a controlled pilot, but the final master gates remain evidence-driven. It is not a public paid launch and it does not make validated normative claims:
 
 ```text
-READY_FOR_ENGINEERING_100=NO (clean Linux CI and release-checkout evidence still required)
+READY_FOR_ENGINEERING_100=NO (clean-room Linux release evidence passes; external GitHub Actions clean Linux CI run is still required)
 READY_FOR_CLOSED_PILOT=NO (content, legal, recruitment, support and protocol sign-off still required)
 READY_FOR_PUBLIC_PAID_LAUNCH=NO (production price and Stripe secrets are not invented)
 READY_FOR_VALIDATED_CLAIMS=NO (pilot data, norms, reliability, validity, DIF/invariance are pending)

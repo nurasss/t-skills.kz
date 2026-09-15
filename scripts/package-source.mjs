@@ -9,10 +9,12 @@ const output = resolve(process.argv[2] ?? join(tmpdir(), "orbita-30-source.tar.g
 const sourceRevision = process.argv[3] ?? process.env.SOURCE_GIT_SHA ?? "HEAD";
 const sourceGitSha = execFileSync("git", ["rev-parse", "--verify", `${sourceRevision}^{commit}`], { cwd: root, encoding: "utf8" }).trim();
 const forbidden = ["node_modules/", "dist/", ".next/", ".wrangler/", ".vinext/", ".vite/", ".sites-runtime/", ".DS_Store"];
-// Release evidence records their own source/package identity and are delivered
-// alongside the immutable source archive, so excluding them avoids a hash
-// cycle while keeping the archive free of generated release state.
-const releaseEvidence = new Set(["FINAL_ACCEPTANCE.md", "CI_EVIDENCE.txt", "RELEASE_MANIFEST.json"]);
+// Release evidence records their own source/package identity and is delivered
+// alongside the immutable source archive, so excluding it avoids a hash cycle
+// while keeping the archive free of generated release state. The handoff is
+// also delivered alongside the archive because it records the exact source
+// SHA and artifact hash after the source commit is frozen.
+const releaseEvidence = new Set(["FINAL_ACCEPTANCE.md", "CI_EVIDENCE.txt", "RELEASE_MANIFEST.json", "PROJECT_HANDOFF.md"]);
 const treeEntries = execFileSync("git", ["ls-tree", "-r", "-z", "--full-tree", sourceGitSha], { cwd: root })
   .toString("utf8")
   .split("\0")

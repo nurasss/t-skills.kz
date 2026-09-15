@@ -24,6 +24,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const rate = await consumeRateLimit({ userId: viewer.userId, scope: "responses", limit: 400, windowMs: 10 * 60 * 1000 });
     if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
+    const idempotencyKey = request.headers.get("Idempotency-Key")?.trim();
+    if (!idempotencyKey) return NextResponse.json({ error: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 422 });
+    if (idempotencyKey.length > 200 || /[\u0000-\u001f\u007f]/.test(idempotencyKey)) {
+      return NextResponse.json({ error: "IDEMPOTENCY_KEY_INVALID" }, { status: 422 });
+    }
     const body = (await request.json()) as { item_id?: string; response?: number; response_time_ms?: number; client_seq?: number };
     if (!body.item_id || typeof body.response !== "number") return NextResponse.json({ error: "INVALID_RESPONSE_PAYLOAD" }, { status: 422 });
     const result = await saveResponse({
@@ -33,7 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       response: body.response,
       responseTimeMs: body.response_time_ms,
       clientSeq: body.client_seq,
-      idempotencyKey: request.headers.get("Idempotency-Key") ?? undefined,
+      idempotencyKey,
     });
     return NextResponse.json({ saved: result.saved, replay: result.replay, server_seq: result.serverSeq, next_item_id: result.nextItemId });
   } catch (error) {

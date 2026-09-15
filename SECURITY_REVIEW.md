@@ -29,6 +29,6 @@ Status: engineering review for a private controlled-pilot release. This is not a
 
 The current Site is intentionally private and uses dispatch-owned ChatGPT identity headers. That is suitable only for controlled pilot access; it is not the public multi-user auth, revocation, MFA and support architecture required for G2. A production operator must provide separate staging/prod D1/R2/secrets/webhook endpoints, managed secret rotation, WAF/CDN policy, alert routing, backup retention and incident contacts.
 
-The CSP currently permits the inline/eval behavior required by the current Vinext/client build. Tightening it with nonces or hashes is a post-pilot hardening task and must be regression-tested against the deployed build. It is not treated as permission to launch publicly.
+The current source emits a per-request nonce and has no `unsafe-inline` or `unsafe-eval` in `script-src`; the real-browser regression covers hydration and checkout navigation. `style-src 'unsafe-inline'` remains a documented runtime compatibility allowance. Deployed staging verification, external pentest and remediation/retest are still open gates and are not treated as permission to launch publicly.
 
 No card PAN/CVC, legal approval, norm, psychometric validity, or security certification is claimed by this repository.

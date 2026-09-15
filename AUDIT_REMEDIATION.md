@@ -1,8 +1,8 @@
 # ORBITA—30 audit remediation record
 
-Date: 2026-09-15  
+Date: 2026-09-16
 Scope: attached ORBITA-30 remediation audit and production/pilot readiness review  
-Decision: engineering implementation is materially closed for review, but the master engineering gate remains NO until clean Linux CI/release evidence; closed-pilot, public-paid and validated-claims gates remain blocked by explicit external gates.
+Decision: the implementation and reproducible clean-room release checks pass locally; the master engineering gate remains NO only until the external GitHub Actions clean Linux CI run is recorded. Closed-pilot, public-paid and validated-claims gates remain blocked by explicit external gates.
 
 ## Invariants preserved
 
@@ -14,12 +14,13 @@ Decision: engineering implementation is materially closed for review, but the ma
 
 | Area | Implementation | Verification/evidence | Status |
 |---|---|---|---|
-| Norm/scoring safety | `NormProvider`, `ScoringProvider`, `normStatus=unvalidated`, bounded pilot profile index, uncertainty range, new version IDs | unit contract; methodology UI; report/PDF wording scan | CLOSED |
+| Norm/scoring safety | `NormProvider`, `ScoringProvider`, forced `normStatus=unvalidated` at snapshot boundaries, bounded pilot profile index, uncertainty range, new version IDs | unit contract; methodology UI; report/PDF wording scan; malicious legacy `normed` snapshot regression | CLOSED |
 | AI report safety | versioned `lib/interpretation-library.ts`; minimized payload; strict schema; canonical approved semantics; deterministic fallback | unit report contract; provider code path | CLOSED |
 | Adaptive safety | selector `0.3`; priority/expected-information payload; boundary signals; exact reason-code enum; server whitelist; no duplicates/answered/max 3 | adaptive unit contract; backend validation | CLOSED |
 | Response quality | modal-frequency straight-line check; exploratory too-fast threshold; pilot RQI; Q243/Q246/Q249/Q250 research-only markers | quality unit contract; methodology text | CLOSED |
 | Payment integrity | hosted Stripe Checkout; backend catalog amount/currency; signed webhook; exact event/order/session/metadata/payment-status checks; replay hash/idempotency; paid non-downgrade | payment/signature unit contracts; D1 migration 0006 | CLOSED |
 | Retention | `worker/index.ts` scheduled handler and `0 2 * * *`; no active states; bounded dry-run; R2-first deletion; D1 cleanup; transaction records retained; pseudonymous audit; idempotent rerun | retention policy unit contract; built worker marker; internal endpoint | CLOSED |
+| Response integrity | Required bounded `Idempotency-Key` on every response submit; server timestamp, sequence and server-derived presentation metadata persisted with the response; export includes the metadata | E2E response replay and export; migration drift check | CLOSED |
 | Legal/privacy | full versioned Privacy/Terms data model and pages; env-driven operator/contact/jurisdiction/purposes/categories/retention/processors/cross-border/rights/export/delete/security/research/marketing fields; explicit Kazakhstan review gate | `lib/legal-documents.ts`; `/privacy`; `/terms`; `.env.example` | CODE CLOSED / LEGAL APPROVAL OPEN |
 
 ## P1 remediation matrix
@@ -28,7 +29,7 @@ Decision: engineering implementation is materially closed for review, but the ma
 |---|---|---|
 | Approved interpretation library | Separate versioned module with trait fields, exact overuse/development content, supported combinations and unsupported-combination rejection | CLOSED |
 | Structured PDF | JSON-driven 24-page A4 output with top five, full 30, six domains, combinations, teamwork/communication, thinking/execution/influence, self-management/stress/blind spots, plan, methodology and limits; no percentile | CLOSED |
-| Test/CI | Unit contracts, payment/adaptive/report/privacy/retention coverage, local Worker/D1/R2 E2E smoke, `ci:verify` | PARTIAL until final full matrix and Linux run |
+| Test/CI | Unit contracts, payment/adaptive/report/privacy/retention coverage, local Worker/D1/R2 E2E smoke, clean Linux release archive run, `ci:verify` | PASS locally; external GitHub Actions Linux run still OPEN |
 | Reproducibility | lockfile, `npm ci`, clean source packager and `.gitignore` rules for `node_modules`, `dist`, `.next`, `.wrangler`, `.vite`, `.vinext`, OS artifacts | CLOSED |
 | Localization | Explicit RU/KZ/EN catalog; RU published; KZ/EN cannot be marked published before translation/back-translation/cognitive/invariance work | CLOSED |
 | Pilot analytics | Aggregate-only funnel, provider/fallback, latency, report/PDF and quality summaries; psychometric output is withheld below sample 200 | CLOSED |

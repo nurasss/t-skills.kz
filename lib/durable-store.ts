@@ -122,6 +122,7 @@ type ResponseRow = {
   item_id: string;
   response: number;
   response_time_ms: number;
+  presentation_metadata_json?: string;
 };
 
 type OrderRow = {
@@ -915,11 +916,16 @@ export async function saveResponse(input: {
   response: number;
   responseTimeMs?: number;
   clientSeq?: number;
-  idempotencyKey?: string;
+  idempotencyKey: string;
 }) {
   await ensureUser(input.viewer);
   const session = await loadSession(input.sessionId, input.viewer.userId);
   if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!idempotencyKey) throw new StoreError("IDEMPOTENCY_KEY_REQUIRED", 422);
+  if (idempotencyKey.length > 200 || /[\u0000-\u001f\u007f]/.test(idempotencyKey)) {
+    throw new StoreError("IDEMPOTENCY_KEY_INVALID", 422);
+  }
   if (!["CONSENTED", "CORE_IN_PROGRESS", "ADAPTIVE_IN_PROGRESS"].includes(session.state)) {
     throw new StoreError("SESSION_NOT_ACCEPTING_RESPONSES", 409);
   }
@@ -928,22 +934,20 @@ export async function saveResponse(input: {
   if (!allowed) throw new StoreError("ITEM_NOT_ALLOWED", 422);
 
   const database = ensureDatabase();
-  if (input.idempotencyKey) {
-    const replay = await database
-      .prepare(
-        `SELECT client_seq FROM assessment_responses
-         WHERE assessment_id = ? AND idempotency_key = ? LIMIT 1`,
-      )
-      .bind(input.sessionId, input.idempotencyKey)
-      .first<{ client_seq: number }>();
-    if (replay) {
-      return {
-        saved: true,
-        replay: true,
-        serverSeq: replay.client_seq,
-        nextItemId: nextItemId(session),
-      };
-    }
+  const replay = await database
+    .prepare(
+      `SELECT client_seq FROM assessment_responses
+       WHERE assessment_id = ? AND idempotency_key = ? LIMIT 1`,
+    )
+    .bind(input.sessionId, idempotencyKey)
+    .first<{ client_seq: number }>();
+  if (replay) {
+    return {
+      saved: true,
+      replay: true,
+      serverSeq: replay.client_seq,
+      nextItemId: nextItemId(session),
+    };
   }
   if (typeof session.responses[input.itemId] === "number") throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
 
@@ -951,14 +955,25 @@ export async function saveResponse(input: {
   const serverSeq = session.clientSeq + 1;
   const nextState = isCoreItem(input.itemId) ? "CORE_IN_PROGRESS" : "ADAPTIVE_IN_PROGRESS";
   if (!canSessionTransition(session.state, nextState)) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
+  const itemNumber = Number(input.itemId.slice(1));
+  const phase = isCoreItem(input.itemId) ? "core" : "adaptive";
+  const position = phase === "core" ? itemNumber : session.adaptiveItemIds.indexOf(input.itemId) + 1;
+  const presentationMetadata = JSON.stringify({
+    phase,
+    position,
+    block: phase === "core" ? Math.ceil(position / 50) : null,
+    locale: session.locale,
+    itemBankVersion: session.versions.itemBank,
+    translationVersion: session.versions.translation,
+  });
   try {
     await database.batch([
       database
         .prepare(
           `INSERT INTO assessment_responses
             (id, assessment_id, item_id, response, response_time_ms,
-             client_seq, idempotency_key, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            client_seq, idempotency_key, presentation_metadata_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           `${input.sessionId}:${input.itemId}`,
@@ -967,7 +982,8 @@ export async function saveResponse(input: {
           input.response,
           Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number.isFinite(input.responseTimeMs ?? 0) ? input.responseTimeMs ?? 0 : 0))),
           serverSeq,
-          input.idempotencyKey ?? null,
+          idempotencyKey,
+          presentationMetadata,
           timestamp,
         ),
       database
@@ -986,7 +1002,7 @@ export async function saveResponse(input: {
       .bind(input.sessionId, input.itemId)
       .first<{ client_seq: number; idempotency_key: string | null }>();
     if (race) {
-      if (input.idempotencyKey && race.idempotency_key === input.idempotencyKey) {
+      if (race.idempotency_key === idempotencyKey) {
         return {
           saved: true,
           replay: true,
@@ -1420,7 +1436,8 @@ export async function requestDataExport(viewer: Viewer) {
     .all<Record<string, unknown>>();
   const responseResult = await database
     .prepare(
-      `SELECT r.assessment_id, r.item_id, r.response, r.response_time_ms, r.client_seq, r.created_at
+      `SELECT r.assessment_id, r.item_id, r.response, r.response_time_ms, r.client_seq,
+              r.presentation_metadata_json, r.created_at
        FROM assessment_responses r
        JOIN assessments a ON a.id = r.assessment_id
        WHERE a.user_id = ? ORDER BY r.created_at ASC`,
