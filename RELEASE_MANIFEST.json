@@ -1,10 +1,10 @@
 {
   "schema_version": "orbita-30-release-manifest-v2",
-  "generated_at": "2026-09-15T23:07:11.676Z",
-  "source_git_sha": "55b3ecf05c879b134c64836ecf210264fd02dbf7",
+  "generated_at": "2026-09-15T23:13:12.273Z",
+  "source_git_sha": "b6d20fcefae60c5ed1d4343e3519c0f5fa60f23c",
   "source_package": {
     "file": "orbita-30-source-release.tar.gz",
-    "sha256": "117891812dcbc25d19316a5e6366b0a124681f849539501f0bf741610d737bdb",
+    "sha256": "03c7317d581d3565e53618e8a9d0361e365a5029f4e6b2ba9610b4e59ffc0fb7",
     "packaging_rule": "tracked blobs from exact source_git_sha; generated release evidence excluded"
   },
   "runtime": {
