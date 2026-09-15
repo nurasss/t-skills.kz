@@ -120,8 +120,8 @@ const seed = [
   `INSERT OR IGNORE INTO orders (id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id, provider_checkout_url, provider_payment_id, provider_event_id, idempotency_key, created_at, updated_at) VALUES (${sql(activeRetentionOrderId)}, ${sql(retentionUserId)}, 'orbita30', 150000, 'KZT', 'PAID', 'stripe', 'cs_retention_active', 'https://checkout.stripe.test/cs_retention_active', 'pi_retention_active', 'evt_retention_active', ${sql(`${retentionUserId}_active_idem`)}, ${timestamp - 400 * 24 * 60 * 60 * 1000}, ${timestamp - 400 * 24 * 60 * 60 * 1000})`,
   `INSERT OR IGNORE INTO entitlements (id, order_id, user_id, test_id, status, created_at, revoked_at) VALUES (${sql(retentionEntitlementId)}, ${sql(retentionOrderId)}, ${sql(retentionUserId)}, 'orbita30', 'ACTIVE', ${timestamp - 400 * 24 * 60 * 60 * 1000}, NULL)`,
   `INSERT OR IGNORE INTO entitlements (id, order_id, user_id, test_id, status, created_at, revoked_at) VALUES (${sql(activeRetentionEntitlementId)}, ${sql(activeRetentionOrderId)}, ${sql(retentionUserId)}, 'orbita30', 'ACTIVE', ${timestamp - 400 * 24 * 60 * 60 * 1000}, NULL)`,
-  `INSERT OR IGNORE INTO assessments (id, user_id, entitlement_id, test_id, locale, state, versions_json, adaptive_item_ids_json, selection_mode, preliminary_score_json, final_score_json, report_id, client_seq, created_at, consented_at, completed_at, updated_at) VALUES (${sql(retentionAssessmentId)}, ${sql(retentionUserId)}, ${sql(retentionEntitlementId)}, 'orbita30', 'ru', 'COMPLETE', '{}', '[]', NULL, NULL, NULL, NULL, 0, ${timestamp - 400 * 24 * 60 * 60 * 1000}, NULL, ${timestamp - 400 * 24 * 60 * 60 * 1000}, ${timestamp - 400 * 24 * 60 * 60 * 1000})`,
-  `INSERT OR IGNORE INTO assessments (id, user_id, entitlement_id, test_id, locale, state, versions_json, adaptive_item_ids_json, selection_mode, preliminary_score_json, final_score_json, report_id, client_seq, created_at, consented_at, completed_at, updated_at) VALUES (${sql(activeRetentionAssessmentId)}, ${sql(retentionUserId)}, ${sql(activeRetentionEntitlementId)}, 'orbita30', 'ru', 'CORE_IN_PROGRESS', '{}', '[]', NULL, NULL, NULL, NULL, 0, ${timestamp - 400 * 24 * 60 * 60 * 1000}, NULL, NULL, ${timestamp - 400 * 24 * 60 * 60 * 1000})`,
+  `INSERT OR IGNORE INTO assessments (id, user_id, entitlement_id, test_id, locale, state, versions_json, adaptive_item_ids_json, selection_mode, preliminary_score_json, final_score_json, report_id, client_seq, created_at, consented_at, completed_at, purge_state, purge_after, updated_at) VALUES (${sql(retentionAssessmentId)}, ${sql(retentionUserId)}, ${sql(retentionEntitlementId)}, 'orbita30', 'ru', 'COMPLETE', '{}', '[]', NULL, NULL, NULL, NULL, 0, ${timestamp - 400 * 24 * 60 * 60 * 1000}, NULL, ${timestamp - 400 * 24 * 60 * 60 * 1000}, 'ACTIVE', ${timestamp - 1}, ${timestamp - 400 * 24 * 60 * 60 * 1000})`,
+  `INSERT OR IGNORE INTO assessments (id, user_id, entitlement_id, test_id, locale, state, versions_json, adaptive_item_ids_json, selection_mode, preliminary_score_json, final_score_json, report_id, client_seq, created_at, consented_at, completed_at, purge_state, purge_after, updated_at) VALUES (${sql(activeRetentionAssessmentId)}, ${sql(retentionUserId)}, ${sql(activeRetentionEntitlementId)}, 'orbita30', 'ru', 'CORE_IN_PROGRESS', '{}', '[]', NULL, NULL, NULL, NULL, 0, ${timestamp - 400 * 24 * 60 * 60 * 1000}, NULL, NULL, 'ACTIVE', ${timestamp - 1}, ${timestamp - 400 * 24 * 60 * 60 * 1000})`,
   `INSERT OR IGNORE INTO orders (id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id, provider_checkout_url, provider_payment_id, provider_event_id, idempotency_key, created_at, updated_at) VALUES ('${userId}_ord', ${sql(userId)}, 'orbita30', 150000, 'KZT', 'PAID', 'stripe', 'cs_e2e', 'https://checkout.stripe.test/cs_e2e', 'pi_e2e', 'evt_e2e', ${sql(`${userId}_idem`)}, ${timestamp}, ${timestamp})`,
   `INSERT OR IGNORE INTO orders (id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id, provider_checkout_url, provider_payment_id, provider_event_id, idempotency_key, created_at, updated_at) VALUES ('${userId}_pending', ${sql(userId)}, 'orbita30', 150000, 'KZT', 'PAYMENT_PENDING', 'stripe', 'cs_pending', NULL, NULL, NULL, ${sql(`${userId}_pending_idem`)}, ${timestamp}, ${timestamp})`,
   `INSERT OR IGNORE INTO orders (id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id, provider_checkout_url, provider_payment_id, provider_event_id, idempotency_key, created_at, updated_at) VALUES (${sql(concurrentOrderId)}, ${sql(userId)}, 'orbita30', 150000, 'KZT', 'PAYMENT_PENDING', 'stripe', 'cs_concurrent', NULL, NULL, NULL, ${sql(`${userId}_concurrent_idem`)}, ${timestamp}, ${timestamp})`,
@@ -218,14 +218,19 @@ try {
   if (process.env.E2E_PDF_OUTPUT) writeFileSync(process.env.E2E_PDF_OUTPUT, pdf.buffer);
   const telemetry = await request("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "test_view", metadata: { provider: "stripe", raw_answer: 7 } }) });
   assert(telemetry.response.status === 200, "allowlisted privacy-safe telemetry");
-  for (let attempt = 0; attempt < 118; attempt += 1) {
+  let rateLimited;
+  let allowedBeforeLimit = 1;
+  for (let attempt = 0; attempt < 125; attempt += 1) {
     const burst = await request("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "test_view", metadata: { status: "burst" } }) });
+    if (burst.response.status === 429) {
+      rateLimited = burst;
+      break;
+    }
     assert(burst.response.status === 200, `rate-limit warmup ${attempt + 1}`);
+    allowedBeforeLimit += 1;
   }
-  const rateLimitProbe = await request("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "test_view" }) });
-  assert(rateLimitProbe.response.status === 200, "rate-limit boundary request is allowed");
-  const rateLimited = await request("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "test_view" }) });
-  assert(rateLimited.response.status === 429 && rateLimited.response.headers.get("retry-after"), "mutation rate limit returns 429 and Retry-After");
+  assert(allowedBeforeLimit === 120, `rate-limit allows exactly 120 requests, got ${allowedBeforeLimit}`);
+  assert(rateLimited?.response.status === 429 && rateLimited.response.headers.get("retry-after"), "mutation rate limit returns 429 and Retry-After");
   const exported = await request("/api/account/export", { method: "POST", body: "{}" });
   assert(exported.response.status === 201 && typeof exported.body?.downloadPath === "string", "data export");
   const exportedFile = await request(exported.body.downloadPath);
@@ -289,12 +294,18 @@ try {
   assert(internalUnauthenticated.response.status === 401, "retention endpoint requires internal token");
   const retention = await request("/internal/retention", { method: "POST", headers: { "X-Internal-Token": "e2e-internal" }, body: JSON.stringify({ dry_run: true, limit: 10 }) });
   assert(retention.response.status === 200 && retention.body?.dryRun === true && retention.body?.candidateAssessments >= 1, "retention dry-run endpoint and candidate preview");
+  const interruptedRetention = await request("/internal/retention", { method: "POST", headers: { "X-Internal-Token": "e2e-internal" }, body: JSON.stringify({ dry_run: false, limit: 10, fault_after_artifacts: true }) });
+  assert(interruptedRetention.response.status === 200 && interruptedRetention.body?.purgedAssessments === 0, "retention interruption leaves durable job after artifact deletion");
+  const retainedAfterInterruption = await request(`/api/assessments/${retentionAssessmentId}`, { headers: { "x-orbita-preview-user": retentionUserId } });
+  assert(retainedAfterInterruption.response.status === 200, "retention crash boundary keeps database state recoverable");
   const retentionRun = await request("/internal/retention", { method: "POST", headers: { "X-Internal-Token": "e2e-internal" }, body: JSON.stringify({ dry_run: false, limit: 10 }) });
-  assert(retentionRun.response.status === 200 && retentionRun.body?.dryRun === false && retentionRun.body?.purgedAssessments >= 1, "retention real purge");
+  assert(retentionRun.response.status === 200 && retentionRun.body?.dryRun === false && retentionRun.body?.resumedJobs >= 1 && retentionRun.body?.purgedAssessments >= 1 && retentionRun.body?.completedJobs >= 1, "retention retry completes persistent purge job");
   const purgedRetentionAssessment = await request(`/api/assessments/${retentionAssessmentId}`, { headers: { "x-orbita-preview-user": retentionUserId } });
   assert(purgedRetentionAssessment.response.status === 404, "retention purges an old completed assessment");
   const activeRetentionAssessment = await request(`/api/assessments/${activeRetentionAssessmentId}`, { headers: { "x-orbita-preview-user": retentionUserId } });
   assert(activeRetentionAssessment.response.status === 200 && activeRetentionAssessment.body?.state === "CORE_IN_PROGRESS", "retention excludes active assessment state");
+  const purgeJob = runWrangler(["d1", "execute", "DB", "--local", "--config", configPath, "--persist-to", stateDir, "--command", `SELECT status,error_class,counts_json FROM purge_jobs WHERE target_id = ${sql(retentionAssessmentId)}`]);
+  assert(purgeJob.includes("PURGE_COMPLETE") && !purgeJob.includes("R2_DELETE_FAILED") && !purgeJob.includes("D1_DELETE_FAILED"), "retention job reaches idempotent final state");
   console.log(`E2E smoke passed: ${sessionId}`);
 } catch (error) {
   console.error(output.slice(-8000));

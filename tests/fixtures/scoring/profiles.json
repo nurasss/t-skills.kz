@@ -1,0 +1,44 @@
+[
+  {
+    "name": "analytical-heavy",
+    "recipe": { "kind": "domain", "domainIndex": 0 },
+    "expectedTop5": ["T02", "T03", "T01", "T04", "T05"],
+    "expectedScoreSha256": "6619947dcb05305e4ed1a0c2ce3dcd6eace8e348c6660bfd6d6103deb6de8a80"
+  },
+  {
+    "name": "creation-heavy",
+    "recipe": { "kind": "domain", "domainIndex": 1 },
+    "expectedTop5": ["T07", "T08", "T10", "T06", "T09"],
+    "expectedScoreSha256": "7e43402ef304a3a9bc2286b89368f2a2fef51d69e5a95197434075be1a215721"
+  },
+  {
+    "name": "execution-heavy",
+    "recipe": { "kind": "domain", "domainIndex": 2 },
+    "expectedTop5": ["T11", "T12", "T13", "T14", "T15"],
+    "expectedScoreSha256": "c160f330879410021aca985ad85374e157e868c85a593109b246203b55ea8d19"
+  },
+  {
+    "name": "influence-heavy",
+    "recipe": { "kind": "domain", "domainIndex": 3 },
+    "expectedTop5": ["T16", "T17", "T20", "T19", "T18"],
+    "expectedScoreSha256": "dd2f99464c497c0c52d1f919c8fc4b3b5272251130abc4a65ce6ef78c64bf088"
+  },
+  {
+    "name": "collaboration-heavy",
+    "recipe": { "kind": "domain", "domainIndex": 4 },
+    "expectedTop5": ["T22", "T24", "T25", "T21", "T23"],
+    "expectedScoreSha256": "4dceb65359a4b8cbfd06a0c14659a804e91ba58711e56c2e295949b72a1d3f17"
+  },
+  {
+    "name": "mixed-balanced",
+    "recipe": { "kind": "balanced" },
+    "expectedTop5": ["T13", "T20", "T06", "T08", "T27"],
+    "expectedScoreSha256": "5be3ff54f392e1cb4b4dedb70b3142b321398e8da46aa227a98327db78920688"
+  },
+  {
+    "name": "contradictory-low-confidence",
+    "recipe": { "kind": "contradictory-low-confidence" },
+    "expectedTop5": ["T02", "T03", "T04", "T05", "T11"],
+    "expectedScoreSha256": "8c7a36ac28427be7c152015df7ddb971aff6b3bfd0e409972023aae4b04ab57f"
+  }
+]

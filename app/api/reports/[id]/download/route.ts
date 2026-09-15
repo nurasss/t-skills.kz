@@ -1,6 +1,7 @@
 import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
 import { getReportPdfForUser, recordTelemetry } from "@/lib/durable-store";
 import { verifyPdfDownloadToken } from "@/lib/pdf-access";
+import { resourceBelongsToViewer } from "@/lib/ownership-policy";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = viewerOrResponse(request);
@@ -15,7 +16,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       });
     }
     const grant = await verifyPdfDownloadToken(token);
-    if (!grant || grant.reportId !== id || grant.userId !== viewer.userId) {
+    if (!grant || grant.reportId !== id || !resourceBelongsToViewer(grant.userId, viewer.userId)) {
       return new Response(JSON.stringify({ error: "PDF_LINK_INVALID", message: "Ссылка на PDF недействительна или истекла." }), {
         status: 401,
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },

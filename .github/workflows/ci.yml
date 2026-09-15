@@ -30,15 +30,29 @@ jobs:
         run: npx tsc --noEmit
       - name: Unit and contract tests
         run: npm test
+      - name: Coverage gates
+        run: npm run test:coverage
+      - name: Migration consistency
+        run: npm run db:check
       - name: Production build
         run: npm run build
+      - name: Install browser for CSP regression
+        run: npx playwright install --with-deps chromium
+      - name: Browser hydration and CSP regression
+        run: npm run test:browser
+      - name: PDF visual fixtures
+        run: npm run test:pdf-visual
       - name: Local Worker/D1/R2 negative smoke
         run: npm run test:e2e
+      - name: Retention index query plan
+        run: npm run test:retention-plan
+      - name: Concurrent load and idempotency smoke
+        run: npm run test:load
       - name: Backup and restore smoke
         run: npm run test:backup
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
-      - name: Reproducible source package
-        run: npm run package:source -- /tmp/orbita-30-source.tar.gz
+      - name: Verify release manifest and reproducible package
+        run: npm run release:verify
       - name: Verify clean checkout
         run: test -z "$(git status --porcelain)"

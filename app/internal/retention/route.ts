@@ -11,13 +11,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "INTERNAL_AUTHENTICATION_REQUIRED" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   try {
-    const body = await request.json().catch(() => ({})) as { dry_run?: unknown; limit?: unknown };
-    const configuredDryRun = getRuntimeEnv().RETENTION_DRY_RUN?.trim().toLowerCase();
+    const body = await request.json().catch(() => ({})) as { dry_run?: unknown; limit?: unknown; fault_after_artifacts?: unknown };
+    const runtimeEnv = getRuntimeEnv();
+    const configuredDryRun = runtimeEnv.RETENTION_DRY_RUN?.trim().toLowerCase();
     const dryRun = body.dry_run === undefined
       ? configuredDryRun === undefined || configuredDryRun === "" || configuredDryRun === "true"
       : body.dry_run === true || body.dry_run === "true";
     const limit = typeof body.limit === "number" && Number.isFinite(body.limit) ? body.limit : undefined;
-    return NextResponse.json(await runRetentionSweep({ dryRun, limit }), { headers: { "Cache-Control": "no-store" } });
+    const stopAfterArtifacts = runtimeEnv.ORBITA_ENV === "development" && body.fault_after_artifacts === true;
+    return NextResponse.json(await runRetentionSweep({ dryRun, limit, stopAfterArtifacts }), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return errorResponse(error);
   }

@@ -153,6 +153,7 @@ export type ReportJSON = {
 
 const traitCodes = TRAITS.map((trait) => trait.code) as TraitCode[];
 const traitByCode = new Map(TRAITS.map((trait) => [trait.code, trait]));
+const itemById = new Map<string, Item>(ITEM_BANK.map((item) => [item.id, item]));
 
 function emptyEvidence(): Record<TraitCode, number[]> {
   return Object.fromEntries(traitCodes.map((code) => [code, []])) as unknown as Record<
@@ -246,6 +247,15 @@ function qualityAssessment(responses: ResponseMap, likertResponses: number[], re
 }
 
 export function scoreAssessment(responses: ResponseMap, responseTimes: Record<string, number> = {}): ScoreProfile {
+  for (const [itemId, value] of Object.entries(responses)) {
+    const item = itemById.get(itemId);
+    if (!item) throw new Error(`INVALID_ITEM:${itemId}`);
+    if (!Number.isFinite(value) || !Number.isInteger(value)) throw new Error(`INVALID_RESPONSE:${itemId}`);
+    const inRange = item.type === "forced" || item.type === "adaptive_forced"
+      ? value >= -2 && value <= 2
+      : value >= 1 && value <= 7;
+    if (!inRange) throw new Error(`INVALID_RESPONSE:${itemId}`);
+  }
   const forcedEvidence = emptyEvidence();
   const likertEvidence = emptyEvidence();
   const adaptiveEvidence = emptyEvidence();
@@ -676,7 +686,7 @@ export function buildReport(profile: ScoreProfile): ReportJSON {
 }
 
 export function getItemById(id: string) {
-  return ITEM_BANK.find((item) => item.id === id);
+  return itemById.get(id);
 }
 
 export function itemCountSummary() {

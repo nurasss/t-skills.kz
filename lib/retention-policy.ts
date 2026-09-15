@@ -18,3 +18,7 @@ export function retentionDaysFrom(value: string | undefined) {
   const parsed = Number(value ?? "365");
   return Number.isSafeInteger(parsed) ? Math.min(3650, Math.max(30, parsed)) : 365;
 }
+
+export function purgeAfterFrom(completedAt: number, retentionDays: number) {
+  return completedAt + retentionDays * 24 * 60 * 60 * 1000;
+}

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -19,8 +19,8 @@ try {
   // `wrangler d1 export` uses the standard local state path (unlike d1 execute,
   // it has no --persist-to flag). This path is generated and disposable.
   rmSync(localState, { recursive: true, force: true });
-  for (const migration of ["0000_tired_satana.sql", "0001_futuristic_zeigeist.sql", "0002_brown_vargas.sql", "0003_petite_jasper_sitwell.sql", "0004_clean_calypso.sql", "0005_charming_devos.sql", "0006_common_rick_jones.sql", "0007_tough_gorgon.sql"]) {
-    wrangler(["d1", "execute", "DB", "--local", "--config", config, "--file", `drizzle/${migration}`]);
+  for (const migration of readdirSync("drizzle").filter((entry) => /^\d+_.*\.sql$/.test(entry)).sort()) {
+    wrangler(["d1", "execute", "DB", "--local", "--config", config, "--file", "drizzle/" + migration]);
   }
   wrangler(["d1", "execute", "DB", "--local", "--config", config, "--command", "INSERT OR REPLACE INTO users (id,email,locale,created_at,updated_at) VALUES ('backup_smoke','backup@local.invalid','ru',1,1)"]);
   wrangler(["d1", "export", "DB", "--local", "--config", config, "--output", backupFile, "--skip-confirmation"]);

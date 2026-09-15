@@ -57,6 +57,13 @@
       "when": 1789460920850,
       "tag": "0007_tough_gorgon",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789478316950,
+      "tag": "0008_young_adam_warlock",
+      "breakpoints": true
     }
   ]
 }

@@ -81,11 +81,14 @@ export const assessments = sqliteTable(
     createdAt: integer("created_at", { mode: "number" }).notNull(),
     consentedAt: integer("consented_at", { mode: "number" }),
     completedAt: integer("completed_at", { mode: "number" }),
+    purgeState: text("purge_state").notNull().default("ACTIVE"),
+    purgeAfter: integer("purge_after", { mode: "number" }),
     updatedAt: integer("updated_at", { mode: "number" }).notNull(),
   },
   (table) => [
     index("assessments_user_updated_idx").on(table.userId, table.updatedAt),
     index("assessments_state_idx").on(table.state),
+    index("assessments_purge_due_idx").on(table.purgeState, table.purgeAfter),
     uniqueIndex("assessments_entitlement_unique").on(table.entitlementId),
     uniqueIndex("assessments_report_unique").on(table.reportId),
   ],
@@ -248,4 +251,23 @@ export const rateLimits = sqliteTable(
     updatedAt: integer("updated_at", { mode: "number" }).notNull(),
   },
   (table) => [index("rate_limits_updated_idx").on(table.updatedAt)],
+);
+
+export const purgeJobs = sqliteTable(
+  "purge_jobs",
+  {
+    id: text("id").primaryKey(),
+    targetId: text("target_id").notNull(),
+    status: text("status").notNull(),
+    jobVersion: text("job_version").notNull(),
+    countsJson: text("counts_json").notNull().default("{}"),
+    errorClass: text("error_class"),
+    startedAt: integer("started_at", { mode: "number" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+    completedAt: integer("completed_at", { mode: "number" }),
+  },
+  (table) => [
+    uniqueIndex("purge_jobs_target_unique").on(table.targetId),
+    index("purge_jobs_status_updated_idx").on(table.status, table.updatedAt),
+  ],
 );

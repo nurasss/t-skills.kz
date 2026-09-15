@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { gzipSync } from "node:zlib";
 import { dirname, join, resolve } from "node:path";
@@ -6,27 +6,34 @@ import { tmpdir } from "node:os";
 
 const root = resolve(process.cwd());
 const output = resolve(process.argv[2] ?? join(tmpdir(), "orbita-30-source.tar.gz"));
+const sourceRevision = process.argv[3] ?? process.env.SOURCE_GIT_SHA ?? "HEAD";
+const sourceGitSha = execFileSync("git", ["rev-parse", "--verify", `${sourceRevision}^{commit}`], { cwd: root, encoding: "utf8" }).trim();
 const forbidden = ["node_modules/", "dist/", ".next/", ".wrangler/", ".vinext/", ".vite/", ".sites-runtime/", ".DS_Store"];
 // Release evidence records their own source/package identity and are delivered
 // alongside the immutable source archive, so excluding them avoids a hash
 // cycle while keeping the archive free of generated release state.
 const releaseEvidence = new Set(["FINAL_ACCEPTANCE.md", "CI_EVIDENCE.txt", "RELEASE_MANIFEST.json"]);
-const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" })
-  .split("\n")
-  .map((file) => file.trim())
+const treeEntries = execFileSync("git", ["ls-tree", "-r", "-z", "--full-tree", sourceGitSha], { cwd: root })
+  .toString("utf8")
+  .split("\0")
   .filter(Boolean)
-  .filter((file) => !releaseEvidence.has(file))
-  .filter((file) => !forbidden.some((prefix) => file === prefix || file.startsWith(prefix)));
+  .map((entry) => {
+    const match = entry.match(/^(\d+) (\w+) ([0-9a-f]+)\t(.+)$/s);
+    if (!match) throw new Error("SOURCE_TREE_ENTRY_INVALID");
+    const [, mode, type, object, file] = match;
+    if (type !== "blob") throw new Error(`SOURCE_TREE_UNSUPPORTED_ENTRY:${file}`);
+    return { mode, object, file };
+  });
+const includedEntries = treeEntries
+  .filter(({ file }) => !releaseEvidence.has(file))
+  .filter(({ file }) => !forbidden.some((prefix) => file === prefix || file.startsWith(prefix)))
+  .sort((left, right) => left.file.localeCompare(right.file));
+const files = includedEntries.map(({ file }) => file);
 if (!files.includes("package-lock.json")) throw new Error("SOURCE_PACKAGE_LOCKFILE_MISSING");
 
-const gitModes = new Map(
-  execFileSync("git", ["ls-files", "--stage"], { cwd: root, encoding: "utf8" })
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const match = line.match(/^(\d+) [0-9a-f]+ \d+\t(.+)$/);
-      return match ? [match[2], match[1]] : ["", ""];
-    }),
+const gitModes = new Map(includedEntries.map(({ file, mode }) => [file, mode]));
+const gitObjects = new Map(
+  includedEntries.map(({ file, object }) => [file, execFileSync("git", ["cat-file", "blob", object], { cwd: root })]),
 );
 
 function tarString(buffer, offset, length, value) {
@@ -66,11 +73,13 @@ function tarHeader(file, size) {
   return header;
 }
 
-function deterministicTarGzip(staging, packageFiles) {
+function deterministicTarGzip(packageFiles) {
   const chunks = [];
   for (const file of [...packageFiles, "SOURCE_MANIFEST.txt"].sort()) {
-    const source = join(staging, file);
-    const content = readFileSync(source);
+    const content = file === "SOURCE_MANIFEST.txt"
+      ? Buffer.from(`source_git_sha=${sourceGitSha}\n${packageFiles.join("\n")}\n`, "utf8")
+      : gitObjects.get(file);
+    if (!content) throw new Error(`SOURCE_BLOB_MISSING:${file}`);
     chunks.push(tarHeader(file, content.length), content);
     const padding = (512 - (content.length % 512)) % 512;
     if (padding) chunks.push(Buffer.alloc(padding));
@@ -80,19 +89,7 @@ function deterministicTarGzip(staging, packageFiles) {
 }
 
 mkdirSync(dirname(output), { recursive: true });
-const staging = mkdtempSync(join(tmpdir(), "orbita-30-source-"));
-try {
-  for (const file of files) {
-    const source = resolve(root, file);
-    const target = join(staging, file);
-    if (!source.startsWith(`${root}/`) || !existsSync(source)) throw new Error(`SOURCE_PACKAGE_INVALID_PATH:${file}`);
-    mkdirSync(dirname(target), { recursive: true });
-    cpSync(source, target);
-  }
-  writeFileSync(join(staging, "SOURCE_MANIFEST.txt"), `${files.join("\n")}\n`);
-  writeFileSync(output, deterministicTarGzip(staging, files));
-  console.log(`Source package: ${output}`);
-  console.log(`Files: ${files.length}`);
-} finally {
-  rmSync(staging, { recursive: true, force: true });
-}
+writeFileSync(output, deterministicTarGzip(files));
+console.log(`Source package: ${output}`);
+console.log(`Source Git SHA: ${sourceGitSha}`);
+console.log(`Files: ${files.length}`);

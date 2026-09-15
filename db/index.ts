@@ -27,6 +27,7 @@ export type OrbitaRuntimeEnv = {
   ORBITA_INTERNAL_TOKEN?: string;
   CRON_SECRET?: string;
   SUPPORT_CONTACT?: string;
+  SECURITY_CONTACT_EMAIL?: string;
   LEGAL_ENTITY_NAME?: string;
   LEGAL_JURISDICTION?: string;
   LEGAL_PROCESSING_PURPOSES?: string;

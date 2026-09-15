@@ -8,58 +8,57 @@ const archiveArgument = process.argv[2];
 if (!archiveArgument) throw new Error("RELEASE_ARCHIVE_REQUIRED");
 const archive = resolve(archiveArgument);
 
-function sha256File(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function git(args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 }
 
-const migrations = execFileSync("git", ["ls-files", "drizzle"], { cwd: root, encoding: "utf8" })
+const sourceGitSha = git(["rev-parse", process.argv[3] ?? process.env.SOURCE_GIT_SHA ?? "HEAD"]);
+const migrations = git(["ls-tree", "-r", "--name-only", sourceGitSha, "--", "drizzle"])
   .split("\n")
-  .map((file) => file.trim())
   .filter((file) => /^drizzle\/\d+_.*\.sql$/.test(file))
   .sort();
-const packageLockSha256 = sha256File(resolve(root, "package-lock.json"));
-const sourceGitSha = git(["rev-parse", "HEAD"]);
+const packageLock = execFileSync("git", ["show", `${sourceGitSha}:package-lock.json`], { cwd: root });
 const manifest = {
-  schemaVersion: "orbita-30-release-manifest-v1",
-  generatedAt: new Date().toISOString(),
-  sourceGitSha,
-  sourcePackage: {
+  schema_version: "orbita-30-release-manifest-v2",
+  generated_at: new Date().toISOString(),
+  source_git_sha: sourceGitSha,
+  source_package: {
     file: "orbita-30-source-release.tar.gz",
-    sha256: sha256File(archive),
-    excludes: ["node_modules", "dist", ".next", ".wrangler", ".vinext", ".vite", ".sites-runtime", ".DS_Store", "release evidence records"],
+    sha256: sha256(readFileSync(archive)),
+    packaging_rule: "tracked blobs from exact source_git_sha; generated release evidence excluded",
   },
   runtime: {
-    node: process.version,
-    engine: ">=22.13.0",
-    packageLockSha256,
+    node: process.version.replace(/^v/, ""),
+    required_node: "22.13.0",
+    package_lock_sha256: sha256(packageLock),
   },
   database: {
-    latestMigration: migrations.at(-1)?.replace(/^drizzle\//, "") ?? null,
+    latest_migration: migrations.at(-1)?.replace(/^drizzle\//, "") ?? null,
     migrations,
   },
   versions: {
     assessment: "orbita30_ru_v1",
-    itemBank: "draft-pilot-v1",
+    item_bank: "draft-pilot-v1",
     scoring: "mvp-0.4-norm-safe",
     norms: "pilot-index-unvalidated-v1",
-    adaptiveSelector: "selector-0.3",
+    adaptive_selector: "selector-0.3",
     report: "report-0.3",
-    reportPrompt: "report-writer-0.3",
+    report_prompt: "report-writer-0.3",
     translation: "ru-source-v1",
-    interpretationLibrary: "approved-interpretation-v1",
+    interpretation_library: "approved-interpretation-v1",
     consent: "privacy-2026-09",
   },
-  gatePolicy: {
-    engineering: "NO until clean Linux CI and clean release checkout evidence",
-    closedPilot: "NO until external content/legal/protocol/support approvals",
-    publicPaid: "NO until public auth/live Stripe/KZ legal/operations approvals",
-    validatedClaims: "NO until preregistered psychometric evidence and independent review",
-    normativePercentiles: "NO until approved language/population-specific norms",
+  acceptance_gates: {
+    ready_for_engineering_100: "PENDING_CLEAN_LINUX_RELEASE_VERIFICATION",
+    ready_for_closed_pilot: "NO_EXTERNAL_APPROVALS",
+    ready_for_public_paid_launch: "NO_PUBLIC_AUTH_LIVE_STRIPE_LEGAL_OPERATIONS",
+    ready_for_validated_claims: "NO_PSYCHOMETRIC_VALIDATION",
+    ready_for_normative_percentiles: "NO_APPROVED_NORMS",
   },
 };
 writeFileSync(resolve(root, "RELEASE_MANIFEST.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-console.log(`RELEASE_MANIFEST=PASS source_git_sha=${sourceGitSha} source_sha256=${manifest.sourcePackage.sha256}`);
+console.log(`RELEASE_MANIFEST=PASS source_git_sha=${sourceGitSha} source_sha256=${manifest.source_package.sha256}`);

@@ -1,4 +1,4 @@
-import { getD1, getR2 } from "@/db";
+import { getD1, getR2, getRuntimeEnv } from "@/db";
 import {
   normalizeScoreProfile,
   scoreAssessment,
@@ -16,25 +16,11 @@ import { validatePaymentSnapshot } from "@/lib/payment-integrity";
 import { isTelemetryEventName, sanitizeTelemetryMetadata, type TelemetryEventName } from "@/lib/analytics";
 import { canPublishLocale, resolveLocale, type Locale } from "@/lib/i18n";
 import { nextPaymentStatus, paymentTelemetryEvent, type PaymentEventStatus, type PaymentOperationalStatus } from "@/lib/payment-event-policy";
+import { canSessionTransition, type SessionState } from "@/lib/assessment-state-machine";
+import { purgeAfterFrom, retentionDaysFrom } from "@/lib/retention-policy";
 import type { Viewer } from "@/lib/server-auth";
 
-export type SessionState =
-  | "CREATED"
-  | "PAYMENT_PENDING"
-  | "PAID"
-  | "CONSENTED"
-  | "CORE_IN_PROGRESS"
-  | "CORE_COMPLETE"
-  | "ADAPTIVE_SELECTING"
-  | "ADAPTIVE_IN_PROGRESS"
-  | "SCORING"
-  | "REPORT_GENERATING"
-  | "COMPLETE"
-  | "PAYMENT_FAILED"
-  | "EXPIRED"
-  | "CANCELLED"
-  | "INVALIDATED"
-  | "REPORT_FAILED_RETRYABLE";
+export type { SessionState } from "@/lib/assessment-state-machine";
 
 export type DurableSession = {
   id: string;
@@ -876,6 +862,7 @@ export async function consentSessionForUser(
   if (!(["PAID", "CONSENTED"] as SessionState[]).includes(assessment.state)) {
     throw new StoreError("CONSENT_NOT_AVAILABLE", 409);
   }
+  if (!canSessionTransition(assessment.state, "CONSENTED")) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
   const consentEntries: Array<[keyof ConsentChoices, boolean]> = [
     ["terms", choices.terms],
     ["privacy", choices.privacy],
@@ -963,6 +950,7 @@ export async function saveResponse(input: {
   const timestamp = now();
   const serverSeq = session.clientSeq + 1;
   const nextState = isCoreItem(input.itemId) ? "CORE_IN_PROGRESS" : "ADAPTIVE_IN_PROGRESS";
+  if (!canSessionTransition(session.state, nextState)) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
   try {
     await database.batch([
       database
@@ -1038,6 +1026,7 @@ export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
   }
   const coreAnswered = Object.keys(session.responses).filter(isCoreItem).length;
   if (coreAnswered < 250) throw new StoreError("CORE_INCOMPLETE", 422);
+  if (!canSessionTransition(session.state, "ADAPTIVE_IN_PROGRESS")) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
   const preliminary = scoreAssessment(session.responses, session.responseTimes);
   const decision = await selectAdaptiveForProfile(preliminary, Object.keys(session.responses), 12);
   const selection = decision.selection;
@@ -1138,6 +1127,7 @@ export async function completeAssessmentForUser(sessionId: string, viewer: Viewe
   if (!session.adaptiveItemIds.length) throw new StoreError("ADAPTIVE_NOT_SELECTED", 422);
   const missing = session.adaptiveItemIds.filter((itemId) => typeof session.responses[itemId] !== "number");
   if (missing.length) throw new StoreError("ADAPTIVE_INCOMPLETE", 422);
+  if (!canSessionTransition(session.state, "REPORT_GENERATING")) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
 
   const profile = scoreAssessment(session.responses, session.responseTimes);
   const reportId = newId("rep");
@@ -1208,6 +1198,7 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
       customMetadata: { reportId, userId: viewer.userId, scoreVersion: score.versions.scoring },
     });
     const timestamp = now();
+    const purgeAfter = purgeAfterFrom(timestamp, retentionDaysFrom(getRuntimeEnv().RETENTION_DAYS));
     await database
       .prepare(
       `UPDATE reports SET status = 'COMPLETE', provider = ?, report_json = ?,
@@ -1231,10 +1222,11 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
       .run();
     await database
       .prepare(
-        `UPDATE assessments SET state = 'COMPLETE', completed_at = ?, updated_at = ?
+        `UPDATE assessments
+         SET state = 'COMPLETE', completed_at = ?, purge_state = 'ACTIVE', purge_after = ?, updated_at = ?
          WHERE id = ? AND user_id = ?`,
       )
-      .bind(timestamp, timestamp, row.assessment_id, viewer.userId)
+      .bind(timestamp, purgeAfter, timestamp, row.assessment_id, viewer.userId)
       .run();
     await audit(viewer.userId, "REPORT_COMPLETED", "report", reportId, { provider: generated.provider, fallback: Boolean(generated.fallbackReason), reason: generated.fallbackReason });
     await serverTelemetry({ name: "adaptive_completed", userId: viewer.userId, assessmentId: row.assessment_id, metadata: { count: score.adaptiveAnswered, status: "COMPLETE" } });

@@ -45,6 +45,8 @@ import {
   type ScoreProfile,
 } from "@/lib/assessment-engine";
 import { ITEM_BANK, TRAITS, type Item } from "@/lib/item-bank";
+import { enqueuePending, findPendingItem, pendingForSession, removePending } from "@/lib/response-retry-queue";
+import { routeForView } from "@/lib/view-routing";
 
 const CORE_ITEMS = ITEM_BANK.filter((item) => Number(item.id.slice(1)) <= 250);
 const DOMAIN_COLORS = ["coral", "cyan", "lime", "violet", "amber", "blue"];
@@ -901,30 +903,9 @@ export function OrbitaApp({
     setReportId(id);
   };
 
-  const routeForView = (next: View) => {
-    const activeSessionId = sessionIdRef.current;
-    const activeReportId = reportIdRef.current;
-    if (next === "home") return "/";
-    if (next === "catalog") return "/tests";
-    if (next === "detail") return "/tests/orbita30";
-    if (next === "checkout") return "/checkout/orbita30";
-    if (next === "consent" && activeSessionId) return `/assessment/${activeSessionId}`;
-    if (next === "assessment" && activeSessionId) return `/assessment/${activeSessionId}`;
-    if (next === "break" && activeSessionId) return phase === "adaptive" ? `/assessment/${activeSessionId}/adaptive` : `/assessment/${activeSessionId}/break`;
-    if (next === "processing" && activeSessionId) return `/assessment/${activeSessionId}/processing`;
-    if (next === "results" && activeReportId) return `/results/${activeReportId}`;
-    if (next === "account") return "/account";
-    if (next === "methodology") return "/methodology";
-    if (next === "privacy") return "/privacy";
-    if (next === "terms") return "/terms";
-    if (next === "faq") return "/faq";
-    if (next === "support") return "/support";
-    return "/";
-  };
-
   const go = (next: View) => {
     setView(next);
-    window.history.replaceState({}, "", routeForView(next));
+    window.history.replaceState({}, "", routeForView(next, { sessionId: sessionIdRef.current, reportId: reportIdRef.current, phase }));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -937,7 +918,7 @@ export function OrbitaApp({
   const firstUnansweredCore = CORE_ITEMS.findIndex((item) => typeof responses[item.id] !== "number");
 
   const hydrateSession = (payload: SessionPayload) => {
-    const pending = pendingRef.current.filter((item) => item.sessionId === payload.id);
+    const pending = pendingForSession(pendingRef.current, payload.id);
     const pendingResponses = Object.fromEntries(pending.map((item) => [item.itemId, item.response])) as ResponseMap;
     serverSavedRef.current = new Set(Object.keys(payload.responses));
     setResponses({ ...payload.responses, ...pendingResponses });
@@ -1016,7 +997,7 @@ export function OrbitaApp({
         }),
       });
       serverSavedRef.current.add(pending.itemId);
-      pendingRef.current = pendingRef.current.filter((item) => item.idempotencyKey !== pending.idempotencyKey);
+      pendingRef.current = removePending(pendingRef.current, pending.idempotencyKey);
       writePendingResponses(pendingRef.current);
       setAutosaveStatus("ответ сохранён");
     } catch (error) {
@@ -1084,7 +1065,7 @@ export function OrbitaApp({
   const saveResponse = (value: number, waitForServer = false) => {
     if (!activeItem || !sessionIdRef.current || demoMode) return;
     if (serverSavedRef.current.has(activeItem.id)) return;
-    const alreadyPending = pendingRef.current.find((item) => item.sessionId === sessionIdRef.current && item.itemId === activeItem.id);
+    const alreadyPending = findPendingItem(pendingRef.current, sessionIdRef.current, activeItem.id);
     if (alreadyPending) {
       setAutosaveStatus("сохраняем первый выбор…");
       if (waitForServer) return persistPendingResponse(alreadyPending);
@@ -1099,7 +1080,7 @@ export function OrbitaApp({
       clientSeq: Object.keys(responses).length + 1,
       idempotencyKey: `${sessionIdRef.current}:${activeItem.id}:${crypto.randomUUID()}`,
     };
-    pendingRef.current = [...pendingRef.current, pending];
+    pendingRef.current = enqueuePending(pendingRef.current, pending);
     writePendingResponses(pendingRef.current);
     setResponses((current) => ({ ...current, [activeItem.id]: value }));
     setAutosaveStatus("сохраняем…");
@@ -1135,7 +1116,7 @@ export function OrbitaApp({
   const nextQuestion = async (responseOverride?: number) => {
     const currentResponse = typeof responseOverride === "number" ? responseOverride : activeItem ? responses[activeItem.id] : undefined;
     if (!activeItem || typeof currentResponse !== "number") return;
-    const pending = pendingRef.current.find((item) => item.sessionId === sessionIdRef.current && item.itemId === activeItem.id);
+    const pending = findPendingItem(pendingRef.current, sessionIdRef.current, activeItem.id);
     if (pending) {
       try {
         await persistPendingResponse(pending);
