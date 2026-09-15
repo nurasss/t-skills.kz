@@ -1,6 +1,6 @@
 # ORBITA—30
 
-Production-ready foundation for the ORBITA—30 strengths assessment: a 300-item Russian item bank, deterministic scoring, validated adaptive selection, protected ChatGPT identity, durable Cloudflare D1 state, R2 report artifacts, PDF generation, Stripe Checkout/webhooks, exports and deletion workflows, telemetry, and a private Sites deployment.
+Production-ready foundation for the ORBITA—30 strengths assessment: a 300-item Russian item bank, deterministic scoring, backend-validated adaptive selection, protected ChatGPT identity, durable Cloudflare D1 state, private R2 report artifacts, short-lived signed PDF links, Stripe Checkout/webhooks, exports and deletion workflows, telemetry, and a private Sites deployment.
 
 The assessment is an original developmental product. It is not a Gallup/CliftonStrengths® implementation, a diagnosis, or a high-stakes decision tool. Items are marked `draft for pilot` until independent psychometric validation is completed.
 
@@ -61,6 +61,7 @@ PAYMENT_PROVIDER=stripe
 ASSESSMENT_CURRENCY=KZT
 APP_BASE_URL=https://orbita-30.yzh905284.chatgpt.site
 REPORT_PROVIDER=approved-library
+ADAPTIVE_PROVIDER=approved-library
 RETENTION_DAYS=365
 ```
 
@@ -69,11 +70,17 @@ Required before accepting real payments:
 - `ASSESSMENT_PRICE_MINOR` — exact price in minor units; for example, 1,500 KZT is `150000`.
 - secret `STRIPE_SECRET_KEY`.
 - secret `STRIPE_WEBHOOK_SECRET` for the endpoint `/api/payments/webhook`.
+- secret `PDF_SIGNING_SECRET` for five-minute signed PDF download links.
 
 Optional AI narrative provider:
 
 - `REPORT_PROVIDER=openai` and secret `OPENAI_API_KEY`.
 - Optional `REPORT_MODEL` (defaults to `gpt-5`) and `OPENAI_BASE_URL`.
+
+Optional AI adaptive selector:
+
+- `ADAPTIVE_PROVIDER=openai` and the same secret `OPENAI_API_KEY`.
+- Optional `ADAPTIVE_MODEL` and `ADAPTIVE_TIMEOUT_MS`; invalid, unavailable, or timed-out selection is recorded and falls back to the deterministic selector.
 
 The default `approved-library` provider is deterministic and safe to run without an AI key. It never pretends that an AI call happened. Set `ORBITA_ADMIN_USER_IDS` only for the ChatGPT user IDs that should access aggregate admin metrics.
 

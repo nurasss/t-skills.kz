@@ -1,11 +1,26 @@
 import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
 import { getReportPdfForUser, recordTelemetry } from "@/lib/durable-store";
+import { verifyPdfDownloadToken } from "@/lib/pdf-access";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const { id } = await params;
   try {
+    const token = new URL(request.url).searchParams.get("token");
+    if (!token) {
+      return new Response(JSON.stringify({ error: "PDF_LINK_REQUIRED", message: "Сначала запросите короткоживущую ссылку на PDF." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+    const grant = await verifyPdfDownloadToken(token);
+    if (!grant || grant.reportId !== id || grant.userId !== viewer.userId) {
+      return new Response(JSON.stringify({ error: "PDF_LINK_INVALID", message: "Ссылка на PDF недействительна или истекла." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
     const object = await getReportPdfForUser(id, viewer);
     await recordTelemetry({ viewer, name: "pdf_downloaded" });
     return new Response(object.body, {
@@ -13,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       headers: {
         "Content-Type": object.httpMetadata?.contentType ?? "application/pdf",
         "Content-Disposition": object.httpMetadata?.contentDisposition ?? ('attachment; filename="orbita-30-' + id + '.pdf"'),
-        "Cache-Control": "private, max-age=300",
+        "Cache-Control": "private, no-store",
         ETag: object.httpEtag,
       },
     });

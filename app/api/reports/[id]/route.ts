@@ -17,6 +17,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       score: report.score,
       report: report.report,
       pdf_available: report.pdfAvailable,
+      generation: report.generation,
       updated_at: report.updatedAt,
     });
   } catch (error) {

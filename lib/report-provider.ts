@@ -5,7 +5,14 @@ import { TRAITS, type TraitCode } from "@/lib/item-bank";
 export type GeneratedReport = {
   report: ReportJSON;
   provider: "openai" | "approved-library";
+  promptVersion: string;
+  modelId: string | null;
+  inputHash: string;
+  outputHash: string;
+  validationResult: "passed";
 };
+
+const REPORT_PROMPT_VERSION = "report-writer-0.2";
 
 const reportSchema = {
   type: "object",
@@ -14,6 +21,8 @@ const reportSchema = {
     executiveSummary: { type: "string" },
     topStrengths: {
       type: "array",
+      minItems: 5,
+      maxItems: 5,
       items: {
         type: "object",
         additionalProperties: false,
@@ -37,6 +46,8 @@ const reportSchema = {
     },
     combinations: {
       type: "array",
+      minItems: 3,
+      maxItems: 5,
       items: {
         type: "object",
         additionalProperties: false,
@@ -52,7 +63,7 @@ const reportSchema = {
     },
     decisionStyle: { type: "string" },
     workEnvironments: { type: "array", items: { type: "string" } },
-    development30Days: { type: "array", items: { type: "string" } },
+    development30Days: { type: "array", minItems: 5, maxItems: 5, items: { type: "string" } },
     confidenceNote: { type: "string" },
   },
   required: [
@@ -89,7 +100,7 @@ function isReportJSON(value: unknown): value is ReportJSON {
   if (!value || typeof value !== "object") return false;
   const report = value as Record<string, unknown>;
   if (typeof report.executiveSummary !== "string" || report.executiveSummary.length > 2400) return false;
-  if (!Array.isArray(report.topStrengths) || report.topStrengths.length < 1 || report.topStrengths.length > 5) return false;
+  if (!Array.isArray(report.topStrengths) || report.topStrengths.length !== 5) return false;
   for (const item of report.topStrengths) {
     if (!item || typeof item !== "object") return false;
     const strength = item as Record<string, unknown>;
@@ -98,15 +109,28 @@ function isReportJSON(value: unknown): value is ReportJSON {
     if (strength.contribution.length > 1200 || strength.overuseRisk.length > 1200) return false;
     if (!isStringArray(strength.manifestations) || !isStringArray(strength.bestConditions) || !isStringArray(strength.developmentActions)) return false;
   }
-  if (!Array.isArray(report.combinations) || report.combinations.length < 1 || report.combinations.length > 5) return false;
+  if (!Array.isArray(report.combinations) || report.combinations.length < 3 || report.combinations.length > 5) return false;
   if (!report.combinations.every((item) => item && typeof item === "object" && typeof (item as Record<string, unknown>).title === "string" && typeof (item as Record<string, unknown>).text === "string")) return false;
   if (!report.teamwork || typeof report.teamwork !== "object") return false;
   const teamwork = report.teamwork as Record<string, unknown>;
   if (typeof teamwork.gives !== "string" || typeof teamwork.needs !== "string") return false;
   if (typeof report.decisionStyle !== "string" || report.decisionStyle.length > 1800) return false;
-  if (!isStringArray(report.workEnvironments, 1, 8) || !isStringArray(report.development30Days, 1, 8)) return false;
+  if (!isStringArray(report.workEnvironments, 1, 8) || !isStringArray(report.development30Days, 5, 5)) return false;
   if (typeof report.confidenceNote !== "string" || report.confidenceNote.length > 1800) return false;
   return true;
+}
+
+function validateReportAgainstProfile(report: ReportJSON, profile: ScoreProfile) {
+  const expectedTop = profile.traits.slice(0, 5).map((trait) => trait.code);
+  return report.topStrengths.length === expectedTop.length && report.topStrengths.every((item, index) => item.trait === expectedTop[index]);
+}
+
+function hex(bytes: ArrayBuffer) {
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256(value: string) {
+  return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
 }
 
 function scorePayload(profile: ScoreProfile) {
@@ -136,6 +160,7 @@ function systemPrompt() {
     "Верни только JSON по заданной схеме, на русском языке.",
     "Используй вероятностный язык: может быть, вероятно, часто помогает. Не ставь диагнозы, не оценивай IQ, здоровье, личностную ценность и не обещай профессию, успех, найм или иной исход.",
     "Низкие значения не называй слабостью или дефектом. Объясняй наблюдаемые режимы действия, условия, overuse-риск и конкретные развивающие шаги.",
+    "Используй только смыслы и формулировки, поддержанные approved interpretation library; не придумывай новые traits или свойства.",
     "Топ-сильные стороны, trait и все числовые данные должны следовать входному JSON.",
   ].join(" ");
 }
@@ -157,7 +182,7 @@ function outputText(payload: Record<string, unknown>) {
   return pieces.join("\n");
 }
 
-async function generateWithOpenAI(profile: ScoreProfile, apiKey: string): Promise<ReportJSON> {
+async function generateWithOpenAI(profile: ScoreProfile, apiKey: string, inputText: string, modelId: string): Promise<ReportJSON> {
   const runtimeEnv = getRuntimeEnv();
   const baseUrl = (runtimeEnv.OPENAI_BASE_URL ?? "https://api.openai.com").replace(/\/$/, "").replace(/\/v1$/, "");
   const controller = new AbortController();
@@ -169,13 +194,13 @@ async function generateWithOpenAI(profile: ScoreProfile, apiKey: string): Promis
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        model: runtimeEnv.REPORT_MODEL ?? runtimeEnv.OPENAI_MODEL ?? "gpt-5",
+        model: modelId,
         store: false,
         input: [
           { role: "system", content: [{ type: "input_text", text: systemPrompt() }] },
           {
             role: "user",
-            content: [{ type: "input_text", text: JSON.stringify(scorePayload(profile)) }],
+            content: [{ type: "input_text", text: inputText }],
           },
         ],
         text: {
@@ -199,7 +224,7 @@ async function generateWithOpenAI(profile: ScoreProfile, apiKey: string): Promis
     } catch {
       throw new ReportProviderError("OPENAI_INVALID_JSON");
     }
-    if (!isReportJSON(parsed)) throw new ReportProviderError("OPENAI_SCHEMA_INVALID");
+    if (!isReportJSON(parsed) || !validateReportAgainstProfile(parsed, profile)) throw new ReportProviderError("OPENAI_SCHEMA_INVALID");
     return parsed;
   } catch (error) {
     if (error instanceof ReportProviderError) throw error;
@@ -213,9 +238,35 @@ async function generateWithOpenAI(profile: ScoreProfile, apiKey: string): Promis
 export async function generateReportContent(profile: ScoreProfile): Promise<GeneratedReport> {
   const runtimeEnv = getRuntimeEnv();
   const provider = (runtimeEnv.REPORT_PROVIDER ?? "approved-library").toLowerCase();
+  const input = {
+    score_profile: scorePayload(profile),
+    approved_interpretation_library: buildReport(profile),
+  };
+  const inputText = JSON.stringify(input);
+  const inputHash = await sha256(inputText);
   if (provider === "openai") {
     if (!runtimeEnv.OPENAI_API_KEY) throw new ReportProviderError("OPENAI_API_KEY_MISSING");
-    return { report: await generateWithOpenAI(profile, runtimeEnv.OPENAI_API_KEY), provider: "openai" };
+    const modelId = runtimeEnv.REPORT_MODEL ?? runtimeEnv.OPENAI_MODEL ?? "gpt-5";
+    const report = await generateWithOpenAI(profile, runtimeEnv.OPENAI_API_KEY, inputText, modelId);
+    return {
+      report,
+      provider: "openai",
+      promptVersion: REPORT_PROMPT_VERSION,
+      modelId,
+      inputHash,
+      outputHash: await sha256(JSON.stringify(report)),
+      validationResult: "passed",
+    };
   }
-  return { report: buildReport(profile), provider: "approved-library" };
+  const report = buildReport(profile);
+  if (!isReportJSON(report) || !validateReportAgainstProfile(report, profile)) throw new ReportProviderError("REPORT_LIBRARY_INVALID");
+  return {
+    report,
+    provider: "approved-library",
+    promptVersion: "approved-library-v1",
+    modelId: null,
+    inputHash,
+    outputHash: await sha256(JSON.stringify(report)),
+    validationResult: "passed",
+  };
 }

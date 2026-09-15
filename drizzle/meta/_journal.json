@@ -15,6 +15,20 @@
       "when": 1789436073989,
       "tag": "0001_futuristic_zeigeist",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789440425457,
+      "tag": "0002_brown_vargas",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789440621265,
+      "tag": "0003_petite_jasper_sitwell",
+      "breakpoints": true
     }
   ]
 }

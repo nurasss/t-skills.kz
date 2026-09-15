@@ -5,8 +5,8 @@ export const VERSION_IDS = {
   itemBank: "draft-pilot-v1",
   scoring: "mvp-0.3",
   norms: "within-sample-preview",
-  selector: "fallback-0.1",
-  report: "report-0.1",
+  selector: "selector-0.2",
+  report: "report-0.2",
 } as const;
 
 export type ResponseMap = Record<string, number>;
@@ -49,7 +49,7 @@ export type AdaptiveSelection = {
   selectedItemIds: string[];
   reasonCodes: Record<string, string[]>;
   targetCount: number;
-  mode: "deterministic-fallback";
+  mode: "deterministic-fallback" | "ai-openai";
   validation: "passed";
 };
 
@@ -281,6 +281,7 @@ export function validateAdaptiveSelection(
   ids: string[],
   answeredItemIds: string[] = [],
   maxPerTrait = 3,
+  semanticClusters: Record<string, string> = {},
 ) {
   const adaptiveItems = new Map<string, Item>();
   for (const item of ITEM_BANK) {
@@ -289,6 +290,8 @@ export function validateAdaptiveSelection(
   if (ids.length < 10 || ids.length > 15) return false;
   if (new Set(ids).size !== ids.length) return false;
   if (ids.some((id) => !adaptiveItems.has(id) || answeredItemIds.includes(id))) return false;
+  const clusters = ids.map((id) => semanticClusters[id]).filter(Boolean);
+  if (new Set(clusters).size !== clusters.length) return false;
   const exposures = new Map<TraitCode, number>();
   for (const id of ids) {
     for (const code of targetTraitsForAdaptive(adaptiveItems.get(id)!)) {
@@ -425,6 +428,10 @@ export function buildReport(profile: ScoreProfile): ReportJSON {
       {
         title: `${top[2]?.name ?? "Ясность"} + ${top[3]?.name ?? "Связи"}`,
         text: "Такой рисунок может помогать переводить наблюдения в понятный для других следующий шаг.",
+      },
+      {
+        title: `${top[4]?.name ?? "Устойчивость"} + контекст`,
+        text: "Пятая сильная сторона может становиться заметнее, когда задача требует одновременно результата и внимания к условиям взаимодействия.",
       },
     ],
     teamwork: {

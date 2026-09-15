@@ -121,6 +121,13 @@ type ReportPayload = {
   score: ScoreProfile;
   report: ReportJSON | null;
   pdf_available: boolean;
+  generation?: {
+    promptVersion: string | null;
+    modelId: string | null;
+    inputHash: string | null;
+    outputHash: string | null;
+    validationResult: string | null;
+  };
   updated_at: string;
 };
 
@@ -739,7 +746,7 @@ function BreakView({
         <div className="break-status">
           <div><Check size={16} /><span>{adaptiveReady ? "250 базовых вопросов сохранены" : "50 вопросов сохранены"}</span></div>
           <div><Check size={16} /><span>{adaptiveReady ? "Профиль неопределённости рассчитан" : "Можно закрыть браузер и продолжить"}</span></div>
-          {adaptiveReady && selection ? <div><Sparkles size={16} /><span>{selection.selectedItemIds.length} вопросов выбраны deterministic fallback</span></div> : null}
+          {adaptiveReady && selection ? <div><Sparkles size={16} /><span>{selection.selectedItemIds.length} вопросов выбраны {selection.mode === "ai-openai" ? "AI selector" : "deterministic fallback"}</span></div> : null}
         </div>
         <div className="break-actions">
           <Button className="orbita-button primary-button" size="lg" onClick={onContinue}>{adaptiveReady ? "Ответить на уточнения" : "Продолжить" } <ArrowRight size={16} /></Button>
@@ -1350,7 +1357,8 @@ export function OrbitaApp({
       return;
     }
     try {
-      const response = await fetch(`/api/reports/${encodeURIComponent(reportIdRef.current)}/download`, { credentials: "include" });
+      const link = await apiJson<{ download_path: string }>(`/api/reports/${encodeURIComponent(reportIdRef.current)}/download-link`, { method: "POST" });
+      const response = await fetch(link.download_path, { credentials: "include" });
       if (!response.ok) throw new ApiClientError("PDF_DOWNLOAD_FAILED", "Не удалось скачать PDF.");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);

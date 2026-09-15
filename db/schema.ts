@@ -120,6 +120,11 @@ export const reports = sqliteTable(
     reportJson: text("report_json"),
     pdfKey: text("pdf_key"),
     provider: text("provider"),
+    promptVersion: text("prompt_version"),
+    modelId: text("model_id"),
+    inputHash: text("input_hash"),
+    outputHash: text("output_hash"),
+    validationResult: text("validation_result"),
     errorCode: text("error_code"),
     createdAt: integer("created_at", { mode: "number" }).notNull(),
     updatedAt: integer("updated_at", { mode: "number" }).notNull(),
@@ -127,6 +132,28 @@ export const reports = sqliteTable(
   (table) => [
     uniqueIndex("reports_assessment_unique").on(table.assessmentId),
     index("reports_user_updated_idx").on(table.userId, table.updatedAt),
+  ],
+);
+
+export const adaptiveRuns = sqliteTable(
+  "adaptive_runs",
+  {
+    id: text("id").primaryKey(),
+    assessmentId: text("assessment_id").notNull().references(() => assessments.id),
+    selectorVersion: text("selector_version").notNull(),
+    provider: text("provider").notNull(),
+    modelId: text("model_id"),
+    inputHash: text("input_hash").notNull(),
+    outputHash: text("output_hash").notNull(),
+    chosenIdsJson: text("chosen_ids_json").notNull(),
+    latencyMs: integer("latency_ms").notNull(),
+    validationResult: text("validation_result").notNull(),
+    fallbackReason: text("fallback_reason"),
+    createdAt: integer("created_at", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("adaptive_runs_assessment_unique").on(table.assessmentId),
+    index("adaptive_runs_created_idx").on(table.createdAt),
   ],
 );
 

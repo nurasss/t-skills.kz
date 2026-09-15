@@ -17,6 +17,10 @@ export type OrbitaRuntimeEnv = {
   REPORT_PROVIDER?: string;
   REPORT_MODEL?: string;
   REPORT_TIMEOUT_MS?: string;
+  PDF_SIGNING_SECRET?: string;
+  ADAPTIVE_PROVIDER?: string;
+  ADAPTIVE_MODEL?: string;
+  ADAPTIVE_TIMEOUT_MS?: string;
   RETENTION_DAYS?: string;
   ORBITA_ENV?: string;
   ORBITA_ADMIN_USER_IDS?: string;

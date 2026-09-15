@@ -9,7 +9,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   try {
     const result = await completeCoreForUser(id, viewer);
-    return NextResponse.json({ state: result.session.state, preliminary_score: result.session.profile, adaptive: result.selection, reused: result.reused });
+    return NextResponse.json({ state: result.session.state, preliminary_score: result.session.profile, adaptive: result.selection, adaptive_run: result.run ?? null, reused: result.reused });
   } catch (error) {
     return errorResponse(error);
   }

@@ -1,12 +1,12 @@
 import { getD1, getR2 } from "@/db";
 import {
   scoreAssessment,
-  selectAdaptiveItems,
   type AdaptiveSelection,
   type ReportJSON,
   type ResponseMap,
   type ScoreProfile,
 } from "@/lib/assessment-engine";
+import { selectAdaptiveForProfile, type AdaptiveRunRecord } from "@/lib/adaptive-provider";
 import { ITEM_BANK, type Item } from "@/lib/item-bank";
 import { buildReportPdf } from "@/lib/pdf-generator";
 import { generateReportContent } from "@/lib/report-provider";
@@ -46,7 +46,7 @@ export type DurableSession = {
   responseTimes: Record<string, number>;
   clientSeq: number;
   adaptiveItemIds: string[];
-  selectionMode?: "deterministic-fallback";
+  selectionMode?: "deterministic-fallback" | "ai-openai";
   profile?: ScoreProfile;
   reportId?: string;
   updatedAt: string;
@@ -71,6 +71,13 @@ export type ReportRecord = {
   score: ScoreProfile;
   report: ReportJSON | null;
   pdfAvailable: boolean;
+  generation: {
+    promptVersion: string | null;
+    modelId: string | null;
+    inputHash: string | null;
+    outputHash: string | null;
+    validationResult: string | null;
+  };
   createdAt: string;
   updatedAt: string;
 };
@@ -94,7 +101,7 @@ type AssessmentRow = {
   state: SessionState;
   versions_json: string;
   adaptive_item_ids_json: string;
-  selection_mode: "deterministic-fallback" | null;
+  selection_mode: "deterministic-fallback" | "ai-openai" | null;
   preliminary_score_json: string | null;
   final_score_json: string | null;
   report_id: string | null;
@@ -130,8 +137,24 @@ type ReportRow = {
   score_json: string;
   report_json: string | null;
   pdf_key: string | null;
+  prompt_version: string | null;
+  model_id: string | null;
+  input_hash: string | null;
+  output_hash: string | null;
+  validation_result: string | null;
   created_at: number;
   updated_at: number;
+};
+
+type AdaptiveRunRow = {
+  selector_version: string;
+  provider: AdaptiveRunRecord["provider"];
+  model_id: string | null;
+  input_hash: string;
+  output_hash: string;
+  latency_ms: number;
+  validation_result: AdaptiveRunRecord["validationResult"];
+  fallback_reason: string | null;
 };
 
 const itemById = new Map<string, Item>(ITEM_BANK.map((item) => [item.id, item]));
@@ -298,6 +321,28 @@ async function loadSession(sessionId: string, userId: string): Promise<DurableSe
     profile: parseJson<ScoreProfile | undefined>(row.final_score_json ?? row.preliminary_score_json, undefined),
     reportId: row.report_id ?? undefined,
     updatedAt: iso(row.updated_at),
+  };
+}
+
+async function loadAdaptiveRun(assessmentId: string): Promise<AdaptiveRunRecord | null> {
+  const row = await ensureDatabase()
+    .prepare(
+      `SELECT selector_version, provider, model_id, input_hash, output_hash,
+              latency_ms, validation_result, fallback_reason
+       FROM adaptive_runs WHERE assessment_id = ? ORDER BY created_at DESC LIMIT 1`,
+    )
+    .bind(assessmentId)
+    .first<AdaptiveRunRow>();
+  if (!row) return null;
+  return {
+    selectorVersion: row.selector_version,
+    provider: row.provider,
+    modelId: row.model_id,
+    inputHash: row.input_hash,
+    outputHash: row.output_hash,
+    latencyMs: row.latency_ms,
+    validationResult: row.validation_result,
+    fallbackReason: row.fallback_reason,
   };
 }
 
@@ -691,30 +736,70 @@ export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
   const session = await getSessionForUser(sessionId, viewer);
   if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
   if (session.adaptiveItemIds.length && session.profile && session.state === "ADAPTIVE_IN_PROGRESS") {
-    return { session, selection: { selectedItemIds: session.adaptiveItemIds, targetCount: session.adaptiveItemIds.length, mode: "deterministic-fallback" as const, validation: "passed" as const, reasonCodes: {} } satisfies AdaptiveSelection, reused: true };
+    const run = await loadAdaptiveRun(sessionId);
+    return {
+      session,
+      selection: {
+        selectedItemIds: session.adaptiveItemIds,
+        targetCount: session.adaptiveItemIds.length,
+        mode: session.selectionMode ?? (run?.provider === "openai" ? "ai-openai" : "deterministic-fallback"),
+        validation: "passed" as const,
+        reasonCodes: {},
+      } satisfies AdaptiveSelection,
+      run,
+      reused: true,
+    };
   }
   const coreAnswered = Object.keys(session.responses).filter(isCoreItem).length;
   if (coreAnswered < 250) throw new StoreError("CORE_INCOMPLETE", 422);
   const preliminary = scoreAssessment(session.responses);
-  const selection = selectAdaptiveItems(preliminary, Object.keys(session.responses), 12);
+  const decision = await selectAdaptiveForProfile(preliminary, Object.keys(session.responses), 12);
+  const selection = decision.selection;
   const database = ensureDatabase();
   const timestamp = now();
-  await database
-    .prepare(
-      `UPDATE assessments
-       SET state = 'ADAPTIVE_IN_PROGRESS', adaptive_item_ids_json = ?,
-           selection_mode = ?, preliminary_score_json = ?, updated_at = ?
-       WHERE id = ? AND user_id = ?`,
-    )
-    .bind(JSON.stringify(selection.selectedItemIds), selection.mode, JSON.stringify(preliminary), timestamp, sessionId, viewer.userId)
-    .run();
+  await database.batch([
+    database
+      .prepare(
+        `UPDATE assessments
+         SET state = 'ADAPTIVE_IN_PROGRESS', adaptive_item_ids_json = ?,
+             selection_mode = ?, preliminary_score_json = ?, updated_at = ?
+         WHERE id = ? AND user_id = ?`,
+      )
+      .bind(JSON.stringify(selection.selectedItemIds), selection.mode, JSON.stringify(preliminary), timestamp, sessionId, viewer.userId),
+    database
+      .prepare(
+        `INSERT INTO adaptive_runs
+          (id, assessment_id, selector_version, provider, model_id, input_hash,
+           output_hash, chosen_ids_json, latency_ms, validation_result, fallback_reason, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        newId("adaptive"),
+        sessionId,
+        decision.run.selectorVersion,
+        decision.run.provider,
+        decision.run.modelId,
+        decision.run.inputHash,
+        decision.run.outputHash,
+        JSON.stringify(selection.selectedItemIds),
+        decision.run.latencyMs,
+        decision.run.validationResult,
+        decision.run.fallbackReason,
+        timestamp,
+      ),
+  ]);
   await audit(viewer.userId, "ADAPTIVE_SELECTED", "assessment", sessionId, {
     count: selection.selectedItemIds.length,
     mode: selection.mode,
+    provider: decision.run.provider,
+    modelId: decision.run.modelId,
+    inputHash: decision.run.inputHash,
+    outputHash: decision.run.outputHash,
+    validationResult: decision.run.validationResult,
   });
   const updated = await loadSession(sessionId, viewer.userId);
   if (!updated) throw new StoreError("SESSION_NOT_FOUND", 404);
-  return { session: updated, selection, reused: false };
+  return { session: updated, selection, run: decision.run, reused: false };
 }
 
 export async function completeAssessmentForUser(sessionId: string, viewer: Viewer) {
@@ -735,10 +820,11 @@ export async function completeAssessmentForUser(sessionId: string, viewer: Viewe
     await database.batch([
       database
         .prepare(
-          `INSERT INTO reports
+        `INSERT INTO reports
             (id, assessment_id, user_id, status, score_json, report_json,
-             pdf_key, provider, error_code, created_at, updated_at)
-           VALUES (?, ?, ?, 'REPORT_GENERATING', ?, NULL, NULL, NULL, NULL, ?, ?)`,
+             pdf_key, provider, prompt_version, model_id, input_hash,
+             output_hash, validation_result, error_code, created_at, updated_at)
+           VALUES (?, ?, ?, 'REPORT_GENERATING', ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)`,
         )
         .bind(reportId, sessionId, viewer.userId, JSON.stringify(profile), timestamp, timestamp),
       database
@@ -770,7 +856,8 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
   const row = await database
     .prepare(
       `SELECT id, assessment_id, status, provider, score_json, report_json,
-              pdf_key, created_at, updated_at
+              pdf_key, prompt_version, model_id, input_hash, output_hash,
+              validation_result, created_at, updated_at
        FROM reports WHERE id = ? AND user_id = ? LIMIT 1`,
     )
     .bind(reportId, viewer.userId)
@@ -796,11 +883,24 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
     const timestamp = now();
     await database
       .prepare(
-        `UPDATE reports SET status = 'COMPLETE', provider = ?, report_json = ?,
-                pdf_key = ?, error_code = NULL, updated_at = ?
+      `UPDATE reports SET status = 'COMPLETE', provider = ?, report_json = ?,
+                pdf_key = ?, prompt_version = ?, model_id = ?, input_hash = ?,
+                output_hash = ?, validation_result = ?, error_code = NULL, updated_at = ?
          WHERE id = ? AND user_id = ?`,
       )
-      .bind(generated.provider, JSON.stringify(generated.report), pdfKey, timestamp, reportId, viewer.userId)
+      .bind(
+        generated.provider,
+        JSON.stringify(generated.report),
+        pdfKey,
+        generated.promptVersion,
+        generated.modelId,
+        generated.inputHash,
+        generated.outputHash,
+        generated.validationResult,
+        timestamp,
+        reportId,
+        viewer.userId,
+      )
       .run();
     await database
       .prepare(
@@ -830,7 +930,8 @@ export async function getReportForUser(reportId: string, viewer: Viewer): Promis
   const row = await database
     .prepare(
       `SELECT id, assessment_id, status, provider, score_json, report_json,
-              pdf_key, created_at, updated_at
+              pdf_key, prompt_version, model_id, input_hash, output_hash,
+              validation_result, created_at, updated_at
        FROM reports WHERE id = ? AND user_id = ? LIMIT 1`,
     )
     .bind(reportId, viewer.userId)
@@ -844,6 +945,13 @@ export async function getReportForUser(reportId: string, viewer: Viewer): Promis
     score: parseJson<ScoreProfile>(row.score_json, scoreAssessment({})),
     report: parseJson<ReportJSON | null>(row.report_json, null),
     pdfAvailable: Boolean(row.pdf_key),
+    generation: {
+      promptVersion: row.prompt_version,
+      modelId: row.model_id,
+      inputHash: row.input_hash,
+      outputHash: row.output_hash,
+      validationResult: row.validation_result,
+    },
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -994,8 +1102,21 @@ export async function requestDataExport(viewer: Viewer) {
     .all<Record<string, unknown>>();
   const reportResult = await database
     .prepare(
-      `SELECT id, assessment_id, status, provider, score_json, report_json, created_at, updated_at
+      `SELECT id, assessment_id, status, provider, score_json, report_json,
+              prompt_version, model_id, input_hash, output_hash, validation_result,
+              created_at, updated_at
        FROM reports WHERE user_id = ? ORDER BY created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>();
+  const adaptiveRunResult = await database
+    .prepare(
+      `SELECT ar.assessment_id, ar.selector_version, ar.provider, ar.model_id,
+              ar.input_hash, ar.output_hash, ar.chosen_ids_json, ar.latency_ms,
+              ar.validation_result, ar.fallback_reason, ar.created_at
+       FROM adaptive_runs ar
+       JOIN assessments a ON a.id = ar.assessment_id
+       WHERE a.user_id = ? ORDER BY ar.created_at ASC`,
     )
     .bind(viewer.userId)
     .all<Record<string, unknown>>();
@@ -1006,6 +1127,7 @@ export async function requestDataExport(viewer: Viewer) {
     assessments: sessionResult.results ?? [],
     responses: responseResult.results ?? [],
     reports: reportResult.results ?? [],
+    adaptiveRuns: adaptiveRunResult.results ?? [],
   };
   const bucket = getR2();
   await bucket.put(key, JSON.stringify(payload, null, 2), {
@@ -1074,9 +1196,11 @@ export async function deleteAccount(viewer: Viewer) {
   }
   await database.batch([
     database.prepare(`DELETE FROM assessment_responses WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
+    database.prepare(`DELETE FROM adaptive_runs WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
     database.prepare(`DELETE FROM reports WHERE user_id = ?`).bind(viewer.userId),
     database.prepare(`DELETE FROM assessments WHERE user_id = ?`).bind(viewer.userId),
     database.prepare(`DELETE FROM entitlements WHERE user_id = ?`).bind(viewer.userId),
+    database.prepare(`DELETE FROM payment_events WHERE order_id IN (SELECT id FROM orders WHERE user_id = ?)`).bind(viewer.userId),
     database.prepare(`DELETE FROM orders WHERE user_id = ?`).bind(viewer.userId),
     database.prepare(`DELETE FROM telemetry_events WHERE user_id = ?`).bind(viewer.userId),
     database.prepare(`UPDATE users SET email = ?, full_name = NULL, deleted_at = ?, updated_at = ? WHERE id = ?`).bind(`${viewer.userId}@deleted.invalid`, timestamp, timestamp, viewer.userId),
