@@ -17,6 +17,7 @@ function git(args) {
 }
 
 const sourceGitSha = git(["rev-parse", process.argv[3] ?? process.env.SOURCE_GIT_SHA ?? "HEAD"]);
+if (process.version !== "v22.13.0") throw new Error(`RELEASE_RUNTIME_REQUIRED: expected v22.13.0, got ${process.version}`);
 const migrations = git(["ls-tree", "-r", "--name-only", sourceGitSha, "--", "drizzle"])
   .split("\n")
   .filter((file) => /^drizzle\/\d+_.*\.sql$/.test(file))
