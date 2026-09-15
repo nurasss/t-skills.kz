@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
-import { consentSessionForUser, getSessionForUser } from "@/lib/durable-store";
+import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
+import { consumeRateLimit, consentSessionForUser, getConsentsForUser, getSessionForUser, type ConsentChoices } from "@/lib/durable-store";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = viewerOrResponse(request);
@@ -10,9 +10,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   try {
     const session = await getSessionForUser(id, viewer);
     if (!session) return NextResponse.json({ error: "SESSION_NOT_FOUND" }, { status: 404 });
+    const consents = await getConsentsForUser(id, viewer);
     return NextResponse.json({
       id: session.id,
       state: session.state,
+      selection_mode: session.selectionMode ?? null,
       versions: session.versions,
       next_item_id: session.responses.Q001 === undefined ? "Q001" : null,
       core_answered: Object.keys(session.responses).filter((itemId) => Number(itemId.slice(1)) <= 250).length,
@@ -22,6 +24,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       response_times: session.responseTimes,
       profile: session.profile ?? null,
       report_id: session.reportId ?? null,
+      consents,
       updated_at: session.updatedAt,
     });
   } catch (error) {
@@ -32,17 +35,33 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
+  const originError = sameOriginOrResponse(request);
+  if (originError) return originError;
   const { id } = await params;
-  let body: { consented?: boolean };
+  let body: { consented?: unknown; consents?: Partial<Record<keyof ConsentChoices, unknown>> };
   try {
-    body = (await request.json()) as { consented?: boolean };
+    body = (await request.json()) as { consented?: unknown; consents?: Partial<Record<keyof ConsentChoices, unknown>> };
   } catch {
     return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
   }
-  if (!body.consented) return NextResponse.json({ error: "CONSENT_REQUIRED" }, { status: 422 });
+  const raw = body.consents;
+  const choices: ConsentChoices = raw
+    ? {
+        terms: raw.terms === true,
+        privacy: raw.privacy === true,
+        research: raw.research === true,
+        marketing: raw.marketing === true,
+      }
+    : { terms: body.consented === true, privacy: body.consented === true, research: false, marketing: false };
+  if (raw && Object.values(raw).some((value) => typeof value !== "boolean")) {
+    return NextResponse.json({ error: "INVALID_CONSENT_PAYLOAD" }, { status: 422 });
+  }
+  if (!choices.terms || !choices.privacy) return NextResponse.json({ error: "CONSENT_REQUIRED" }, { status: 422 });
   try {
-    const session = await consentSessionForUser(id, viewer);
-    return NextResponse.json({ id: session.id, state: session.state });
+    const rate = await consumeRateLimit({ userId: viewer.userId, scope: "consent", limit: 5, windowMs: 15 * 60 * 1000 });
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
+    const session = await consentSessionForUser(id, viewer, choices);
+    return NextResponse.json({ id: session.id, state: session.state, consents: await getConsentsForUser(id, viewer) });
   } catch (error) {
     return errorResponse(error);
   }

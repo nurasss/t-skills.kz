@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 
-import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
-import { regenerateReportForUser } from "@/lib/durable-store";
+import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
+import { consumeRateLimit, regenerateReportForUser } from "@/lib/durable-store";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
+  const originError = sameOriginOrResponse(request);
+  if (originError) return originError;
   const { id } = await params;
   try {
+    const rate = await consumeRateLimit({ userId: viewer.userId, scope: "report-regenerate", limit: 5, windowMs: 60 * 60 * 1000 });
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     const report = await regenerateReportForUser(id, viewer);
     return NextResponse.json({
       id: report.id,

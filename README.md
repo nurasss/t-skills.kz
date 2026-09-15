@@ -49,7 +49,7 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `db/schema.ts` and `drizzle/` — D1 schema and append-only migrations.
 - `.openai/hosting.json` — logical Sites bindings (`DB` and `BUCKET`) and the existing private project ID.
 
-The production site is owner-private. User identity comes from the Sites/ChatGPT headers; local preview-only auth is available only when `ORBITA_ENV=development`.
+The production site is owner-private. User identity comes from the Sites/ChatGPT headers; local preview-only auth is available only when `ORBITA_ENV=development`. State-changing API routes enforce same-origin requests and per-user server-side fixed-window limits; no permissive CORS policy is enabled. TLS, WAF/CDN policy, and edge security headers remain deployment controls of the Sites platform.
 
 ## Production configuration
 
@@ -72,6 +72,8 @@ Required before accepting real payments:
 - secret `STRIPE_WEBHOOK_SECRET` for the endpoint `/api/payments/webhook`.
 - secret `PDF_SIGNING_SECRET` for five-minute signed PDF download links.
 
+Before an assessment can start, the server records four independent, versioned decisions in D1: Terms, Privacy/processing, research opt-in, and marketing opt-in. Terms and Privacy are required; the latter two are optional and are never inferred from purchase.
+
 Optional AI narrative provider:
 
 - `REPORT_PROVIDER=openai` and secret `OPENAI_API_KEY`.
@@ -85,6 +87,8 @@ Optional AI adaptive selector:
 The default `approved-library` provider is deterministic and safe to run without an AI key. It never pretends that an AI call happened. Set `ORBITA_ADMIN_USER_IDS` only for the ChatGPT user IDs that should access aggregate admin metrics.
 
 See [`.env.example`](./.env.example) for the complete variable list.
+
+The explicit release handoff, missing external values and non-code launch gates are recorded in [`PROJECT_HANDOFF.md`](./PROJECT_HANDOFF.md).
 
 ## Workspace Auth Headers
 
@@ -157,6 +161,8 @@ The critical contract checks are:
 - answers are server-persisted and replaying the same `Idempotency-Key` is harmless;
 - invalid answers are rejected with `422`;
 - Stripe signatures are required, events are idempotent, and a failure event cannot downgrade a paid order;
+- cross-origin mutation attempts are rejected and high-frequency mutation bursts receive `429` with `Retry-After`;
+- Terms/Privacy/research/marketing decisions are stored separately with the consent text version and included in export/delete workflows;
 - reports freeze the score JSON, retry only the report layer, and produce a 24-page PDF;
 - export is owner-scoped and deletion removes R2 artifacts before soft-deleting the identity.
 

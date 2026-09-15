@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
-import { getSessionForUser, saveResponse } from "@/lib/durable-store";
+import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
+import { consumeRateLimit, getSessionForUser, saveResponse } from "@/lib/durable-store";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = viewerOrResponse(request);
@@ -18,8 +18,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
+  const originError = sameOriginOrResponse(request);
+  if (originError) return originError;
   const { id } = await params;
   try {
+    const rate = await consumeRateLimit({ userId: viewer.userId, scope: "responses", limit: 400, windowMs: 10 * 60 * 1000 });
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     const body = (await request.json()) as { item_id?: string; response?: number; response_time_ms?: number; client_seq?: number };
     if (!body.item_id || typeof body.response !== "number") return NextResponse.json({ error: "INVALID_RESPONSE_PAYLOAD" }, { status: 422 });
     const result = await saveResponse({

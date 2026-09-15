@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
-import { createAssessmentForUser, getAccountOverview } from "@/lib/durable-store";
+import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
+import { consumeRateLimit, createAssessmentForUser, getAccountOverview } from "@/lib/durable-store";
 
 export async function GET(request: Request) {
   const viewer = viewerOrResponse(request);
@@ -15,6 +15,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const viewer = viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
+  const originError = sameOriginOrResponse(request);
+  if (originError) return originError;
   let body: { test_id?: string } = {};
   try {
     body = (await request.json()) as { test_id?: string };
@@ -24,6 +26,8 @@ export async function POST(request: Request) {
   const testId = body.test_id ?? "orbita30";
   if (testId !== "orbita30") return NextResponse.json({ error: "TEST_NOT_FOUND" }, { status: 404 });
   try {
+    const rate = await consumeRateLimit({ userId: viewer.userId, scope: "assessment-create", limit: 5, windowMs: 10 * 60 * 1000 });
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     const result = await createAssessmentForUser({ viewer, testId });
     return NextResponse.json({
       id: result.session.id,

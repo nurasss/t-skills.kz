@@ -14,6 +14,34 @@ export function isResponse(value: Viewer | NextResponse): value is NextResponse 
   return value instanceof NextResponse;
 }
 
+export function sameOriginOrResponse(request: Request) {
+  const origin = request.headers.get("origin");
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (origin) {
+    try {
+      if (new URL(origin).origin !== new URL(request.url).origin) return csrfResponse();
+    } catch {
+      return csrfResponse();
+    }
+  }
+  if (fetchSite === "cross-site" || fetchSite === "cross-origin") return csrfResponse();
+  return null;
+}
+
+export function rateLimitResponse(retryAfterSeconds: number) {
+  return NextResponse.json(
+    { error: "RATE_LIMITED", message: "Слишком много запросов. Попробуйте ещё раз позже." },
+    { status: 429, headers: { "Retry-After": String(retryAfterSeconds), "Cache-Control": "no-store" } },
+  );
+}
+
+function csrfResponse() {
+  return NextResponse.json(
+    { error: "CSRF_ORIGIN_INVALID", message: "Запрос должен быть отправлен с этого сайта." },
+    { status: 403, headers: { "Cache-Control": "no-store", Vary: "Origin" } },
+  );
+}
+
 export function errorResponse(error: unknown) {
   if (error instanceof StoreError || error instanceof PaymentProviderError || error instanceof ReportProviderError) {
     const status = error instanceof StoreError ? error.status : 503;
@@ -55,6 +83,11 @@ function publicMessage(code: string) {
     ACCOUNT_ARTIFACT_DELETE_FAILED: "Не удалось полностью удалить файлы аккаунта. Запрос отмечен для повторной обработки.",
     EXPORT_NOT_FOUND: "Запрос экспорта не найден.",
     ADMIN_REQUIRED: "Доступно только allowlisted admin.",
+    CONSENT_REQUIRED: "Для продолжения нужны обязательные согласия.",
+    CONSENT_NOT_AVAILABLE: "Согласие нельзя изменить на этом этапе сессии.",
+    RATE_LIMITED: "Слишком много запросов. Попробуйте ещё раз позже.",
+    CSRF_ORIGIN_INVALID: "Запрос должен быть отправлен с этого сайта.",
+    TELEMETRY_EVENT_NOT_ALLOWED: "Это событие аналитики не разрешено.",
   };
   return messages[code] ?? "Запрос не выполнен.";
 }

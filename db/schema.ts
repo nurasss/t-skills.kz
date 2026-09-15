@@ -90,6 +90,24 @@ export const assessments = sqliteTable(
   ],
 );
 
+export const consents = sqliteTable(
+  "consents",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id),
+    assessmentId: text("assessment_id").notNull().references(() => assessments.id),
+    consentType: text("consent_type").notNull(),
+    textVersion: text("text_version").notNull(),
+    granted: integer("granted").notNull(),
+    decidedAt: integer("decided_at", { mode: "number" }).notNull(),
+    revokedAt: integer("revoked_at", { mode: "number" }),
+  },
+  (table) => [
+    uniqueIndex("consents_assessment_type_unique").on(table.assessmentId, table.consentType),
+    index("consents_user_type_idx").on(table.userId, table.consentType, table.decidedAt),
+  ],
+);
+
 export const assessmentResponses = sqliteTable(
   "assessment_responses",
   {
@@ -218,4 +236,15 @@ export const privacyRequests = sqliteTable(
   (table) => [
     index("privacy_requests_user_idx").on(table.userId, table.createdAt),
   ],
+);
+
+export const rateLimits = sqliteTable(
+  "rate_limits",
+  {
+    bucketKey: text("bucket_key").primaryKey(),
+    windowStartedAt: integer("window_started_at", { mode: "number" }).notNull(),
+    requestCount: integer("request_count").notNull(),
+    updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => [index("rate_limits_updated_idx").on(table.updatedAt)],
 );

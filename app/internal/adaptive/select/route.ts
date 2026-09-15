@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { getRuntimeEnv } from "@/db";
-import { errorResponse } from "@/lib/api-response";
+import { errorResponse, sameOriginOrResponse } from "@/lib/api-response";
 import { selectAdaptiveForProfile } from "@/lib/adaptive-provider";
 import { scoreAssessment, type ResponseMap } from "@/lib/assessment-engine";
 
 export async function POST(request: Request) {
+  const originError = sameOriginOrResponse(request);
+  if (originError) return originError;
   const internalToken = getRuntimeEnv().ORBITA_INTERNAL_TOKEN;
   if (!internalToken || request.headers.get("X-Internal-Token") !== internalToken) {
     return NextResponse.json({ error: "INTERNAL_AUTHENTICATION_REQUIRED" }, { status: 401 });

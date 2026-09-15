@@ -101,6 +101,7 @@ type PendingResponse = {
 type SessionPayload = {
   id: string;
   state: string;
+  selection_mode: "deterministic-fallback" | "ai-openai" | null;
   versions: ScoreProfile["versions"];
   next_item_id: string | null;
   core_answered: number;
@@ -110,6 +111,13 @@ type SessionPayload = {
   response_times: Record<string, number>;
   profile?: ScoreProfile | null;
   report_id: string | null;
+  consents?: Array<{
+    consentType: "terms" | "privacy" | "research" | "marketing";
+    granted: boolean;
+    textVersion: string;
+    decidedAt: string;
+    revokedAt: string | null;
+  }>;
   updated_at: string;
 };
 
@@ -554,11 +562,13 @@ function ConsentView({
   onConsentChange,
   onBegin,
   onBack,
+  onPrivacy,
 }: {
   consents: { terms: boolean; privacy: boolean; research: boolean; marketing: boolean };
   onConsentChange: (key: "terms" | "privacy" | "research" | "marketing", value: boolean) => void;
   onBegin: () => void;
   onBack: () => void;
+  onPrivacy: () => void;
 }) {
   const required = consents.terms && consents.privacy;
   return (
@@ -599,7 +609,7 @@ function ConsentView({
           <div className="side-number">01</div>
           <h3>Ваш профиль строится из ответов, а не из догадок.</h3>
           <p>Имена, контакты и payment refs не передаются adaptive/report engine. После завершения доступен запрос на экспорт или удаление.</p>
-          <button className="text-link" type="button">Открыть Privacy <ArrowRight size={15} /></button>
+          <button className="text-link" onClick={onPrivacy} type="button">Открыть Privacy <ArrowRight size={15} /></button>
         </div>
       </div>
     </div>
@@ -1073,11 +1083,14 @@ export function OrbitaApp({
     const pendingResponses = Object.fromEntries(pending.map((item) => [item.itemId, item.response])) as ResponseMap;
     serverSavedRef.current = new Set(Object.keys(payload.responses));
     setResponses({ ...payload.responses, ...pendingResponses });
+    if (payload.consents?.length) {
+      setConsents((current) => payload.consents!.reduce((next, consent) => ({ ...next, [consent.consentType]: consent.granted }), current));
+    }
     if (payload.adaptive_item_ids.length) {
       setSelection({
         selectedItemIds: payload.adaptive_item_ids,
         targetCount: payload.adaptive_item_ids.length,
-        mode: "deterministic-fallback",
+        mode: payload.selection_mode ?? "deterministic-fallback",
         validation: "passed",
         reasonCodes: {},
       });
@@ -1240,7 +1253,10 @@ export function OrbitaApp({
     }
     if (!(consents.terms && consents.privacy)) return;
     try {
-      await apiJson(`/api/assessments/${encodeURIComponent(sessionIdRef.current)}`, { method: "PATCH", body: JSON.stringify({ consented: true }) });
+      await apiJson(`/api/assessments/${encodeURIComponent(sessionIdRef.current)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ consented: true, consents }),
+      });
       setPhase("core");
       setQuestionIndex(firstUnansweredCore >= 0 ? firstUnansweredCore : 0);
       setAdaptiveIndex(0);
@@ -1567,7 +1583,7 @@ export function OrbitaApp({
     if (view === "catalog") return <CatalogView onNavigate={go} />;
     if (view === "detail") return <DetailView onNavigate={go} onDemo={openDemo} />;
     if (view === "checkout") return <CheckoutView onNavigate={go} onCheckout={startCheckout} busy={checkoutBusy} error={checkoutError} />;
-    if (view === "consent") return <ConsentView consents={consents} onConsentChange={setConsent} onBegin={beginAssessment} onBack={() => go("account")} />;
+    if (view === "consent") return <ConsentView consents={consents} onConsentChange={setConsent} onBegin={beginAssessment} onBack={() => go("account")} onPrivacy={() => go("privacy")} />;
     if (view === "assessment") return <AssessmentView phase={phase} item={activeItem} currentIndex={phase === "core" ? questionIndex % 50 : adaptiveIndex} total={phase === "core" ? 50 : adaptiveItems.length} blockNumber={Math.floor(questionIndex / 50) + 1} selectedValue={activeValue} onAnswer={saveResponse} onNext={nextQuestion} onPause={() => go("break")} autosaveStatus={autosaveStatus} elapsedSeconds={elapsedSeconds} />;
     if (view === "break") return <BreakView adaptiveReady={phase === "adaptive"} selection={selection} onContinue={continueFromBreak} onExit={() => go("account")} />;
     if (view === "processing") return <ProcessingView status={processingStatus} onOpenResults={() => go("results")} onRetry={retryReport} profile={profile} />;

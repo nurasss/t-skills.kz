@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
-import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
+import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
+import { consumeRateLimit } from "@/lib/durable-store";
 import { createCheckout } from "@/lib/payment-provider";
 
 export async function POST(request: Request) {
   const viewer = viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
+  const originError = sameOriginOrResponse(request);
+  if (originError) return originError;
   let body: { test_id?: string };
   try {
     body = (await request.json()) as { test_id?: string };
@@ -17,6 +20,8 @@ export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() || crypto.randomUUID();
   if (idempotencyKey.length > 200) return NextResponse.json({ error: "IDEMPOTENCY_KEY_TOO_LONG" }, { status: 422 });
   try {
+    const rate = await consumeRateLimit({ userId: viewer.userId, scope: "checkout", limit: 5, windowMs: 10 * 60 * 1000 });
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     const result = await createCheckout({ viewer, testId, request, idempotencyKey });
     return NextResponse.json({
       order_id: result.order.id,

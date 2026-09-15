@@ -106,7 +106,7 @@ function standardScoreFor(theta: number) {
   return Math.round(clamp(50 + theta * 34, 1, 99));
 }
 
-function qualityFlags(responses: ResponseMap, likertResponses: number[]) {
+function qualityFlags(responses: ResponseMap, likertResponses: number[], responseTimes: Record<string, number>) {
   const flags: string[] = [];
   const attentionItems = ITEM_BANK.filter(
     (item) => item.type === "quality" && item.qualityKind === "attention",
@@ -129,10 +129,17 @@ function qualityFlags(responses: ResponseMap, likertResponses: number[]) {
     if (dominant > 0.8) flags.push("STRAIGHT_LINING");
   }
 
+  const timedResponses = Object.entries(responseTimes)
+    .filter(([itemId, value]) => ITEM_BANK.some((item) => item.id === itemId) && Number.isFinite(value) && value >= 0)
+    .map(([, value]) => value);
+  if (timedResponses.length >= 20 && timedResponses.filter((value) => value < 650).length / timedResponses.length >= 0.8) {
+    flags.push("TOO_FAST");
+  }
+
   return flags;
 }
 
-export function scoreAssessment(responses: ResponseMap): ScoreProfile {
+export function scoreAssessment(responses: ResponseMap, responseTimes: Record<string, number> = {}): ScoreProfile {
   const forcedEvidence = emptyEvidence();
   const likertEvidence = emptyEvidence();
   const adaptiveEvidence = emptyEvidence();
@@ -240,7 +247,8 @@ export function scoreAssessment(responses: ResponseMap): ScoreProfile {
     return { code, name, score, percentile: percentileFor((score - 50) / 34) };
   });
 
-  const flags = qualityFlags(responses, likertResponses);
+  const flags = qualityFlags(responses, likertResponses, responseTimes);
+  if (traitScores.some((trait) => trait.contradiction >= 0.9)) flags.push("CONTRADICTION");
   const rqi = round(clamp(0.98 - flags.length * 0.08, 0.45, 0.98), 2);
   const answered = Object.keys(responses).filter((id) => ITEM_BANK.some((item) => item.id === id)).length;
   const coreAnswered = Object.keys(responses).filter((id) => /^Q(?:00[1-9]|0[1-9]\d|1[0-9]\d|2[0-4]\d|250)$/.test(id)).length;

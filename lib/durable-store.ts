@@ -82,6 +82,23 @@ export type ReportRecord = {
   updatedAt: string;
 };
 
+export type ConsentChoices = {
+  terms: boolean;
+  privacy: boolean;
+  research: boolean;
+  marketing: boolean;
+};
+
+export type ConsentRecord = {
+  consentType: keyof ConsentChoices;
+  textVersion: string;
+  granted: boolean;
+  decidedAt: string;
+  revokedAt: string | null;
+};
+
+export const CONSENT_TEXT_VERSION = "privacy-2026-09";
+
 export class StoreError extends Error {
   constructor(
     public readonly code: string,
@@ -631,21 +648,132 @@ export async function getSessionForUser(sessionId: string, viewer: Viewer) {
   return loadSession(sessionId, viewer.userId);
 }
 
-export async function consentSessionForUser(sessionId: string, viewer: Viewer) {
-  await ensureUser(viewer);
+export async function consumeRateLimit(input: {
+  userId: string;
+  scope: string;
+  limit: number;
+  windowMs: number;
+}) {
   const database = ensureDatabase();
   const timestamp = now();
-  const result = await database
+  const windowStartedAt = timestamp - (timestamp % input.windowMs);
+  const bucketKey = `${input.scope}:${input.userId}`;
+  await database
     .prepare(
-      `UPDATE assessments SET state = 'CONSENTED', consented_at = ?, updated_at = ?
-       WHERE id = ? AND user_id = ? AND state IN ('PAID', 'CONSENTED')`,
+      `INSERT INTO rate_limits (bucket_key, window_started_at, request_count, updated_at)
+       VALUES (?, ?, 1, ?)
+       ON CONFLICT(bucket_key) DO UPDATE SET
+         window_started_at = CASE WHEN rate_limits.window_started_at < excluded.window_started_at
+           THEN excluded.window_started_at ELSE rate_limits.window_started_at END,
+         request_count = CASE WHEN rate_limits.window_started_at < excluded.window_started_at
+           THEN 1 ELSE rate_limits.request_count + 1 END,
+         updated_at = excluded.updated_at`,
     )
-    .bind(timestamp, timestamp, sessionId, viewer.userId)
+    .bind(bucketKey, windowStartedAt, timestamp)
     .run();
-  if (!result.success) throw new StoreError("CONSENT_SAVE_FAILED", 500);
+  const row = await database
+    .prepare(`SELECT window_started_at, request_count FROM rate_limits WHERE bucket_key = ? LIMIT 1`)
+    .bind(bucketKey)
+    .first<{ window_started_at: number; request_count: number }>();
+  if (!row) return { allowed: false, retryAfterSeconds: Math.ceil(input.windowMs / 1000) };
+  if (row.request_count === 1) {
+    await database
+      .prepare(`DELETE FROM rate_limits WHERE updated_at < ?`)
+      .bind(timestamp - 24 * 60 * 60 * 1000)
+      .run()
+      .catch(() => undefined);
+  }
+  const resetAt = row.window_started_at + input.windowMs;
+  return {
+    allowed: row.request_count <= input.limit,
+    retryAfterSeconds: Math.max(1, Math.ceil((resetAt - timestamp) / 1000)),
+  };
+}
+
+export async function getConsentsForUser(sessionId: string, viewer: Viewer): Promise<ConsentRecord[]> {
+  await ensureUser(viewer);
+  const rows = await ensureDatabase()
+    .prepare(
+      `SELECT consent_type, text_version, granted, decided_at, revoked_at
+       FROM consents WHERE assessment_id = ? AND user_id = ?
+       ORDER BY consent_type ASC`,
+    )
+    .bind(sessionId, viewer.userId)
+    .all<{
+      consent_type: keyof ConsentChoices;
+      text_version: string;
+      granted: number;
+      decided_at: number;
+      revoked_at: number | null;
+    }>();
+  return (rows.results ?? []).map((row) => ({
+    consentType: row.consent_type,
+    textVersion: row.text_version,
+    granted: row.granted === 1,
+    decidedAt: iso(row.decided_at),
+    revokedAt: row.revoked_at ? iso(row.revoked_at) : null,
+  }));
+}
+
+export async function consentSessionForUser(
+  sessionId: string,
+  viewer: Viewer,
+  choices: ConsentChoices = { terms: true, privacy: true, research: false, marketing: false },
+) {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  if (!choices.terms || !choices.privacy) throw new StoreError("CONSENT_REQUIRED", 422);
+  const timestamp = now();
+  const assessment = await database
+    .prepare(`SELECT state FROM assessments WHERE id = ? AND user_id = ? LIMIT 1`)
+    .bind(sessionId, viewer.userId)
+    .first<{ state: SessionState }>();
+  if (!assessment) throw new StoreError("SESSION_NOT_FOUND", 404);
+  if (!(["PAID", "CONSENTED"] as SessionState[]).includes(assessment.state)) {
+    throw new StoreError("CONSENT_NOT_AVAILABLE", 409);
+  }
+  const consentEntries: Array<[keyof ConsentChoices, boolean]> = [
+    ["terms", choices.terms],
+    ["privacy", choices.privacy],
+    ["research", choices.research],
+    ["marketing", choices.marketing],
+  ];
+  try {
+    await database.batch([
+      ...consentEntries.map(([consentType, granted]) =>
+        database
+          .prepare(
+            `INSERT INTO consents
+              (id, user_id, assessment_id, consent_type, text_version, granted, decided_at, revoked_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+             ON CONFLICT(assessment_id, consent_type) DO UPDATE SET
+               text_version = excluded.text_version,
+               granted = excluded.granted,
+               decided_at = excluded.decided_at,
+               revoked_at = CASE WHEN excluded.granted = 1 THEN NULL ELSE COALESCE(consents.revoked_at, excluded.decided_at) END`,
+          )
+          .bind(newId("consent"), viewer.userId, sessionId, consentType, CONSENT_TEXT_VERSION, granted ? 1 : 0, timestamp),
+      ),
+      database
+        .prepare(
+          `UPDATE assessments SET state = 'CONSENTED', consented_at = ?, updated_at = ?
+           WHERE id = ? AND user_id = ? AND state IN ('PAID', 'CONSENTED')`,
+        )
+        .bind(timestamp, timestamp, sessionId, viewer.userId),
+    ]);
+  } catch (error) {
+    console.error("consent_write_failed", error);
+    throw new StoreError("CONSENT_SAVE_FAILED", 500);
+  }
   const session = await loadSession(sessionId, viewer.userId);
   if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
-  await audit(viewer.userId, "ASSESSMENT_CONSENTED", "assessment", sessionId);
+  await audit(viewer.userId, "ASSESSMENT_CONSENTED", "assessment", sessionId, {
+    textVersion: CONSENT_TEXT_VERSION,
+    terms: choices.terms,
+    privacy: choices.privacy,
+    research: choices.research,
+    marketing: choices.marketing,
+  });
   return session;
 }
 
@@ -705,7 +833,7 @@ export async function saveResponse(input: {
           input.sessionId,
           input.itemId,
           input.response,
-          Math.max(0, Math.round(input.responseTimeMs ?? 0)),
+          Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number.isFinite(input.responseTimeMs ?? 0) ? input.responseTimeMs ?? 0 : 0))),
           serverSeq,
           input.idempotencyKey ?? null,
           timestamp,
@@ -720,12 +848,22 @@ export async function saveResponse(input: {
   } catch (error) {
     const race = await database
       .prepare(
-        `SELECT client_seq FROM assessment_responses
+        `SELECT client_seq, idempotency_key FROM assessment_responses
          WHERE assessment_id = ? AND item_id = ? LIMIT 1`,
       )
       .bind(input.sessionId, input.itemId)
-      .first<{ client_seq: number }>();
-    if (race) throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
+      .first<{ client_seq: number; idempotency_key: string | null }>();
+    if (race) {
+      if (input.idempotencyKey && race.idempotency_key === input.idempotencyKey) {
+        return {
+          saved: true,
+          replay: true,
+          serverSeq: race.client_seq,
+          nextItemId: nextItemId(session),
+        };
+      }
+      throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
+    }
     console.error("response_write_failed", error);
     throw new StoreError("RESPONSE_SAVE_FAILED", 500);
   }
@@ -735,7 +873,11 @@ export async function saveResponse(input: {
 export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
   const session = await getSessionForUser(sessionId, viewer);
   if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
-  if (session.adaptiveItemIds.length && session.profile && session.state === "ADAPTIVE_IN_PROGRESS") {
+  if (
+    session.adaptiveItemIds.length &&
+    session.profile &&
+    ["ADAPTIVE_IN_PROGRESS", "REPORT_GENERATING", "REPORT_FAILED_RETRYABLE", "COMPLETE"].includes(session.state)
+  ) {
     const run = await loadAdaptiveRun(sessionId);
     return {
       session,
@@ -752,42 +894,63 @@ export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
   }
   const coreAnswered = Object.keys(session.responses).filter(isCoreItem).length;
   if (coreAnswered < 250) throw new StoreError("CORE_INCOMPLETE", 422);
-  const preliminary = scoreAssessment(session.responses);
+  const preliminary = scoreAssessment(session.responses, session.responseTimes);
   const decision = await selectAdaptiveForProfile(preliminary, Object.keys(session.responses), 12);
   const selection = decision.selection;
   const database = ensureDatabase();
   const timestamp = now();
-  await database.batch([
-    database
-      .prepare(
-        `UPDATE assessments
-         SET state = 'ADAPTIVE_IN_PROGRESS', adaptive_item_ids_json = ?,
-             selection_mode = ?, preliminary_score_json = ?, updated_at = ?
-         WHERE id = ? AND user_id = ?`,
-      )
-      .bind(JSON.stringify(selection.selectedItemIds), selection.mode, JSON.stringify(preliminary), timestamp, sessionId, viewer.userId),
-    database
-      .prepare(
-        `INSERT INTO adaptive_runs
-          (id, assessment_id, selector_version, provider, model_id, input_hash,
-           output_hash, chosen_ids_json, latency_ms, validation_result, fallback_reason, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        newId("adaptive"),
-        sessionId,
-        decision.run.selectorVersion,
-        decision.run.provider,
-        decision.run.modelId,
-        decision.run.inputHash,
-        decision.run.outputHash,
-        JSON.stringify(selection.selectedItemIds),
-        decision.run.latencyMs,
-        decision.run.validationResult,
-        decision.run.fallbackReason,
-        timestamp,
-      ),
-  ]);
+  try {
+    await database.batch([
+      database
+        .prepare(
+          `UPDATE assessments
+           SET state = 'ADAPTIVE_IN_PROGRESS', adaptive_item_ids_json = ?,
+               selection_mode = ?, preliminary_score_json = ?, updated_at = ?
+           WHERE id = ? AND user_id = ?`,
+        )
+        .bind(JSON.stringify(selection.selectedItemIds), selection.mode, JSON.stringify(preliminary), timestamp, sessionId, viewer.userId),
+      database
+        .prepare(
+          `INSERT INTO adaptive_runs
+            (id, assessment_id, selector_version, provider, model_id, input_hash,
+             output_hash, chosen_ids_json, latency_ms, validation_result, fallback_reason, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          newId("adaptive"),
+          sessionId,
+          decision.run.selectorVersion,
+          decision.run.provider,
+          decision.run.modelId,
+          decision.run.inputHash,
+          decision.run.outputHash,
+          JSON.stringify(selection.selectedItemIds),
+          decision.run.latencyMs,
+          decision.run.validationResult,
+          decision.run.fallbackReason,
+          timestamp,
+        ),
+    ]);
+  } catch (error) {
+    const concurrent = await loadSession(sessionId, viewer.userId);
+    if (concurrent?.adaptiveItemIds.length && concurrent.profile) {
+      const run = await loadAdaptiveRun(sessionId);
+      return {
+        session: concurrent,
+        selection: {
+          selectedItemIds: concurrent.adaptiveItemIds,
+          targetCount: concurrent.adaptiveItemIds.length,
+          mode: concurrent.selectionMode ?? "deterministic-fallback",
+          validation: "passed" as const,
+          reasonCodes: {},
+        } satisfies AdaptiveSelection,
+        run,
+        reused: true,
+      };
+    }
+    console.error("adaptive_selection_write_failed", error);
+    throw new StoreError("ADAPTIVE_SELECTION_SAVE_FAILED", 500);
+  }
   await audit(viewer.userId, "ADAPTIVE_SELECTED", "assessment", sessionId, {
     count: selection.selectedItemIds.length,
     mode: selection.mode,
@@ -812,7 +975,7 @@ export async function completeAssessmentForUser(sessionId: string, viewer: Viewe
   const missing = session.adaptiveItemIds.filter((itemId) => typeof session.responses[itemId] !== "number");
   if (missing.length) throw new StoreError("ADAPTIVE_INCOMPLETE", 422);
 
-  const profile = scoreAssessment(session.responses);
+  const profile = scoreAssessment(session.responses, session.responseTimes);
   const reportId = newId("rep");
   const database = ensureDatabase();
   const timestamp = now();
@@ -1059,6 +1222,19 @@ export async function recordTelemetry(input: {
   if (!allowedNames.has(input.name)) throw new StoreError("TELEMETRY_EVENT_NOT_ALLOWED", 422);
   await ensureUser(input.viewer);
   const database = ensureDatabase();
+  if (input.assessmentId) {
+    const assessment = await database
+      .prepare(`SELECT id FROM assessments WHERE id = ? AND user_id = ? LIMIT 1`)
+      .bind(input.assessmentId, input.viewer.userId)
+      .first<{ id: string }>();
+    if (!assessment) throw new StoreError("SESSION_NOT_FOUND", 404);
+  }
+  const safeMetadata = Object.fromEntries(
+    Object.entries(input.metadata ?? {})
+      .filter(([key, value]) => /^[a-z][a-z0-9_]{0,40}$/.test(key) && (typeof value === "number" || typeof value === "boolean" || value === null) && (typeof value !== "number" || Number.isFinite(value)))
+      .slice(0, 12),
+  );
+  const metadataJson = Object.keys(safeMetadata).length ? JSON.stringify(safeMetadata) : null;
   await database
     .prepare(
       `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
@@ -1069,7 +1245,7 @@ export async function recordTelemetry(input: {
       input.name,
       input.viewer.userId,
       input.assessmentId ?? null,
-      input.metadata ? JSON.stringify(input.metadata) : null,
+      metadataJson,
       now(),
     )
     .run();
@@ -1120,6 +1296,16 @@ export async function requestDataExport(viewer: Viewer) {
     )
     .bind(viewer.userId)
     .all<Record<string, unknown>>();
+  const consentResult = await database
+    .prepare(
+      `SELECT c.assessment_id, c.consent_type, c.text_version, c.granted,
+              c.decided_at, c.revoked_at
+       FROM consents c
+       JOIN assessments a ON a.id = c.assessment_id
+       WHERE c.user_id = ? ORDER BY c.decided_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>();
   const payload = {
     exportedAt: new Date().toISOString(),
     user: overview.user,
@@ -1128,6 +1314,7 @@ export async function requestDataExport(viewer: Viewer) {
     responses: responseResult.results ?? [],
     reports: reportResult.results ?? [],
     adaptiveRuns: adaptiveRunResult.results ?? [],
+    consents: consentResult.results ?? [],
   };
   const bucket = getR2();
   await bucket.put(key, JSON.stringify(payload, null, 2), {
@@ -1197,12 +1384,14 @@ export async function deleteAccount(viewer: Viewer) {
   await database.batch([
     database.prepare(`DELETE FROM assessment_responses WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
     database.prepare(`DELETE FROM adaptive_runs WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
+    database.prepare(`DELETE FROM consents WHERE user_id = ?`).bind(viewer.userId),
     database.prepare(`DELETE FROM reports WHERE user_id = ?`).bind(viewer.userId),
     database.prepare(`DELETE FROM assessments WHERE user_id = ?`).bind(viewer.userId),
     database.prepare(`DELETE FROM entitlements WHERE user_id = ?`).bind(viewer.userId),
     database.prepare(`DELETE FROM payment_events WHERE order_id IN (SELECT id FROM orders WHERE user_id = ?)`).bind(viewer.userId),
     database.prepare(`DELETE FROM orders WHERE user_id = ?`).bind(viewer.userId),
     database.prepare(`DELETE FROM telemetry_events WHERE user_id = ?`).bind(viewer.userId),
+    database.prepare(`DELETE FROM rate_limits WHERE bucket_key LIKE '%:' || ?`).bind(viewer.userId),
     database.prepare(`UPDATE users SET email = ?, full_name = NULL, deleted_at = ?, updated_at = ? WHERE id = ?`).bind(`${viewer.userId}@deleted.invalid`, timestamp, timestamp, viewer.userId),
     database.prepare(`UPDATE privacy_requests SET status = 'COMPLETE', completed_at = ? WHERE id = ? AND user_id = ?`).bind(timestamp, requestId, viewer.userId),
   ]);
