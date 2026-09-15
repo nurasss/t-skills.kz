@@ -31,25 +31,26 @@ The matrix is intentionally scenario-based. Line coverage is not used as the rel
 | PDF | Missing/tampered/expired/wrong owner token | 401 | `scripts/e2e-smoke.mjs`, `tests/unit.test.ts` |
 | PDF | Missing R2 object | 404 safe error; no database score mutation | `scripts/e2e-smoke.mjs` |
 | PDF | Regeneration | `score_unchanged=true`; frozen score JSON remains equal | `scripts/e2e-smoke.mjs` |
-| PDF | Visual rendering | 24-page fixture was previously rendered and reviewed; multi-locale fixture set remains open | `PROJECT_HANDOFF.md`, `FINAL_ACCEPTANCE.md` |
+| PDF | Visual rendering | Four deterministic 24-page RU fixtures rendered as A4 PNGs and inspected; no clipping/overflow/font defects | `scripts/pdf-visual-qa.mjs`, `output/pdf/`, `FINAL_ACCEPTANCE.md` |
 | Privacy | Allowlisted telemetry with raw-answer/email fields | Unsafe metadata discarded | `tests/unit.test.ts`, `scripts/e2e-smoke.mjs` |
 | Privacy | Export owner and User B | Owner gets artifact; User B gets 404 | `scripts/e2e-smoke.mjs` |
 | Privacy | Delete assessment | R2 first, then D1 response/assessment rows removed | `scripts/e2e-smoke.mjs`, `lib/durable-store.ts` |
 | Privacy | Delete account | Request state, artifact deletion and audit path are implemented | `lib/durable-store.ts`, `app/api/account/delete/route.ts` |
 | Privacy | Retention dry-run | Candidate report, count and failure metadata without purge | `scripts/e2e-smoke.mjs`, `lib/retention.ts` |
-| Privacy | Real retention purge and active exclusion | Dedicated staging fixture required | `FINAL_ACCEPTANCE.md` |
+| Privacy | Real retention purge, crash after artifacts, resume and active exclusion | Persistent purge state machine passes isolated Wrangler E2E; staging drill remains operational | `lib/retention.ts`, `scripts/e2e-smoke.mjs` |
 | Localization | `kz` request | Canonical `kk`, legacy alias, unpublished status | `tests/unit.test.ts`, `scripts/e2e-smoke.mjs` |
 | Localization | `kk`/`en` start | 422 until translations and review are published | `scripts/e2e-smoke.mjs`, `app/api/assessments/route.ts` |
-| Operations | Migration forward path | 0000–0007 apply to isolated local D1 | `scripts/e2e-smoke.mjs`, `drizzle/` |
+| Operations | Migration forward path and drift | 0000–0008 apply; generated schema has no drift | `scripts/check-migration-drift.mjs`, `drizzle/` |
 | Operations | Backup/restore | Export and restore a seeded row | `scripts/backup-restore-smoke.mjs` |
 | Operations | Rate limit | 429 plus Retry-After at configured boundary | `scripts/e2e-smoke.mjs` |
 | Operations | Request observability | Request ID/security headers and PII-safe structured record | `tests/unit.test.ts`, `lib/observability.ts` |
 | Operations | Alert calculation | Report/adaptive/request/retention threshold events | `tests/unit.test.ts`, `lib/ops-monitoring.ts` |
+| Operations | Concurrent load | p50/p95/p99, errors, throughput, 429, zero lost/duplicate responses, idempotent replay and double complete-core | `scripts/load-smoke.mjs` |
 | Operations | Job retry/alert sink/on-call | Deployment and operations evidence required | `RUNBOOKS.md`, `FINAL_ACCEPTANCE.md` |
 
 ## Reproduction
 
-From a clean checkout with Node `>=22.13.0`:
+From a clean checkout with Node `22.13.0`:
 
 ```sh
 npm ci
@@ -58,7 +59,12 @@ npx tsc --noEmit
 npm test
 npm run build
 npm run test:e2e
+npm run test:browser
+npm run test:pdf-visual
+npm run test:load
 npm run test:backup
+npm run db:check
+npm run test:retention-plan
 npm audit --omit=dev --audit-level=high
 npm run package:source
 ```

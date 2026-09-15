@@ -54,7 +54,8 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 
 ## Project shape
 
-- `app/orbita-app.tsx` — client assessment flow, account, checkout, reports and WebMCP tools.
+- `app/orbita-app.tsx` — client state/controller and WebMCP orchestration.
+- `app/orbita-views.tsx` — presentation-only views; `lib/view-routing.ts` and `lib/response-retry-queue.ts` are pure, DOM-free controller boundaries.
 - `lib/assessment-engine.ts` and `lib/item-bank.ts` — scoring, quality flags, report inputs and the preserved 300-item bank.
 - `lib/interpretation-library.ts` — versioned approved trait/pair semantics; AI output cannot add unsupported claims.
 - `lib/durable-store.ts` — all user-owned state transitions and ownership checks.
@@ -62,6 +63,8 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `lib/report-provider.ts` — deterministic approved-library reports by default, with an optional strict OpenAI Responses API provider and fallback.
 - `lib/pdf-generator.ts` — 24-page A4 PDF report generation with embedded Roboto TTF.
 - `lib/retention.ts` and `worker/index.ts` — idempotent R2/D1 retention sweep, dry-run mode, manual internal endpoint, and daily cron.
+- `docs/adr/ADR-001-runtime-and-cloudflare.md` — accepted pilot runtime decision and Vinext migration triggers.
+- `scripts/load-smoke.mjs`, `scripts/pdf-visual-qa.mjs`, `scripts/verify-release.mjs` — load, visual PDF, and exact-Git release gates.
 - `lib/security-headers.ts`, `lib/observability.ts` and `lib/ops-monitoring.ts` — request IDs, security headers, PII-safe logs and explicit alert thresholds.
 - `lib/provider-contract.ts`, `lib/adaptive-contract.ts` and `lib/report-safety.ts` — strict provider output, source-key grounding and deterministic safety boundaries.
 - `lib/pilot-analytics.ts` and `app/api/admin/overview/route.ts` — aggregate-only pilot analytics with a minimum-sample guard.
