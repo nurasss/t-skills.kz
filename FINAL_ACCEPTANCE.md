@@ -6,9 +6,9 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | `b6d20fcefae60c5ed1d4343e3519c0f5fa60f23c` |
-| Source package SHA-256 | `03c7317d581d3565e53618e8a9d0361e365a5029f4e6b2ba9610b4e59ffc0fb7` |
-| Evidence-pack commit | `8f084afc91973d1e490fdf4006d9836579f9d349` |
+| Source release Git SHA | `4efd4692290bd1dcb2e0326a9076d991a63bd841` |
+| Source package SHA-256 | `d1061d6615ded55d3ef792282b58703661c04245087adf92cf6af32217798e4f` |
+| Evidence-pack commit | `5528140f3821196b57e195db200b3efbb7dca83f` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
@@ -103,7 +103,7 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | `npx tsc --noEmit` | PASS | CI/local command output |
 | `npm test` | PASS | 32 unit/contract/property/fault/routing/queue tests |
 | `npm run test:coverage` | PASS | total lib branches 88.67%; critical modules meet 90% gate |
-| `npm run test:e2e` | PASS — current run `sess_36fecb19366e4c238c0941e4` | Full local Worker/D1/R2 smoke, restart/resume and retention recovery |
+| `npm run test:e2e` | PASS — current run `sess_e41c9918d5da4f96a9cff699` | Full local Worker/D1/R2 smoke, restart/resume and retention recovery |
 | `npm run test:browser` | PASS | Real browser hydration, strict CSP nonce, navigation and checkout redirect |
 | `npm run test:pdf-visual` | PASS | 4 deterministic 24-page A4 fixtures; visual render QA PASS |
 | `npm run test:load` | PASS | 275 requests; lost=0, duplicated=0, idempotency=PASS |
@@ -111,7 +111,7 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | `npm run build` | PASS | Vinext production build |
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx` |
-| Docker Node 22.13.0 `release:verify` | PASS | exact-Git archive reproduced twice; manifest SHA `03c7317d581d...ffc0fb7` |
+| Docker Node 22.13.0 `release:verify` | PASS | exact-Git archive reproduced twice; manifest SHA `d1061d6615ded...17798e4f` |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register
