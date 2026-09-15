@@ -1,6 +1,8 @@
 import { getD1, getR2 } from "@/db";
 import {
+  normalizeScoreProfile,
   scoreAssessment,
+  VERSION_IDS,
   type AdaptiveSelection,
   type ReportJSON,
   type ResponseMap,
@@ -10,6 +12,8 @@ import { selectAdaptiveForProfile, type AdaptiveRunRecord } from "@/lib/adaptive
 import { ITEM_BANK, type Item } from "@/lib/item-bank";
 import { buildReportPdf } from "@/lib/pdf-generator";
 import { generateReportContent } from "@/lib/report-provider";
+import { validatePaymentSnapshot } from "@/lib/payment-integrity";
+import { isTelemetryEventName, sanitizeTelemetryMetadata, type TelemetryEventName } from "@/lib/analytics";
 import type { Viewer } from "@/lib/server-auth";
 
 export type SessionState =
@@ -36,12 +40,7 @@ export type DurableSession = {
   testId: string;
   entitlementId: string;
   state: SessionState;
-  versions: {
-    assessment: string;
-    itemBank: string;
-    scoring: string;
-    norms: string;
-  };
+  versions: typeof VERSION_IDS;
   responses: ResponseMap;
   responseTimes: Record<string, number>;
   clientSeq: number;
@@ -144,6 +143,17 @@ type OrderRow = {
   provider: string;
   provider_checkout_url: string | null;
   created_at: number;
+};
+
+type PaymentOrderRow = {
+  id: string;
+  user_id: string;
+  test_id: string;
+  amount_minor: number;
+  currency: string;
+  status: OrderRecord["status"];
+  provider: string;
+  provider_checkout_id: string | null;
 };
 
 type ReportRow = {
@@ -292,6 +302,24 @@ async function audit(
   }
 }
 
+async function serverTelemetry(input: {
+  name: TelemetryEventName;
+  userId: string | null;
+  assessmentId?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  try {
+    const database = ensureDatabase();
+    const metadata = sanitizeTelemetryMetadata(input.metadata);
+    await database
+      .prepare(`INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(newId("tel"), input.name, input.userId, input.assessmentId ?? null, Object.keys(metadata).length ? JSON.stringify(metadata) : null, now())
+      .run();
+  } catch (error) {
+    console.error("telemetry_write_failed", { error });
+  }
+}
+
 async function loadSession(sessionId: string, userId: string): Promise<DurableSession | null> {
   const database = ensureDatabase();
   const row = await database
@@ -324,18 +352,15 @@ async function loadSession(sessionId: string, userId: string): Promise<DurableSe
     testId: row.test_id,
     entitlementId: row.entitlement_id,
     state: row.state,
-    versions: parseJson(row.versions_json, {
-      assessment: "orbita30_ru_v1",
-      itemBank: "draft-pilot-v1",
-      scoring: "mvp-0.3",
-      norms: "within-sample-preview",
-    }),
+    versions: parseJson(row.versions_json, VERSION_IDS),
     responses: responseMap(rows),
     responseTimes: responseTimes(rows),
     clientSeq: row.client_seq,
     adaptiveItemIds: parseJson<string[]>(row.adaptive_item_ids_json, []),
     selectionMode: row.selection_mode ?? undefined,
-    profile: parseJson<ScoreProfile | undefined>(row.final_score_json ?? row.preliminary_score_json, undefined),
+    profile: row.final_score_json ?? row.preliminary_score_json
+      ? normalizeScoreProfile(parseJson<ScoreProfile | undefined>(row.final_score_json ?? row.preliminary_score_json, undefined))
+      : undefined,
     reportId: row.report_id ?? undefined,
     updatedAt: iso(row.updated_at),
   };
@@ -497,79 +522,117 @@ export async function handlePaymentEvent(input: {
   orderId: string;
   status: "PAID" | "PAYMENT_FAILED";
   providerPaymentId?: string | null;
+  providerCheckoutId?: string | null;
+  amountMinor?: number | null;
+  currency?: string | null;
+  testId?: string | null;
+  paymentStatus?: string | null;
   payloadHash: string;
 }) {
   const database = ensureDatabase();
   const existing = await database
-    .prepare(`SELECT id FROM payment_events WHERE id = ? LIMIT 1`)
+    .prepare(`SELECT id, payload_hash FROM payment_events WHERE id = ? LIMIT 1`)
     .bind(input.providerEventId)
-    .first<{ id: string }>();
-  if (existing) return { duplicate: true, entitlementCreated: false };
+    .first<{ id: string; payload_hash: string }>();
+  if (existing) {
+    if (existing.payload_hash !== input.payloadHash) throw new StoreError("PAYMENT_EVENT_REPLAY_MISMATCH", 409);
+    return { duplicate: true, entitlementCreated: false };
+  }
 
   const order = await database
-    .prepare(`SELECT id, status FROM orders WHERE id = ? LIMIT 1`)
+    .prepare(`SELECT id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id FROM orders WHERE id = ? LIMIT 1`)
     .bind(input.orderId)
-    .first<{ id: string; status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED" }>();
+    .first<PaymentOrderRow>();
   if (!order) throw new StoreError("ORDER_NOT_FOUND", 404);
+
+  if (input.status === "PAID" && !validatePaymentSnapshot({
+    provider: order.provider,
+    providerCheckoutId: order.provider_checkout_id,
+    amountMinor: order.amount_minor,
+    currency: order.currency,
+    testId: order.test_id,
+  }, {
+    providerCheckoutId: input.providerCheckoutId ?? null,
+    amountMinor: input.amountMinor ?? null,
+    currency: input.currency ?? null,
+    testId: input.testId ?? null,
+    paymentStatus: input.paymentStatus ?? null,
+  })) {
+    await audit(null, "PAYMENT_EVENT_REJECTED", "order", input.orderId, {
+      providerEventId: input.providerEventId,
+      reason: "PAYMENT_INTEGRITY_MISMATCH",
+    });
+    throw new StoreError("PAYMENT_INTEGRITY_MISMATCH", 409);
+  }
 
   const entitlementId = newId("ent");
   const timestamp = now();
+  const statements = [
+    database
+      .prepare(
+        `INSERT INTO payment_events
+          (id, order_id, provider, event_type, status, payload_hash, received_at)
+         VALUES (?, ?, 'stripe', ?, ?, ?, ?)`,
+      )
+      .bind(
+        input.providerEventId,
+        input.orderId,
+        input.eventType,
+        input.status,
+        input.payloadHash,
+        timestamp,
+      ),
+    database
+      .prepare(
+        `UPDATE orders
+         SET status = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID' THEN status ELSE ? END,
+             provider_payment_id = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID'
+               THEN provider_payment_id ELSE COALESCE(?, provider_payment_id) END,
+             provider_event_id = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID'
+               THEN provider_event_id ELSE ? END,
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(
+        input.status,
+        input.status,
+        input.status,
+        input.providerPaymentId ?? null,
+        input.status,
+        input.providerEventId,
+        timestamp,
+        input.orderId,
+      ),
+  ];
+  if (input.status === "PAID") {
+    statements.push(
+      database
+        .prepare(
+          `INSERT OR IGNORE INTO entitlements
+            (id, order_id, user_id, test_id, status, created_at, revoked_at)
+           SELECT ?, id, user_id, test_id, 'ACTIVE', ?, NULL
+           FROM orders WHERE id = ?`,
+        )
+        .bind(entitlementId, timestamp, input.orderId),
+      database
+        .prepare(
+          `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
+           VALUES (?, 'payment_confirmed', ?, NULL, ?, ?)`,
+        )
+        .bind(newId("tel"), order.user_id, JSON.stringify({ provider: "stripe", status: "PAID" }), timestamp),
+    );
+  }
   try {
-    await database.batch([
-      database
-        .prepare(
-          `INSERT INTO payment_events
-            (id, order_id, provider, event_type, status, payload_hash, received_at)
-           VALUES (?, ?, 'stripe', ?, ?, ?, ?)`,
-        )
-        .bind(
-          input.providerEventId,
-          input.orderId,
-          input.eventType,
-          input.status,
-          input.payloadHash,
-          timestamp,
-        ),
-      database
-        .prepare(
-          `UPDATE orders
-           SET status = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID' THEN status ELSE ? END,
-               provider_payment_id = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID'
-                 THEN provider_payment_id ELSE COALESCE(?, provider_payment_id) END,
-               provider_event_id = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID'
-                 THEN provider_event_id ELSE ? END,
-               updated_at = ?
-           WHERE id = ?`,
-        )
-        .bind(
-          input.status,
-          input.status,
-          input.status,
-          input.providerPaymentId ?? null,
-          input.status,
-          input.providerEventId,
-          timestamp,
-          input.orderId,
-        ),
-      ...(input.status === "PAID"
-        ? [
-            database
-              .prepare(
-                `INSERT OR IGNORE INTO entitlements
-                  (id, order_id, user_id, test_id, status, created_at, revoked_at)
-                 SELECT ?, id, user_id, test_id, 'ACTIVE', ?, NULL
-                 FROM orders WHERE id = ?`,
-              )
-              .bind(entitlementId, timestamp, input.orderId),
-          ]
-        : []),
-    ]);
+    await database.batch(statements);
   } catch (error) {
     const race = await database
-      .prepare(`SELECT id FROM payment_events WHERE id = ? LIMIT 1`)
+      .prepare(`SELECT id, payload_hash FROM payment_events WHERE id = ? LIMIT 1`)
       .bind(input.providerEventId)
-      .first<{ id: string }>();
-    if (race) return { duplicate: true, entitlementCreated: false };
+      .first<{ id: string; payload_hash: string }>();
+    if (race) {
+      if (race.payload_hash !== input.payloadHash) throw new StoreError("PAYMENT_EVENT_REPLAY_MISMATCH", 409);
+      return { duplicate: true, entitlementCreated: false };
+    }
     console.error("payment_event_write_failed", error);
     throw new StoreError("PAYMENT_EVENT_WRITE_FAILED", 500);
   }
@@ -612,12 +675,7 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
 
   const timestamp = now();
   const sessionId = newId("sess");
-  const versions = {
-    assessment: "orbita30_ru_v1",
-    itemBank: "draft-pilot-v1",
-    scoring: "mvp-0.3",
-    norms: "within-sample-preview",
-  };
+  const versions = VERSION_IDS;
   await database
     .prepare(
       `INSERT INTO assessments
@@ -960,6 +1018,18 @@ export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
     outputHash: decision.run.outputHash,
     validationResult: decision.run.validationResult,
   });
+  await serverTelemetry({
+    name: "core_completed",
+    userId: viewer.userId,
+    assessmentId: sessionId,
+    metadata: { count: Object.keys(session.responses).filter(isCoreItem).length, status: "CORE_COMPLETE" },
+  });
+  await serverTelemetry({
+    name: "adaptive_started",
+    userId: viewer.userId,
+    assessmentId: sessionId,
+    metadata: { provider: decision.run.provider, fallback: decision.run.validationResult === "fallback", mode: selection.mode, latency_ms: decision.run.latencyMs, count: selection.selectedItemIds.length },
+  });
   const updated = await loadSession(sessionId, viewer.userId);
   if (!updated) throw new StoreError("SESSION_NOT_FOUND", 404);
   return { session: updated, selection, run: decision.run, reused: false };
@@ -1028,7 +1098,7 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
   if (!row) throw new StoreError("REPORT_NOT_FOUND", 404);
   if (row.status === "COMPLETE" && row.report_json) return getReportForUser(reportId, viewer);
 
-  const score = parseJson<ScoreProfile | null>(row.score_json, null);
+  const score = normalizeScoreProfile(parseJson<ScoreProfile | null>(row.score_json, null));
   if (!score) throw new StoreError("SCORE_NOT_FOUND", 500);
   try {
     const generated = await generateReportContent(score);
@@ -1072,7 +1142,9 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
       )
       .bind(timestamp, timestamp, row.assessment_id, viewer.userId)
       .run();
-    await audit(viewer.userId, "REPORT_COMPLETED", "report", reportId, { provider: generated.provider });
+    await audit(viewer.userId, "REPORT_COMPLETED", "report", reportId, { provider: generated.provider, fallback: Boolean(generated.fallbackReason), reason: generated.fallbackReason });
+    await serverTelemetry({ name: "adaptive_completed", userId: viewer.userId, assessmentId: row.assessment_id, metadata: { count: score.adaptiveAnswered, status: "COMPLETE" } });
+    await serverTelemetry({ name: "report_completed", userId: viewer.userId, assessmentId: row.assessment_id, metadata: { provider: generated.provider, fallback: Boolean(generated.fallbackReason), reason: generated.fallbackReason, status: "COMPLETE" } });
   } catch (error) {
     const code = error instanceof StoreError ? error.code : "REPORT_GENERATION_FAILED";
     await database
@@ -1105,7 +1177,7 @@ export async function getReportForUser(reportId: string, viewer: Viewer): Promis
     assessmentId: row.assessment_id,
     status: row.status,
     provider: row.provider,
-    score: parseJson<ScoreProfile>(row.score_json, scoreAssessment({})),
+    score: normalizeScoreProfile(parseJson<ScoreProfile | null>(row.score_json, null)),
     report: parseJson<ReportJSON | null>(row.report_json, null),
     pdfAvailable: Boolean(row.pdf_key),
     generation: {
@@ -1205,21 +1277,9 @@ export async function recordTelemetry(input: {
   viewer: Viewer;
   name: string;
   assessmentId?: string;
-  metadata?: Record<string, string | number | boolean | null>;
+  metadata?: Record<string, unknown>;
 }) {
-  const allowedNames = new Set([
-    "catalog_viewed",
-    "checkout_started",
-    "checkout_redirected",
-    "assessment_started",
-    "answer_saved",
-    "block_completed",
-    "adaptive_selected",
-    "report_viewed",
-    "pdf_downloaded",
-    "support_opened",
-  ]);
-  if (!allowedNames.has(input.name)) throw new StoreError("TELEMETRY_EVENT_NOT_ALLOWED", 422);
+  if (!isTelemetryEventName(input.name)) throw new StoreError("TELEMETRY_EVENT_NOT_ALLOWED", 422);
   await ensureUser(input.viewer);
   const database = ensureDatabase();
   if (input.assessmentId) {
@@ -1229,11 +1289,7 @@ export async function recordTelemetry(input: {
       .first<{ id: string }>();
     if (!assessment) throw new StoreError("SESSION_NOT_FOUND", 404);
   }
-  const safeMetadata = Object.fromEntries(
-    Object.entries(input.metadata ?? {})
-      .filter(([key, value]) => /^[a-z][a-z0-9_]{0,40}$/.test(key) && (typeof value === "number" || typeof value === "boolean" || value === null) && (typeof value !== "number" || Number.isFinite(value)))
-      .slice(0, 12),
-  );
+  const safeMetadata = sanitizeTelemetryMetadata(input.metadata);
   const metadataJson = Object.keys(safeMetadata).length ? JSON.stringify(safeMetadata) : null;
   await database
     .prepare(

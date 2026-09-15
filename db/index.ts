@@ -25,6 +25,20 @@ export type OrbitaRuntimeEnv = {
   ORBITA_ENV?: string;
   ORBITA_ADMIN_USER_IDS?: string;
   ORBITA_INTERNAL_TOKEN?: string;
+  CRON_SECRET?: string;
+  SUPPORT_CONTACT?: string;
+  LEGAL_ENTITY_NAME?: string;
+  LEGAL_JURISDICTION?: string;
+  LEGAL_PROCESSING_PURPOSES?: string;
+  LEGAL_DATA_CATEGORIES?: string;
+  LEGAL_RETENTION_SCHEDULE?: string;
+  LEGAL_PROCESSORS?: string;
+  LEGAL_CROSS_BORDER_PROCESSING?: string;
+  LEGAL_USER_RIGHTS?: string;
+  LEGAL_SECURITY_SUMMARY?: string;
+  LEGAL_RESEARCH_POLICY?: string;
+  LEGAL_MARKETING_POLICY?: string;
+  RETENTION_DRY_RUN?: string;
 };
 
 export function getRuntimeEnv() {

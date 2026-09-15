@@ -102,7 +102,17 @@ function coverPage(pdf: PDFDocument, font: PDFFont, profile: ScoreProfile, repor
   page.drawText("Карта способа", { x: 52, y: height - 240, size: 39, font, color: white });
   page.drawText("действовать.", { x: 52, y: height - 288, size: 39, font, color: lime });
   drawWrapped(page, report.executiveSummary, font, 52, height - 346, width - 104, 15, rgb(0.83, 0.87, 0.91), 23);
-  page.drawText(`Top 5 · ${profile.traits.slice(0, 5).map((trait) => trait.name).join(" · ")}`, { x: 52, y: 116, size: 10, font, color: cyan });
+  drawWrapped(
+    page,
+    `Top 5 · ${profile.traits.slice(0, 5).map((trait) => trait.name).join(" · ")}`,
+    font,
+    52,
+    116,
+    width - 104,
+    10,
+    cyan,
+    14,
+  );
   page.drawText("ПЕРСОНАЛЬНЫЙ РАЗВИВАЮЩИЙ ОТЧЁТ", { x: 52, y: 79, size: 9, font, color: rgb(0.65, 0.7, 0.76) });
   page.drawText("01 / 24", { x: width - 92, y: 29, size: 8, font, color: rgb(0.65, 0.7, 0.76) });
 }
@@ -121,8 +131,8 @@ function profilePage(pdf: PDFDocument, font: PDFFont, traits: ScoreProfile["trai
     page.drawText(String(trait.rank).padStart(2, "0"), { x: 46, y, size: 12, font, color: coral });
     page.drawText(trait.name, { x: 84, y, size: 12, font, color: ink });
     page.drawText(`${trait.standardScore}`, { x: 360, y, size: 12, font, color: ink });
-    page.drawText(`${trait.percentile} pct`, { x: 403, y, size: 9, font, color: muted });
-    page.drawText(`${trait.ci95[0]}—${trait.ci95[1]}`, { x: 477, y, size: 9, font, color: muted });
+    page.drawText(`индекс ${trait.profileIndex}`, { x: 403, y, size: 9, font, color: muted });
+    page.drawText(`${trait.uncertaintyRange[0]}—${trait.uncertaintyRange[1]}`, { x: 477, y, size: 9, font, color: muted });
     page.drawLine({ start: { x: 84, y: y - 8 }, end: { x: 540, y: y - 8 }, thickness: 0.5, color: rgb(0.83, 0.85, 0.87) });
     y -= 34;
     if (index >= 8) break;
@@ -166,7 +176,7 @@ export async function buildReportPdf(profile: ScoreProfile, report: ReportJSON) 
       sections: [
         { label: "Как это может проявляться", body: strength.manifestations.join("\n") },
         { label: "Условия", body: strength.bestConditions.join("\n") },
-        { label: "Числовой контекст", body: trait ? `Показатель ${trait.standardScore}; percentile ${trait.percentile}; интервал ${trait.ci95[0]}—${trait.ci95[1]}.` : "Числовой контекст недоступен." },
+        { label: "Числовой контекст", body: trait ? `Standard score ${trait.standardScore}; пилотный индекс профиля ${trait.profileIndex}; диапазон неопределённости ${trait.uncertaintyRange[0]}—${trait.uncertaintyRange[1]}.` : "Числовой контекст недоступен." },
       ],
     }, pageNumber);
     pageNumber += 1;
@@ -184,15 +194,15 @@ export async function buildReportPdf(profile: ScoreProfile, report: ReportJSON) 
   }
 
   pageFromSpec(pdf, font, { kicker: "Сочетания", title: "Силы работают не по одной.", lead: "Сочетания помогают перейти от списка к наблюдаемым ситуациям.", sections: report.combinations.map((item) => ({ label: item.title, body: item.text })) }, 14);
-  pageFromSpec(pdf, font, { kicker: "Команда", title: "Что вы даёте и что полезно получать.", sections: [{ label: "Ваш вклад", body: report.teamwork.gives }, { label: "Полезная поддержка", body: report.teamwork.needs }, { label: "Разговор", body: "Обсуждайте не «какой я человек», а какое поведение помогает задаче в конкретных условиях." }] }, 15);
-  pageFromSpec(pdf, font, { kicker: "Решения", title: "Ваш способ двигаться к выбору.", lead: report.decisionStyle, sections: [{ label: "Проверка", body: "Перед решением отделите наблюдаемые факты от предположений и заранее назовите сигнал, который заставит пересмотреть выбор." }, { label: "Вопрос", body: "Какой следующий шаг достаточно мал, чтобы получить новую информацию?" }] }, 16);
-  pageFromSpec(pdf, font, { kicker: "Условия", title: "Где рисунок может раскрываться.", sections: [{ label: "Рабочие среды", body: report.workEnvironments.join("\n") }, { label: "Принцип", body: "Среда не обязана совпадать с профилем целиком. Важнее, чтобы были понятны условия, в которых сильные режимы доступны, и способы компенсации остальных." }] }, 17);
+  pageFromSpec(pdf, font, { kicker: "Команда", title: "Что вы даёте и что полезно получать.", sections: [{ label: "Ваш вклад", body: report.teamwork.gives }, { label: "Полезная поддержка", body: report.teamwork.needs }, { label: "Совместная работа", body: report.collaborationStyle }, { label: "Коммуникация", body: report.communicationStyle }] }, 15);
+  pageFromSpec(pdf, font, { kicker: "Решения", title: "Ваш способ двигаться к выбору.", lead: report.decisionStyle, sections: [{ label: "Мышление", body: report.thinkingStyle }, { label: "Выполнение", body: report.executionStyle }, { label: "Влияние", body: report.influenceStyle }, { label: "Проверка", body: "Перед решением отделите наблюдаемые факты от предположений и заранее назовите сигнал, который заставит пересмотреть выбор." }] }, 16);
+  pageFromSpec(pdf, font, { kicker: "Условия", title: "Где рисунок может раскрываться.", sections: [{ label: "Рабочие среды", body: report.workEnvironments.join("\n") }, { label: "Самоуправление", body: report.selfManagementStyle }, { label: "Стресс и слепые зоны", body: report.stressAndBlindSpots }, { label: "Принцип", body: "Среда не обязана совпадать с профилем целиком. Важнее, чтобы были понятны условия, в которых сильные режимы доступны, и способы компенсации остальных." }] }, 17);
   pageFromSpec(pdf, font, { kicker: "30 дней", title: "План одного наблюдаемого месяца.", lead: "Выберите шаги, которые можно увидеть в календаре или в разговоре, а не только почувствовать.", sections: report.development30Days.map((action, index) => ({ label: `Шаг ${index + 1}`, body: action })) }, 18);
   profilePage(pdf, font, profile.traits.slice(0, 8), 19);
   profilePage(pdf, font, profile.traits.slice(8, 16), 20);
   profilePage(pdf, font, profile.traits.slice(16, 24), 21);
   profilePage(pdf, font, profile.traits.slice(24, 30), 22);
-  pageFromSpec(pdf, font, { kicker: "Методология", title: "Что находится под результатом.", sections: [{ label: "Конструкт", body: "30 оригинальных шкал объединены в 6 доменов. Формат сочетает forced-choice, Likert и адаптивные уточнения." }, { label: "Scoring", body: "Числа рассчитываются детерминированным engine. Интерпретационный слой не может изменить score JSON, rank, percentile или интервалы." }, { label: "Качество", body: `RQI ${Math.round(profile.responseQuality.rqi * 100)}%. Флаги качества показываются как повод для осторожного чтения, а не как автоматическое обнуление результата.` }] }, 23);
+  pageFromSpec(pdf, font, { kicker: "Методология", title: "Что находится под результатом.", sections: [{ label: "Конструкт", body: "30 оригинальных шкал объединены в 6 доменов. Формат сочетает forced-choice, Likert и адаптивные уточнения." }, { label: "Scoring", body: "Числа рассчитываются детерминированным engine. Интерпретационный слой не может изменить score JSON, rank, пилотный индекс профиля или диапазоны неопределённости." }, { label: "Статус норм", body: `normStatus: ${profile.normStatus}; нормативная выборка и валидированные популяционные нормы не заявляются.` }, { label: "Качество", body: `RQI ${Math.round(profile.responseQuality.rqi * 100)}%. Флаги качества показываются как повод для осторожного чтения, а не как автоматическое обнуление результата.` }] }, 23);
   pageFromSpec(pdf, font, { kicker: "Границы", title: "Этот отчёт не решает за вас.", lead: "ORBITA—30 — развивающий инструмент собственного проекта, не лицензированная реализация Gallup/CliftonStrengths и не научное заключение.", sections: [{ label: "Нельзя использовать", body: "Для диагностики, оценки здоровья или интеллекта, автоматического найма/увольнения, кредита, страхования, допуска к образованию или другого решения, где цена ошибки высока." }, { label: "Можно использовать", body: "Для рефлексии, подготовки к разговору, распределения ролей и небольших экспериментов развития." }, { label: "Следующий шаг", body: "Сверьте выводы с собственными наблюдениями и обратной связью людей, которым вы доверяете. Если они расходятся, это повод исследовать контекст, а не выбрать «правильную» версию себя." }] }, 24);
 
   return pdf.save({ useObjectStreams: true });

@@ -1,5 +1,7 @@
-import { OrbitaApp } from "../orbita-app";
+import LegalDocumentPage from "../legal-document";
+
+export const dynamic = "force-dynamic";
 
 export default function TermsPage() {
-  return <OrbitaApp initialView="terms" />;
+  return <LegalDocumentPage kind="terms" />;
 }

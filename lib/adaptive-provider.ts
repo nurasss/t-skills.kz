@@ -2,7 +2,9 @@ import { getRuntimeEnv } from "@/db";
 import {
   selectAdaptiveItems,
   validateAdaptiveSelection,
+  ADAPTIVE_REASON_CODES,
   type AdaptiveSelection,
+  type AdaptiveReasonCode,
   type ScoreProfile,
 } from "@/lib/assessment-engine";
 import { ITEM_BANK, type Item } from "@/lib/item-bank";
@@ -23,7 +25,7 @@ export type AdaptiveDecision = {
   run: AdaptiveRunRecord;
 };
 
-const ADAPTIVE_SELECTOR_VERSION = "selector-0.2";
+export const ADAPTIVE_SELECTOR_VERSION = "selector-0.3";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -57,7 +59,7 @@ function expectedInformation(item: Item) {
   return item.type === "adaptive_forced" ? 0.84 : 0.71;
 }
 
-function buildPayload(profile: ScoreProfile, answeredItemIds: string[], targetCount: number) {
+export function buildAdaptivePayload(profile: ScoreProfile, answeredItemIds: string[], targetCount: number) {
   const priorities = profile.traits.map((trait) => ({
     code: trait.code,
     theta: trait.theta,
@@ -111,18 +113,18 @@ function selectionFromPayload(value: unknown) {
   const targetCount = payload.target_count;
   if (!Array.isArray(selected) || !selected.every((id) => typeof id === "string")) throw new Error("ADAPTIVE_OUTPUT_INVALID");
   if (!Number.isInteger(targetCount)) throw new Error("ADAPTIVE_OUTPUT_INVALID");
-  const reasonCodes: Record<string, string[]> = {};
+  const reasonCodes: Record<string, AdaptiveReasonCode[]> = {};
   if (Array.isArray(payload.reason_codes)) {
     for (const entry of payload.reason_codes) {
       if (!entry || typeof entry !== "object") continue;
       const item = entry as Record<string, unknown>;
       if (typeof item.item_id === "string" && Array.isArray(item.reasons) && item.reasons.every((reason) => typeof reason === "string")) {
-        reasonCodes[item.item_id] = item.reasons.slice(0, 8);
+        reasonCodes[item.item_id] = item.reasons.slice(0, 8) as AdaptiveReasonCode[];
       }
     }
   } else if (payload.reason_codes && typeof payload.reason_codes === "object") {
     for (const [id, reasons] of Object.entries(payload.reason_codes as Record<string, unknown>)) {
-      if (Array.isArray(reasons) && reasons.every((reason) => typeof reason === "string")) reasonCodes[id] = reasons.slice(0, 8);
+      if (Array.isArray(reasons)) reasonCodes[id] = reasons.slice(0, 8) as AdaptiveReasonCode[];
     }
   }
   return { selectedItemIds: selected, targetCount, reasonCodes };
@@ -137,7 +139,7 @@ async function chooseWithOpenAI(
 ) {
   const runtimeEnv = getRuntimeEnv();
   const baseUrl = (runtimeEnv.OPENAI_BASE_URL ?? "https://api.openai.com").replace(/\/$/, "").replace(/\/v1$/, "");
-  const payload = buildPayload(profile, answeredItemIds, targetCount);
+  const payload = buildAdaptivePayload(profile, answeredItemIds, targetCount);
   const controller = new AbortController();
   const timeout = Math.max(3000, Math.min(60000, Number(runtimeEnv.ADAPTIVE_TIMEOUT_MS ?? 10000)));
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -152,7 +154,15 @@ async function chooseWithOpenAI(
         input: [
           {
             role: "system",
-            content: [{ type: "input_text", text: "Ты — безопасный Adaptive Item Selector ORBITA-30. Выбирай только item_id из adaptive_pool, не меняй тексты и не считай баллы. Верни только JSON. Соблюдай target_count, диапазон 10..15, максимум 3 item на trait, не выбирай отвеченные items и не дублируй semantic_cluster_id." }],
+            content: [{ type: "input_text", text: [
+              `Ты — безопасный Adaptive Item Selector ORBITA-30, prompt ${ADAPTIVE_SELECTOR_VERSION}.`,
+              "Выбирай только item_id из adaptive_pool; не меняй тексты, не создавай новые items, не считай score и не делай интерпретаций.",
+              "Цель приоритета: 0.45×нормализованный SE + 0.25×близость к границе Top 5/Top 10 + 0.20×contradiction + 0.10×undercoverage.",
+              "Ожидаемая информация: используй expected_information и предпочитай более информативные items после учёта приоритета; для items у границ Top 5/Top 10 отдавай преимущество при сопоставимом приоритете.",
+              "Верни от 10 до 15 items и ровно target_count; максимум 3 item на trait, не выбирай answered_item_ids, не дублируй semantic_cluster_id.",
+              "Reason codes обязательны для каждого выбранного item и могут содержать только HIGH_UNCERTAINTY, TOP5_BOUNDARY, TOP10_BOUNDARY, CONTRADICTION, UNDERCOVERAGE, PAIR_DISCRIMINATION, HIGH_INFORMATION.",
+              "Верни только JSON по схеме.",
+            ].join(" ") }],
           },
           { role: "user", content: [{ type: "input_text", text: JSON.stringify(payload) }] },
         ],
@@ -174,7 +184,7 @@ async function chooseWithOpenAI(
                     additionalProperties: false,
                     properties: {
                       item_id: { type: "string" },
-                      reasons: { type: "array", items: { type: "string" }, maxItems: 8 },
+                      reasons: { type: "array", minItems: 1, items: { type: "string", enum: ADAPTIVE_REASON_CODES }, maxItems: 8 },
                     },
                     required: ["item_id", "reasons"],
                   },
@@ -226,7 +236,7 @@ export async function selectAdaptiveForProfile(
 ): Promise<AdaptiveDecision> {
   const startedAt = Date.now();
   const targetCount = clamp(Math.round(requestedCount), 10, 15);
-  const payload = buildPayload(profile, answeredItemIds, targetCount);
+  const payload = buildAdaptivePayload(profile, answeredItemIds, targetCount);
   const inputHash = await sha256(JSON.stringify(payload));
   const runtimeEnv = getRuntimeEnv();
   const provider = (runtimeEnv.ADAPTIVE_PROVIDER ?? "approved-library").toLowerCase();
@@ -240,7 +250,7 @@ export async function selectAdaptiveForProfile(
     const clusters = Object.fromEntries(
       payload.adaptive_pool.map((item) => [item.id, item.semantic_cluster_id]),
     );
-    if (raw.targetCount !== targetCount || raw.selectedItemIds.length !== targetCount || !validateAdaptiveSelection(raw.selectedItemIds, answeredItemIds, 3, clusters)) {
+    if (raw.targetCount !== targetCount || raw.selectedItemIds.length !== targetCount || Object.keys(raw.reasonCodes).length !== raw.selectedItemIds.length || !validateAdaptiveSelection(raw.selectedItemIds, answeredItemIds, 3, clusters, raw.reasonCodes)) {
       throw new Error("ADAPTIVE_VALIDATION_FAILED");
     }
     const selection: AdaptiveSelection = {

@@ -14,8 +14,11 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
 
 const localBindingConfig = {
-  main: "vinext/server/fetch-handler",
+  // Keep the application router behind the custom Worker so scheduled
+  // retention runs in the same deploy artifact as the HTTP handler.
+  main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  triggers: { crons: ["0 2 * * *"] },
   d1_databases: d1
     ? [
         {

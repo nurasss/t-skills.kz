@@ -39,7 +39,7 @@ export const orders = sqliteTable(
     updatedAt: integer("updated_at", { mode: "number" }).notNull(),
   },
   (table) => [
-    uniqueIndex("orders_idempotency_unique").on(table.idempotencyKey),
+    uniqueIndex("orders_user_idempotency_unique").on(table.userId, table.idempotencyKey),
     index("orders_user_status_idx").on(table.userId, table.status),
     index("orders_provider_checkout_idx").on(table.providerCheckoutId),
   ],

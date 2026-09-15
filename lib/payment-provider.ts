@@ -1,5 +1,7 @@
 import { getRuntimeEnv } from "@/db";
 import { attachCheckoutSession, createPendingOrder, markOrderPaymentFailed, handlePaymentEvent } from "@/lib/durable-store";
+import { VERSION_IDS } from "@/lib/assessment-engine";
+import { verifyStripeSignature } from "@/lib/stripe-signature";
 import type { Viewer } from "@/lib/server-auth";
 
 export class PaymentProviderError extends Error {
@@ -21,12 +23,46 @@ function currency() {
   return value;
 }
 
+export type PublicTestConfig = {
+  id: "orbita30";
+  name: string;
+  assessmentVersion: string;
+  amountMinor: number | null;
+  currency: string;
+  availableForCheckout: boolean;
+  includesPdf: true;
+  oneTime: true;
+  description: string;
+};
+
+export function getPublicTestConfig(): PublicTestConfig {
+  const runtimeEnv = getRuntimeEnv();
+  const rawAmount = Number(runtimeEnv.ASSESSMENT_PRICE_MINOR ?? "");
+  const amountMinor = Number.isSafeInteger(rawAmount) && rawAmount > 0 ? rawAmount : null;
+  const configuredCurrency = (runtimeEnv.ASSESSMENT_CURRENCY ?? "KZT").trim().toUpperCase();
+  const validCurrency = /^[A-Z]{3}$/.test(configuredCurrency);
+  const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
+  return {
+    id: "orbita30",
+    name: "ORBITA—30",
+    assessmentVersion: VERSION_IDS.assessment,
+    amountMinor,
+    currency: validCurrency ? configuredCurrency : "KZT",
+    availableForCheckout: amountMinor !== null && validCurrency && provider === "stripe" && Boolean(runtimeEnv.STRIPE_SECRET_KEY && runtimeEnv.STRIPE_WEBHOOK_SECRET && runtimeEnv.PDF_SIGNING_SECRET),
+    includesPdf: true,
+    oneTime: true,
+    description: "Развивающий профиль способа действовать",
+  };
+}
+
 export async function createCheckout(input: { viewer: Viewer; testId: string; request: Request; idempotencyKey: string }) {
   const runtimeEnv = getRuntimeEnv();
   const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").toLowerCase();
   if (provider !== "stripe") throw new PaymentProviderError("PAYMENT_PROVIDER_UNSUPPORTED");
   const secret = runtimeEnv.STRIPE_SECRET_KEY;
   if (!secret) throw new PaymentProviderError("STRIPE_SECRET_KEY_MISSING");
+  if (!runtimeEnv.STRIPE_WEBHOOK_SECRET) throw new PaymentProviderError("STRIPE_WEBHOOK_SECRET_MISSING");
+  if (!runtimeEnv.PDF_SIGNING_SECRET) throw new PaymentProviderError("PDF_SIGNING_SECRET_MISSING");
 
   const amountMinor = requiredAmount();
   const orderResult = await createPendingOrder({
@@ -92,33 +128,7 @@ async function sha256(value: string) {
   return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
 }
 
-function constantTimeEqual(left: string, right: string) {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  return difference === 0;
-}
-
-async function hmac(secret: string, value: string) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  return hex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value)));
-}
-
-export async function verifyStripeSignature(payload: string, signature: string | null, secret: string) {
-  if (!signature) return false;
-  const parts = signature.split(",");
-  const timestampPart = parts.find((part) => part.startsWith("t="));
-  const timestamp = Number(timestampPart?.slice(2));
-  if (!Number.isInteger(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300) return false;
-  const expected = await hmac(secret, `${timestamp}.${payload}`);
-  return parts.filter((part) => part.startsWith("v1=")).some((part) => constantTimeEqual(expected, part.slice(3)));
-}
+export { verifyStripeSignature } from "@/lib/stripe-signature";
 
 type StripeEvent = {
   id?: string;
@@ -143,7 +153,7 @@ export async function processStripeWebhook(payload: string, signature: string | 
   if (!orderId) return { ignored: true, eventId: event.id, reason: "ORDER_ID_MISSING" };
 
   let status: "PAID" | "PAYMENT_FAILED" | null = null;
-  if ((event.type === "checkout.session.completed" && object.payment_status === "paid") || event.type === "checkout.session.async_payment_succeeded") status = "PAID";
+  if ((event.type === "checkout.session.completed" && object.payment_status === "paid") || (event.type === "checkout.session.async_payment_succeeded" && object.payment_status === "paid")) status = "PAID";
   if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") status = "PAYMENT_FAILED";
   if (!status) return { ignored: true, eventId: event.id, reason: "EVENT_NOT_ACTIONABLE" };
 
@@ -154,6 +164,11 @@ export async function processStripeWebhook(payload: string, signature: string | 
     orderId,
     status,
     providerPaymentId: paymentId,
+    providerCheckoutId: typeof object.id === "string" ? object.id : null,
+    amountMinor: typeof object.amount_total === "number" ? object.amount_total : null,
+    currency: typeof object.currency === "string" ? object.currency : null,
+    testId: typeof metadata.test_id === "string" ? metadata.test_id : null,
+    paymentStatus: typeof object.payment_status === "string" ? object.payment_status : null,
     payloadHash: await sha256(payload),
   });
   return { ignored: false, eventId: event.id, status, ...result };

@@ -45,3 +45,5 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+# Reproducibility artifacts are created outside the checkout by default.
+*.source.tar.gz

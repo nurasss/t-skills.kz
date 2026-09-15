@@ -1,40 +1,108 @@
-# ORBITA—30 handoff
+# ORBITA—30 project handoff
 
-## Technical release
+## Release status
+
+The project is technically prepared for a controlled closed pilot after operator/content/legal sign-off. It is deliberately blocked from a public paid launch until real payment configuration and Kazakhstan legal approval are supplied.
+
+```text
+READY_FOR_CLOSED_PILOT=YES (technical gate; approved pilot operators only)
+READY_FOR_PUBLIC_PAID_LAUNCH=NO
+READY_FOR_VALIDATED_CLAIMS=NO
+```
+
+The current release keeps the complete Russian Q001–Q300 source bank and taxonomy unchanged. Every score carries explicit assessment, item-bank, scoring, selector, report and norm version IDs. `normStatus=unvalidated` is the only production-safe norm state in this release; UI/PDF wording is `pilot profile index` and `uncertainty range`, never percentile or population norm.
+
+## Deployment
 
 - Production URL: `https://orbita-30.yzh905284.chatgpt.site`
-- Hosting project: read from `.openai/hosting.json`
-- Source is versioned in Git and published through Sites.
-- The site is owner-private; unauthenticated visitors receive `401` on protected pages and APIs.
-- D1 and R2 are durable production bindings. Reports are private objects and are delivered through five-minute HMAC-signed links.
-- The current default providers are deterministic `approved-library` implementations. No fake AI call is reported when an AI key is absent.
+- Hosting project: `.openai/hosting.json` (`appgprj_6aa859a4ac588191b9560deef28958a9`)
+- Source is versioned in Git and published through the Sites `sites` remote.
+- The site remains owner-private. Protected APIs require the Sites/ChatGPT identity boundary; local preview auth is limited to `ORBITA_ENV=development`.
+- D1 binding is `DB`; R2 binding is `BUCKET`. The custom deploy Worker is `worker/index.ts`; its built `dist/server/index.js` exports both HTTP `fetch` and scheduled retention `scheduled`.
+- Cron: `0 2 * * *`. Retention defaults to dry-run until explicitly disabled.
 
-## Implemented against the TЗ
+Before any publish, run the Sites build/package/save/deploy workflow and verify the exact full Git SHA. The archive must include `dist/server/index.js`, `dist/.openai/hosting.json` and `dist/.openai/drizzle/**`, and must exclude dependencies, generated local state and OS artifacts.
 
-- 300-item Russian draft-for-pilot bank: 150 forced-choice, 90 Likert, 10 quality, 50 adaptive.
-- Server-side scoring with version IDs, confidence intervals, quality flags, deterministic report input, and frozen score JSON.
-- Backend-validated adaptive selection: 10–15 items, default 12, max three items per trait, no answered IDs, no semantic-cluster duplicates, OpenAI timeout/error fallback.
-- Persistent assessment state, response time, client sequence and idempotency handling.
-- Hosted Stripe Checkout abstraction and signed idempotent webhook path. Card data never enters the application backend.
-- Four independent versioned consent decisions: Terms, Privacy/processing, research opt-in and marketing opt-in. Terms and Privacy are required; research and marketing are optional.
-- Export and deletion workflow, including R2 artifacts, responses, reports, adaptive runs, consents, telemetry and rate-limit records.
-- Strict report validation, safe approved-library narrative, optional privacy-minimized OpenAI Responses API provider, and 24-page A4 PDF.
-- Same-origin mutation protection, no permissive CORS, per-user fixed-window limits, owner-scoped access checks, audit events and telemetry allowlisting.
-- Local QA: full assessment flow, signed/tampered PDF links, replayed completion, export, deletion and 100 concurrent session creation plus 100 autosaves.
-- Production-runtime dependency audit: `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities after the Next/lockfile update.
+## What is implemented
 
-## Values that must be supplied before accepting real payments
+1. Scoring and norms
 
-These values cannot be invented from the TЗ:
+   - Deterministic server scoring preserves reverse/Likert/forced-choice directions.
+   - `ScoringProvider` and `NormProvider` boundaries are explicit.
+   - Unvalidated norm provider emits bounded pilot indices and uncertainty ranges without normative claims.
+   - Persisted legacy score snapshots are normalized at read boundaries; old `percentile`/`ci95` fields are not displayed or re-emitted.
 
-1. `ASSESSMENT_PRICE_MINOR` — the business-approved price in minor units. The `1,500 KZT` value in the README is only an example.
-2. Secret `STRIPE_SECRET_KEY` — the production Stripe account key.
-3. Secret `STRIPE_WEBHOOK_SECRET` — the signing secret for `/api/payments/webhook`.
+2. Adaptive selector
 
-`PDF_SIGNING_SECRET` is already configured as a managed secret in production. The default approved-library report and deterministic adaptive selector are intentionally active until an optional `OPENAI_API_KEY` and approved model choice are supplied.
+   - Selector version is `selector-0.3`.
+   - Payload contains priority heuristic, expected-information proxy, uncertainty/boundary signals, answered IDs and semantic cluster IDs.
+   - Backend whitelist enforces Q251–Q300, 10–15 items, no duplicate/answered item, semantic-cluster uniqueness and max three items per trait.
+   - Reason codes are an exact allowlist: `HIGH_UNCERTAINTY`, `TOP5_BOUNDARY`, `TOP10_BOUNDARY`, `CONTRADICTION`, `UNDERCOVERAGE`, `PAIR_DISCRIMINATION`, `HIGH_INFORMATION`.
+   - OpenAI errors, timeout and invalid output fall back to deterministic selection and are recorded as fallback metadata.
 
-## Pre-launch decisions outside code
+3. Quality
 
-The source TЗ itself marks the item bank as draft for pilot. A real public launch still requires independent expert review, cognitive interviews, pilot data, reliability/validity/fairness analysis, norms, translation/back-translation for KZ/EN, Kazakhstan privacy/legal review, and trademark/similarity review. The current admin surface is an aggregate read-only quality panel; full psychometric CRUD/dashboard workflows require those approved content, parameter and pilot-data inputs.
+   - Straight-line detection uses modal frequency rather than the first answer.
+   - Too-fast behavior is exploratory/pilot-only and does not silently invalidate a score.
+   - Q243/Q246/Q249/Q250 are explicit research-only consistency markers and do not enter trait scores.
+   - RQI and quality flags are persisted as pilot metrics.
 
-Do not describe the current scores as clinically valid, diagnostic, employment selection, IQ or scientifically normed results.
+4. Reports and PDF
+
+   - `lib/interpretation-library.ts` is a versioned approved source for trait contribution, manifestations, best conditions, exact overuse risk, development actions and the supported pair set.
+   - AI receives only minimized score/profile context and approved semantics. Schema and post-validation prevent unsupported traits/pairs and canonicalize approved meanings.
+   - PDF is generated from structured JSON and frozen score data. It contains the required profile, domains, top strengths, combinations, teamwork, communication, thinking/execution/influence, self-management, stress/blind spots, development plan, methodology and limitations sections.
+   - Current output is a 24-page A4 report and contains no normative percentile claim.
+
+5. Payments
+
+   - Checkout is hosted by Stripe; the backend does not collect card data.
+   - Price and currency are read from the backend catalog before redirect and copied into the order.
+   - Webhooks require Stripe signature verification, exact checkout session/order metadata/test ID/amount/currency/payment status matching, replay hash/idempotency protection and a paid-order non-downgrade rule.
+   - Order uniqueness is `(user_id, idempotency_key)` with migration `drizzle/0006_common_rick_jones.sql`.
+   - Entitlement is created only after the durable verification transaction succeeds.
+
+6. Retention, privacy and analytics
+
+   - The scheduled and internal retention paths exclude active sessions, delete R2 artifacts before D1 rows, retain transaction records, record pseudonymous purge audit entries and support bounded idempotent dry-runs.
+   - Full versioned Privacy and Terms documents are rendered from env-driven operator/legal configuration. Kazakhstan legal review and replacement of every placeholder are launch gates.
+   - Analytics is allowlisted and strips raw answers, response payloads and identity fields. Admin analytics returns aggregate funnel/provider/fallback/latency/report/PDF/quality data and hides psychometrics until the minimum pilot sample (200) exists.
+   - Russian is published. KZ/EN remain unpublished until translation, back-translation, cognitive review and measurement-invariance review.
+
+## Production values still required
+
+These values cannot be inferred or fabricated:
+
+1. `ASSESSMENT_PRICE_MINOR` — business-approved price in minor units.
+2. Managed secret `STRIPE_SECRET_KEY`.
+3. Managed secret `STRIPE_WEBHOOK_SECRET`.
+4. Operator/legal values in `.env.example` for entity, support, jurisdiction, purposes, data categories, retention, processors, cross-border processing, rights, security, research and marketing.
+
+`PDF_SIGNING_SECRET` is already present as a managed secret in the current production environment. The default `approved-library` report/adaptive providers are safe without OpenAI. If enabled, `OPENAI_API_KEY` must be a managed secret; missing/error/timeout/schema failure falls back to approved deterministic behavior.
+
+Until the three payment values are configured, `/api/catalog` reports checkout unavailable and the UI cannot redirect to a checkout with an unknown price. Until legal text is approved, the app must remain a controlled pilot. Do not publish percentile, norm, clinical, IQ, employment-selection or other high-stakes claims.
+
+## Verification commands
+
+```sh
+npm ci
+npm run lint
+npx tsc --noEmit
+npm test
+npm run test:e2e
+npm run build
+npm run package:source
+npm audit --omit=dev --audit-level=high
+```
+
+The smoke test runs a real local Worker with D1/R2 bindings and exercises the catalog, auth, entitlement, versioned consent, Q001–Q250, idempotency, adaptive completion, frozen score, approved report, signed PDF and export paths.
+
+## Known non-code gates
+
+- Independent expert/content review and similarity/trademark review.
+- Cognitive interviews and pilot administration.
+- Reliability/SE, EFA/CFA, validity, DIF, measurement invariance and preregistered pilot analysis.
+- Norm construction and cross-validation; no norm table is installed.
+- Kazakhstan privacy/consumer/payment/legal review and approved retention/processor/cross-border wording.
+- Real Stripe business account, amount, webhook endpoint and operational support channel.
+- KZ/EN translations with back-translation and cognitive/invariance checks.

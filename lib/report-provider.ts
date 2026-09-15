@@ -1,6 +1,11 @@
 import { getRuntimeEnv } from "@/db";
 import { buildReport, type ReportJSON, type ScoreProfile } from "@/lib/assessment-engine";
 import { TRAITS, type TraitCode } from "@/lib/item-bank";
+import {
+  approvedLibraryPayload,
+  getApprovedTraitInterpretation,
+  INTERPRETATION_LIBRARY_VERSION,
+} from "@/lib/interpretation-library";
 
 export type GeneratedReport = {
   report: ReportJSON;
@@ -10,14 +15,16 @@ export type GeneratedReport = {
   inputHash: string;
   outputHash: string;
   validationResult: "passed";
+  fallbackReason: string | null;
 };
 
-const REPORT_PROMPT_VERSION = "report-writer-0.2";
+export const REPORT_PROMPT_VERSION = "report-writer-0.3";
 
 const reportSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
+    interpretationLibraryVersion: { type: "string", enum: [INTERPRETATION_LIBRARY_VERSION] },
     executiveSummary: { type: "string" },
     topStrengths: {
       type: "array",
@@ -61,17 +68,32 @@ const reportSchema = {
       properties: { gives: { type: "string" }, needs: { type: "string" } },
       required: ["gives", "needs"],
     },
+    thinkingStyle: { type: "string" },
+    executionStyle: { type: "string" },
+    influenceStyle: { type: "string" },
+    collaborationStyle: { type: "string" },
+    selfManagementStyle: { type: "string" },
+    communicationStyle: { type: "string" },
     decisionStyle: { type: "string" },
+    stressAndBlindSpots: { type: "string" },
     workEnvironments: { type: "array", items: { type: "string" } },
     development30Days: { type: "array", minItems: 5, maxItems: 5, items: { type: "string" } },
     confidenceNote: { type: "string" },
   },
   required: [
+    "interpretationLibraryVersion",
     "executiveSummary",
     "topStrengths",
     "combinations",
     "teamwork",
+    "thinkingStyle",
+    "executionStyle",
+    "influenceStyle",
+    "collaborationStyle",
+    "selfManagementStyle",
+    "communicationStyle",
     "decisionStyle",
+    "stressAndBlindSpots",
     "workEnvironments",
     "development30Days",
     "confidenceNote",
@@ -99,6 +121,7 @@ function isStringArray(value: unknown, min = 1, max = 12): value is string[] {
 function isReportJSON(value: unknown): value is ReportJSON {
   if (!value || typeof value !== "object") return false;
   const report = value as Record<string, unknown>;
+  if (report.interpretationLibraryVersion !== INTERPRETATION_LIBRARY_VERSION) return false;
   if (typeof report.executiveSummary !== "string" || report.executiveSummary.length > 2400) return false;
   if (!Array.isArray(report.topStrengths) || report.topStrengths.length !== 5) return false;
   for (const item of report.topStrengths) {
@@ -106,15 +129,20 @@ function isReportJSON(value: unknown): value is ReportJSON {
     const strength = item as Record<string, unknown>;
     if (typeof strength.trait !== "string" || !traitCodes.has(strength.trait as TraitCode)) return false;
     if (typeof strength.contribution !== "string" || typeof strength.overuseRisk !== "string") return false;
+    const approved = getApprovedTraitInterpretation(strength.trait as TraitCode);
     if (strength.contribution.length > 1200 || strength.overuseRisk.length > 1200) return false;
+    if (strength.overuseRisk !== approved.overuseRisk) return false;
     if (!isStringArray(strength.manifestations) || !isStringArray(strength.bestConditions) || !isStringArray(strength.developmentActions)) return false;
+    if (JSON.stringify(strength.developmentActions) !== JSON.stringify(approved.developmentActions)) return false;
   }
   if (!Array.isArray(report.combinations) || report.combinations.length < 3 || report.combinations.length > 5) return false;
   if (!report.combinations.every((item) => item && typeof item === "object" && typeof (item as Record<string, unknown>).title === "string" && typeof (item as Record<string, unknown>).text === "string")) return false;
   if (!report.teamwork || typeof report.teamwork !== "object") return false;
   const teamwork = report.teamwork as Record<string, unknown>;
   if (typeof teamwork.gives !== "string" || typeof teamwork.needs !== "string") return false;
-  if (typeof report.decisionStyle !== "string" || report.decisionStyle.length > 1800) return false;
+  for (const field of ["thinkingStyle", "executionStyle", "influenceStyle", "collaborationStyle", "selfManagementStyle", "communicationStyle", "decisionStyle", "stressAndBlindSpots"]) {
+    if (typeof report[field] !== "string" || (report[field] as string).length > 1800) return false;
+  }
   if (!isStringArray(report.workEnvironments, 1, 8) || !isStringArray(report.development30Days, 5, 5)) return false;
   if (typeof report.confidenceNote !== "string" || report.confidenceNote.length > 1800) return false;
   return true;
@@ -122,7 +150,25 @@ function isReportJSON(value: unknown): value is ReportJSON {
 
 function validateReportAgainstProfile(report: ReportJSON, profile: ScoreProfile) {
   const expectedTop = profile.traits.slice(0, 5).map((trait) => trait.code);
-  return report.topStrengths.length === expectedTop.length && report.topStrengths.every((item, index) => item.trait === expectedTop[index]);
+  return report.topStrengths.length === expectedTop.length &&
+    new Set(report.topStrengths.map((item) => item.trait)).size === expectedTop.length &&
+    report.topStrengths.every((item, index) => item.trait === expectedTop[index]);
+}
+
+/**
+ * The model may write connective prose, but approved trait and pair semantics
+ * remain canonical and are re-attached after validation. This prevents a
+ * provider response from inventing a psychological property for an unsupported
+ * combination or changing the reviewed risk/development language.
+ */
+function canonicalizeApprovedSemantics(report: ReportJSON, profile: ScoreProfile): ReportJSON {
+  const canonical = buildReport(profile);
+  return {
+    ...report,
+    interpretationLibraryVersion: INTERPRETATION_LIBRARY_VERSION,
+    topStrengths: canonical.topStrengths,
+    combinations: canonical.combinations,
+  };
 }
 
 function hex(bytes: ArrayBuffer) {
@@ -143,9 +189,9 @@ function scorePayload(profile: ScoreProfile) {
       definition: trait.definition,
       overuseRisk: trait.overuseRisk,
       standardScore: trait.standardScore,
-      percentile: trait.percentile,
+      profileIndex: trait.profileIndex,
       rank: trait.rank,
-      ci95: trait.ci95,
+      uncertaintyRange: trait.uncertaintyRange,
       exposure: trait.exposure,
       contradiction: trait.contradiction,
     })),
@@ -156,11 +202,11 @@ function scorePayload(profile: ScoreProfile) {
 function systemPrompt() {
   return [
     "Ты — слой безопасной интерпретации ORBITA-30.",
-    "На входе уже рассчитанный score JSON. Никогда не меняй числа, rank, percentile, CI, версии или флаги качества.",
+    "На входе уже рассчитанный score JSON. Никогда не меняй числа, rank, profileIndex, uncertaintyRange, normStatus, версии или флаги качества.",
     "Верни только JSON по заданной схеме, на русском языке.",
     "Используй вероятностный язык: может быть, вероятно, часто помогает. Не ставь диагнозы, не оценивай IQ, здоровье, личностную ценность и не обещай профессию, успех, найм или иной исход.",
     "Низкие значения не называй слабостью или дефектом. Объясняй наблюдаемые режимы действия, условия, overuse-риск и конкретные развивающие шаги.",
-    "Используй только смыслы и формулировки, поддержанные approved interpretation library; не придумывай новые traits или свойства.",
+    `Используй только смыслы и формулировки, поддержанные approved interpretation library ${INTERPRETATION_LIBRARY_VERSION}; не придумывай новые traits, свойства или комбинации. Для пары, которой нет в библиотеке, явно скажи, что отдельное свойство не выводится.`,
     "Топ-сильные стороны, trait и все числовые данные должны следовать входному JSON.",
   ].join(" ");
 }
@@ -240,22 +286,51 @@ export async function generateReportContent(profile: ScoreProfile): Promise<Gene
   const provider = (runtimeEnv.REPORT_PROVIDER ?? "approved-library").toLowerCase();
   const input = {
     score_profile: scorePayload(profile),
-    approved_interpretation_library: buildReport(profile),
+    approved_interpretation_library: approvedLibraryPayload(profile.traits.slice(0, 5).map((trait) => trait.code)),
   };
   const inputText = JSON.stringify(input);
   const inputHash = await sha256(inputText);
   if (provider === "openai") {
-    if (!runtimeEnv.OPENAI_API_KEY) throw new ReportProviderError("OPENAI_API_KEY_MISSING");
     const modelId = runtimeEnv.REPORT_MODEL ?? runtimeEnv.OPENAI_MODEL ?? "gpt-5";
-    const report = await generateWithOpenAI(profile, runtimeEnv.OPENAI_API_KEY, inputText, modelId);
+    if (runtimeEnv.OPENAI_API_KEY) {
+      try {
+        const report = canonicalizeApprovedSemantics(await generateWithOpenAI(profile, runtimeEnv.OPENAI_API_KEY, inputText, modelId), profile);
+        return {
+          report,
+          provider: "openai",
+          promptVersion: REPORT_PROMPT_VERSION,
+          modelId,
+          inputHash,
+          outputHash: await sha256(JSON.stringify(report)),
+          validationResult: "passed",
+          fallbackReason: null,
+        };
+      } catch (error) {
+        const reason = error instanceof ReportProviderError ? error.code : "OPENAI_PROVIDER_FAILED";
+        console.error("report_provider_fallback", { reason });
+        const report = buildReport(profile);
+        return {
+          report,
+          provider: "approved-library",
+          promptVersion: `${REPORT_PROMPT_VERSION}:fallback`,
+          modelId: null,
+          inputHash,
+          outputHash: await sha256(JSON.stringify(report)),
+          validationResult: "passed",
+          fallbackReason: reason,
+        };
+      }
+    }
+    const report = buildReport(profile);
     return {
       report,
-      provider: "openai",
-      promptVersion: REPORT_PROMPT_VERSION,
-      modelId,
+      provider: "approved-library",
+      promptVersion: `${REPORT_PROMPT_VERSION}:fallback`,
+      modelId: null,
       inputHash,
       outputHash: await sha256(JSON.stringify(report)),
       validationResult: "passed",
+      fallbackReason: "OPENAI_API_KEY_MISSING",
     };
   }
   const report = buildReport(profile);
@@ -263,10 +338,11 @@ export async function generateReportContent(profile: ScoreProfile): Promise<Gene
   return {
     report,
     provider: "approved-library",
-    promptVersion: "approved-library-v1",
+    promptVersion: INTERPRETATION_LIBRARY_VERSION,
     modelId: null,
     inputHash,
     outputHash: await sha256(JSON.stringify(report)),
     validationResult: "passed",
+    fallbackReason: null,
   };
 }

@@ -26,6 +26,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import { ApiClientError, apiJson, readPendingResponses, topLevelNavigate, writePendingResponses } from "@/app/orbita-api";
+import { InfoView } from "@/app/orbita-public-views";
+import type { AccountOverview, AdminMetrics, PendingResponse, Phase, PublicCatalog, ReportPayload, SessionPayload, View } from "@/app/orbita-view-types";
 import {
   buildDemoResponses,
   buildReport,
@@ -34,160 +37,13 @@ import {
   scoreAssessment,
   selectAdaptiveItems,
   traitName,
+  VERSION_IDS,
   type AdaptiveSelection,
   type ReportJSON,
   type ResponseMap,
   type ScoreProfile,
 } from "@/lib/assessment-engine";
 import { ITEM_BANK, TRAITS, type Item } from "@/lib/item-bank";
-
-type View =
-  | "home"
-  | "catalog"
-  | "detail"
-  | "checkout"
-  | "consent"
-  | "assessment"
-  | "break"
-  | "processing"
-  | "results"
-  | "account"
-  | "methodology"
-  | "privacy"
-  | "terms"
-  | "faq"
-  | "support"
-  | "admin";
-
-type Phase = "core" | "adaptive";
-
-type AccountOrder = {
-  id: string;
-  testId: string;
-  amountMinor: number;
-  currency: string;
-  status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED";
-  provider: string;
-  checkoutUrl: string | null;
-  createdAt: string;
-};
-
-type AccountAssessment = {
-  id: string;
-  testId: string;
-  state: string;
-  clientSeq: number;
-  adaptiveCount: number;
-  reportId: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type AccountOverview = {
-  user: { id: string; email: string; displayName: string };
-  orders: AccountOrder[];
-  assessments: AccountAssessment[];
-};
-
-type PendingResponse = {
-  sessionId: string;
-  itemId: string;
-  response: number;
-  responseTimeMs: number;
-  clientSeq: number;
-  idempotencyKey: string;
-};
-
-type SessionPayload = {
-  id: string;
-  state: string;
-  selection_mode: "deterministic-fallback" | "ai-openai" | null;
-  versions: ScoreProfile["versions"];
-  next_item_id: string | null;
-  core_answered: number;
-  adaptive_item_ids: string[];
-  response_count: number;
-  responses: ResponseMap;
-  response_times: Record<string, number>;
-  profile?: ScoreProfile | null;
-  report_id: string | null;
-  consents?: Array<{
-    consentType: "terms" | "privacy" | "research" | "marketing";
-    granted: boolean;
-    textVersion: string;
-    decidedAt: string;
-    revokedAt: string | null;
-  }>;
-  updated_at: string;
-};
-
-type ReportPayload = {
-  id: string;
-  assessment_id: string;
-  status: string;
-  provider: string | null;
-  score: ScoreProfile;
-  report: ReportJSON | null;
-  pdf_available: boolean;
-  generation?: {
-    promptVersion: string | null;
-    modelId: string | null;
-    inputHash: string | null;
-    outputHash: string | null;
-    validationResult: string | null;
-  };
-  updated_at: string;
-};
-
-type AdminMetrics = {
-  users: number;
-  orders: Array<{ status: string; count: number }>;
-  assessments: Array<{ state: string; count: number }>;
-  reports: Array<{ status: string; count: number }>;
-  telemetryLast7Days: Array<{ name: string; count: number }>;
-  generatedAt: string;
-};
-
-class ApiClientError extends Error {
-  constructor(public readonly code: string, message: string) {
-    super(message);
-    this.name = "ApiClientError";
-  }
-}
-
-async function apiJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
-  if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const response = await fetch(input, { ...init, credentials: "include", headers });
-  const payload = await response.json().catch(() => ({})) as { error?: string; message?: string } & T;
-  if (!response.ok) throw new ApiClientError(payload.error ?? "REQUEST_FAILED", payload.message ?? "Запрос не выполнен.");
-  return payload as T;
-}
-
-function readPendingResponses(): PendingResponse[] {
-  try {
-    const raw = window.localStorage.getItem("orbita-pending-responses-v1");
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is PendingResponse => Boolean(item && typeof item === "object" &&
-      typeof (item as PendingResponse).sessionId === "string" &&
-      typeof (item as PendingResponse).itemId === "string" &&
-      typeof (item as PendingResponse).response === "number" &&
-      typeof (item as PendingResponse).idempotencyKey === "string"));
-  } catch {
-    return [];
-  }
-}
-
-function writePendingResponses(items: PendingResponse[]) {
-  try {
-    if (items.length) window.localStorage.setItem("orbita-pending-responses-v1", JSON.stringify(items));
-    else window.localStorage.removeItem("orbita-pending-responses-v1");
-  } catch {
-    // The server remains the source of truth even if the retry cache is unavailable.
-  }
-}
 
 const CORE_ITEMS = ITEM_BANK.filter((item) => Number(item.id.slice(1)) <= 250);
 const DOMAIN_COLORS = ["coral", "cyan", "lime", "violet", "amber", "blue"];
@@ -522,27 +378,35 @@ function CheckoutView({
   onCheckout,
   busy,
   error,
+  catalog,
 }: {
   onNavigate: (view: View) => void;
   onCheckout: () => void;
   busy: boolean;
   error?: string;
+  catalog?: PublicCatalog;
 }) {
+  const test = catalog?.test;
+  const displayedPrice = test?.amountMinor !== null && test?.amountMinor !== undefined
+    ? new Intl.NumberFormat("ru-RU", { style: "currency", currency: test.currency }).format(test.amountMinor / 100)
+    : "Цена ещё не настроена";
+  const checkoutAvailable = Boolean(test?.availableForCheckout);
   return (
     <div className="page-wrap narrow-page">
       <button className="back-link" onClick={() => onNavigate("detail")} type="button"><ArrowLeft size={15} /> ORBITA—30</button>
       <SectionHeading eyebrow="CHECKOUT" title="Оформление теста" body="После подтверждения оплаты создаётся одноразовый доступ к конкретной версии оценки." />
       <div className="checkout-grid">
         <Card className="checkout-card">
-          <CardHeader><CardTitle>ORBITA—30</CardTitle><CardDescription>orbita30_ru_v1 · draft for pilot</CardDescription></CardHeader>
+          <CardHeader><CardTitle>ORBITA—30</CardTitle><CardDescription>{test?.assessmentVersion ?? "orbita30_ru_v1"} · draft for pilot</CardDescription></CardHeader>
           <CardContent>
             <div className="order-line"><span>Оценка</span><strong>1 доступ</strong></div>
             <div className="order-line"><span>Результат</span><strong>Dashboard + PDF</strong></div>
-            <div className="order-line"><span>Валюта</span><strong>фиксируется в order</strong></div>
-            <div className="order-total"><span>К оплате</span><strong>по цене checkout</strong></div>
-            <Button className="orbita-button primary-button full-button" disabled={busy} size="lg" onClick={onCheckout}>
-              {busy ? "Создаём защищённую оплату…" : "Перейти к защищённой оплате"} <ArrowRight size={16} />
+            <div className="order-line"><span>Тип оплаты</span><strong>один раз</strong></div>
+            <div className="order-total"><span>К оплате · {test?.currency ?? "—"}</span><strong>{displayedPrice}</strong></div>
+            <Button className="orbita-button primary-button full-button" disabled={busy || !checkoutAvailable} size="lg" onClick={onCheckout}>
+              {busy ? "Создаём защищённую оплату…" : checkoutAvailable ? "Перейти к защищённой оплате" : "Оплата пока недоступна"} <ArrowRight size={16} />
             </Button>
+            {!catalog ? <p className="validation-note">Проверяем цену и доступность оплаты…</p> : !checkoutAvailable ? <p className="validation-note">Оплата станет доступна после настройки цены и Stripe в production.</p> : null}
             {error ? <p className="validation-note">{error}</p> : null}
             <p className="micro-copy"><LockKeyhole size={13} /> Hosted checkout: карточные данные не проходят через backend ORBITA.</p>
           </CardContent>
@@ -815,8 +679,8 @@ function ScoreRow({ trait, index }: { trait: ScoreProfile["traits"][number]; ind
       <span className={"rank-pill " + color}>{String(trait.rank).padStart(2, "0")}</span>
       <div className="score-name"><strong>{trait.name}</strong><small>{trait.code} · {scoreBand(trait.standardScore)}</small></div>
       <div className="score-bar"><span style={{ width: trait.standardScore + "%" }} /></div>
-      <div className="score-number"><strong>{trait.standardScore}</strong><small>{trait.percentile} pct</small></div>
-      <div className="score-ci"><small>CI 95%</small><span>{trait.ci95[0]}—{trait.ci95[1]}</span></div>
+      <div className="score-number"><strong>{trait.standardScore}</strong><small>индекс {trait.profileIndex}</small></div>
+      <div className="score-ci"><small>Диапазон</small><span>{trait.uncertaintyRange[0]}—{trait.uncertaintyRange[1]}</span></div>
     </div>
   );
 }
@@ -853,10 +717,10 @@ function ResultsView({
           <div className="top-five-grid">
             {top.map((trait, index) => (
               <article className={"top-card " + DOMAIN_COLORS[Math.floor(index / 5)]} key={trait.code}>
-                <div className="top-card-head"><span>0{index + 1}</span><Badge className="outline-badge">{trait.percentile} pct</Badge></div>
+                <div className="top-card-head"><span>0{index + 1}</span><Badge className="outline-badge">индекс {trait.profileIndex}</Badge></div>
                 <h3>{trait.name}</h3>
                 <p>{trait.definition}</p>
-                <div className="top-score"><strong>{trait.standardScore}</strong><span>standard score<br />CI {trait.ci95[0]}—{trait.ci95[1]}</span></div>
+                <div className="top-score"><strong>{trait.standardScore}</strong><span>standard score<br />диапазон {trait.uncertaintyRange[0]}—{trait.uncertaintyRange[1]}</span></div>
                 <div className="top-card-line" />
               </article>
             ))}
@@ -864,13 +728,13 @@ function ResultsView({
         </section>
 
         <section className="results-section profile-section">
-          <div className="results-section-head"><div><span className="section-index">02</span><div><h2>Полный профиль 30</h2><p>Контекст важнее одного места</p></div></div><span className="section-note">θ + SE + percentile</span></div>
+          <div className="results-section-head"><div><span className="section-index">02</span><div><h2>Полный профиль 30</h2><p>Контекст важнее одного места</p></div></div><span className="section-note">θ + SE + пилотный индекс</span></div>
           <div className="score-list">{profile.traits.map((trait, index) => <ScoreRow index={index} key={trait.code} trait={trait} />)}</div>
         </section>
 
         <section className="results-section domains-section">
           <div className="results-section-head"><div><span className="section-index">03</span><div><h2>6 доменов</h2><p>Навигация, не замена профилю шкал</p></div></div></div>
-          <div className="domain-score-grid">{profile.domains.map((domain, index) => <div className={"domain-score-card " + DOMAIN_COLORS[index]} key={domain.code}><span>{domain.code}</span><h3>{domain.name}</h3><strong>{domain.score}</strong><small>{domain.percentile} pct · агрегат пяти θ</small><div className="mini-bar"><span style={{ width: domain.score + "%" }} /></div></div>)}</div>
+          <div className="domain-score-grid">{profile.domains.map((domain, index) => <div className={"domain-score-card " + DOMAIN_COLORS[index]} key={domain.code}><span>{domain.code}</span><h3>{domain.name}</h3><strong>{domain.score}</strong><small>индекс {domain.profileIndex} · агрегат пяти θ</small><div className="mini-bar"><span style={{ width: domain.score + "%" }} /></div></div>)}</div>
         </section>
 
         <section className="results-section interpretation-section">
@@ -944,7 +808,7 @@ function AccountView({
         </CardContent></Card>
       </div>
       <div className="account-history-grid"><Card className="account-card"><CardHeader><CardTitle>Заказы</CardTitle><CardDescription>Цена и валюта зафиксированы в каждом order.</CardDescription></CardHeader><CardContent>{overview?.orders.length ? <div className="account-history-list">{overview.orders.map((order) => <div className="account-history-row" key={order.id}><span><strong>{order.testId}</strong><small>{new Date(order.createdAt).toLocaleString("ru-RU")}</small></span><span><strong>{(order.amountMinor / 100).toLocaleString("ru-RU")} {order.currency}</strong><small>{order.status}</small></span></div>)}</div> : <p className="account-muted">Заказов пока нет.</p>}</CardContent></Card><Card className="account-card"><CardHeader><CardTitle>Сессии</CardTitle><CardDescription>Последнее подтверждённое состояние хранится на сервере.</CardDescription></CardHeader><CardContent>{overview?.assessments.length ? <div className="account-history-list">{overview.assessments.map((assessment) => <div className="account-history-row" key={assessment.id}><span><strong>{assessment.state}</strong><small>{assessment.clientSeq} ответов · {new Date(assessment.updatedAt).toLocaleString("ru-RU")}</small></span>{assessment.reportId ? <Button className="orbita-button ghost-button" size="sm" onClick={() => onOpenReport(assessment.reportId as string)}>Отчёт</Button> : null}</div>)}</div> : <p className="account-muted">Сессий пока нет.</p>}</CardContent></Card></div>
-      <div className="account-footer-grid"><div className="account-stat"><span>Банк items</span><strong>{counts.total}</strong><small>{counts.forced} FC · {counts.likert} Likert · {counts.adaptiveDirect + counts.adaptiveForced} adaptive</small></div><div className="account-stat"><span>Версия scoring</span><strong>mvp-0.3</strong><small>deterministic · reproducible</small></div><div className="account-stat"><span>Права данных</span><strong>готовы</strong><small>export · delete</small></div></div>
+      <div className="account-footer-grid"><div className="account-stat"><span>Банк items</span><strong>{counts.total}</strong><small>{counts.forced} FC · {counts.likert} Likert · {counts.adaptiveDirect + counts.adaptiveForced} adaptive</small></div><div className="account-stat"><span>Версия scoring</span><strong>{VERSION_IDS.scoring}</strong><small>deterministic · reproducible</small></div><div className="account-stat"><span>Права данных</span><strong>готовы</strong><small>export · delete</small></div></div>
       <div className="account-data-actions"><Button className="orbita-button secondary-button" onClick={onExport}><Download size={15} /> Запросить экспорт данных</Button><Button className="orbita-button ghost-button" onClick={onDelete}><LockKeyhole size={15} /> Удалить аккаунт</Button>{actionStatus ? <span className="autosave-status"><span className="status-dot" />{actionStatus}</span> : null}</div>
     </div>
   );
@@ -959,25 +823,15 @@ function MethodologyView({ onNavigate }: { onNavigate: (view: View) => void }) {
         <aside className="method-index"><span>СОДЕРЖАНИЕ</span><a href="#model">Модель</a><a href="#scoring">Scoring</a><a href="#adaptive">Adaptive</a><a href="#quality">Quality</a><a href="#validation">Валидация</a><a href="#limits">Ограничения</a></aside>
         <div className="method-content">
           <section className="method-block" id="model"><span className="section-index">01</span><h2>Модель конструкта</h2><p>Шесть доменов, по пять оригинальных шкал в каждом. Шкалы описывают предпочтительный способ действия; низкое значение не является дефектом.</p><div className="method-domain-grid">{TRAITS.map((trait, index) => <div key={trait.code}><span className={"domain-code " + DOMAIN_COLORS[Math.floor(index / 5)]}>{trait.code}</span><strong>{trait.name}</strong><p>{trait.definition}</p></div>)}</div></section>
-          <section className="method-block" id="scoring"><span className="section-index">02</span><h2>Детерминированный scoring</h2><p>Одинаковый набор raw responses при одинаковых версиях даёт одинаковый score JSON. LLM не имеет права менять баллы.</p><div className="formula"><span>FC evidence</span><strong>−x / 2&nbsp;&nbsp; +x / 2</strong><span>для левой и правой шкалы</span><span>Base θ</span><strong>0.70 × FC_z + 0.30 × LK_z</strong><span>гибрид MVP до пилотных норм</span><span>Final θ</span><strong>weighted update</strong><span>adaptive evidence снижает SE</span></div><div className="version-row"><Badge variant="outline">assessment { "orbita30_ru_v1" }</Badge><Badge variant="outline">items { "draft-pilot-v1" }</Badge><Badge variant="outline">scoring { "mvp-0.3" }</Badge><Badge variant="outline">norm { "within-sample-preview" }</Badge></div></section>
+          <section className="method-block" id="scoring"><span className="section-index">02</span><h2>Детерминированный scoring</h2><p>Одинаковый набор raw responses при одинаковых версиях даёт одинаковый score JSON. LLM не имеет права менять баллы.</p><div className="formula"><span>FC evidence</span><strong>−x / 2&nbsp;&nbsp; +x / 2</strong><span>для левой и правой шкалы</span><span>Base θ</span><strong>0.70 × FC_z + 0.30 × LK_z</strong><span>гибрид MVP до пилотных норм</span><span>Final θ</span><strong>weighted update</strong><span>adaptive evidence снижает SE</span></div><div className="version-row"><Badge variant="outline">assessment { VERSION_IDS.assessment }</Badge><Badge variant="outline">items { VERSION_IDS.itemBank }</Badge><Badge variant="outline">scoring { VERSION_IDS.scoring }</Badge><Badge variant="outline">norm { VERSION_IDS.norms }</Badge></div><p>Статус normStatus: unvalidated. Пилотный индекс профиля не является долей людей и не используется для межличностного сравнения.</p></section>
           <section className="method-block" id="adaptive"><span className="section-index">03</span><h2>Adaptive без выхода за банк</h2><p>Selector получает минимальный структурированный payload и может вернуть только ID из Q251–Q300. Backend валидирует диапазон 10–15, отсутствие дублей и quota per trait. При timeout работает deterministic fallback.</p><div className="adaptive-table"><div><span>Банк</span><strong>Q251–Q300</strong><small>{counts.adaptiveDirect} direct · {counts.adaptiveForced} discriminator</small></div><div><span>Цель</span><strong>10–15</strong><small>12 по умолчанию</small></div><div><span>Quota</span><strong>≤ 3</strong><small>на одну шкалу</small></div><div><span>Mode</span><strong>fallback</strong><small>validation passed</small></div></div></section>
-          <section className="method-block" id="quality"><span className="section-index">04</span><h2>Response quality</h2><p>Флаги качества не обнуляют результат. Они формируют RQI и при необходимости предупреждение для внутренней аналитики и отчёта.</p><div className="quality-list"><div><Check size={15} /><span><strong>Attention check</strong><small>2 из 3 instructed-response не выполнены</small></span></div><div><Check size={15} /><span><strong>Too fast</strong><small>Порог калибруется по пилотной выборке</small></span></div><div><Check size={15} /><span><strong>Straight-lining</strong><small>Почти все Likert ответы одинаковы</small></span></div><div><Check size={15} /><span><strong>Contradiction</strong><small>Дополнительный приоритет адаптивным уточнениям</small></span></div></div></section>
+          <section className="method-block" id="quality"><span className="section-index">04</span><h2>Response quality</h2><p>Флаги качества не обнуляют результат. Они формируют RQI и при необходимости предупреждение для внутренней аналитики и отчёта.</p><div className="quality-list"><div><Check size={15} /><span><strong>Attention check</strong><small>2 из 3 instructed-response не выполнены</small></span></div><div><Check size={15} /><span><strong>Too fast</strong><small>Исследовательский threshold до пилотной калибровки</small></span></div><div><Check size={15} /><span><strong>Straight-lining</strong><small>Модальная частота одинаковых Likert ответов, а не только первый ответ</small></span></div><div><Check size={15} /><span><strong>Contradiction</strong><small>Дополнительный приоритет адаптивным уточнениям</small></span></div><div><Check size={15} /><span><strong>Q243/Q246/Q249/Q250</strong><small>Контекстные consistency markers: учитываются в quality telemetry, не входят в trait score и помечены research-only.</small></span></div></div></section>
           <section className="method-block" id="validation"><span className="section-index">05</span><h2>Что должно быть проверено до launch</h2><div className="validation-grid">{["Экспертный review и cognitive interviews", "Pilot ≈500+ и item analysis", "EFA/CFA и reliability / SE", "Measurement invariance и DIF", "Нормы 1500–3000+ и cross-validation", "Visual regression PDF и accessibility e2e"].map((item, index) => <div key={item}><span>{String(index + 1).padStart(2, "0")}</span><p>{item}</p></div>)}</div></section>
           <section className="method-block limit-block" id="limits"><span className="section-index">06</span><h2>Ограничения</h2><p>Это не лицензированная реализация CliftonStrengths®, StrengthsFinder® или другого продукта Gallup. ORBITA—30 использует собственную модель, названия, вопросы, scoring и визуальный язык. Все 300 items имеют статус draft for pilot; перед production нужен независимый similarity review и юридическая проверка.</p><button className="text-link" onClick={() => onNavigate("privacy")} type="button">Privacy & data rights <ArrowRight size={15} /></button></section>
         </div>
       </div>
     </div>
   );
-}
-
-function InfoView({ kind, onNavigate }: { kind: "privacy" | "terms" | "faq" | "support"; onNavigate: (view: View) => void }) {
-  const content = {
-    privacy: { eyebrow: "PRIVACY", title: "Данные — часть дизайна.", body: "Минимизация, отдельные согласия и понятный путь на экспорт или удаление.", blocks: [["Что хранится", "Для прохождения достаточно account identifier и ответов. ИИН, дата рождения и работодатель не нужны."], ["Что не уходит в AI payload", "Email, телефон, ФИО и payment refs не передаются adaptive или report engine."], ["Ваши действия", "Можно запросить экспорт или удаление. Удаление проходит через формализованный workflow и логируется без обычного audit payload ответов."]] },
-    terms: { eyebrow: "TERMS", title: "Как использовать результат.", body: "ORBITA—30 — развивающий продукт, а не диагностическое или высокозначимое решение.", blocks: [["Нельзя", "Использовать как медицинское заключение, единственное основание для найма, увольнения, кредита, страхования или допуска к образованию."], ["Можно", "Использовать как материал для самоанализа, разговора о взаимодействии и планирования развития."], ["Статус доказательности", "До завершения пилота и публикации психометрических показателей продукт не обещает научную валидность."]] },
-    faq: { eyebrow: "FAQ", title: "Вопросы, которые обычно задают.", body: "Коротко о формате, времени и смысле результата.", blocks: [["Сколько длится тест?", "250 вопросов разбиты на 5 блоков по 50. Между блоками можно делать паузы. После основной части — 10–15 уточнений."], ["Что если я закрою браузер?", "Введённый ответ сохраняется сразу, а session продолжает с последнего подтверждённого item."], ["Почему вопросы разные?", "В тесте нет хороших и плохих сильных сторон. Adaptive selector уточняет зоны неопределённости, а не «балансирует» ваш профиль."], ["Можно ли сравнивать людей?", "В MVP нет. До научных норм percentile и rank — внутри-выборочный preview, не межличностная шкала."]] },
-    support: { eyebrow: "SUPPORT", title: "Нужна помощь?", body: "Сохраняем контекст сессии, но не просим присылать полный набор ответов в обычное обращение.", blocks: [["Проблема с оплатой", "Статус order проверяется по provider event. Support может повторно выдать entitlement после проверки, без повторной оплаты."], ["Проблема с PDF", "Отчёт можно безопасно регенерировать без пересчёта frozen score JSON."], ["Контакт", "support@orbita.example · укажите session ID, локаль и описание шага, на котором остановились."]] },
-  }[kind];
-  return <div className="page-wrap info-page"><SectionHeading eyebrow={content.eyebrow} title={content.title} body={content.body} /><div className="info-blocks">{content.blocks.map(([title, body], index) => <article key={title}><span>{String(index + 1).padStart(2, "0")}</span><div><h2>{title}</h2><p>{body}</p></div></article>)}</div>{kind === "faq" ? <button className="text-link" onClick={() => onNavigate("detail")} type="button">Посмотреть тест <ArrowRight size={15} /></button> : null}</div>;
 }
 
 function AdminView({ profile, onNavigate, metrics }: { profile?: ScoreProfile; onNavigate: (view: View) => void; metrics?: AdminMetrics }) {
@@ -988,8 +842,8 @@ function AdminView({ profile, onNavigate, metrics }: { profile?: ScoreProfile; o
   return (
     <div className="page-wrap admin-page">
       <div className="admin-heading"><div><div className="eyebrow">INTERNAL / ADMIN PREVIEW</div><h1>Контроль версии и качества.</h1><p>Лёгкий интерфейс для проверки item bank, scoring configs и telemetry без доступа к ответам по умолчанию.</p></div><Badge className="outline-badge">read-only demo</Badge></div>
-      <div className="admin-metrics"><div><span>Item bank</span><strong>{counts.total}</strong><small>Q001–Q300 · draft for pilot</small></div><div><span>Users</span><strong>{metrics?.users ?? "—"}</strong><small>server-side aggregate</small></div><div><span>Paid orders</span><strong>{metrics ? paidOrders : "—"}</strong><small>signed webhook events</small></div><div><span>Reports</span><strong>{metrics ? completedReports : "—"}</strong><small>{metrics ? failedReports + " retryable" : "admin allowlist required"}</small></div></div>
-      <div className="admin-grid"><Card className="admin-panel"><CardHeader><CardTitle>Item Bank</CardTitle><CardDescription>Структура, необходимая для локального review</CardDescription></CardHeader><CardContent><div className="admin-table"><div className="admin-table-head"><span>ID range</span><span>Тип</span><span>Кол-во</span><span>Статус</span></div>{[["Q001–Q150", "forced-choice", counts.forced, "draft"], ["Q151–Q240", "Likert core", counts.likert, "draft"], ["Q241–Q250", "quality", counts.quality, "review"], ["Q251–Q280", "adaptive direct", counts.adaptiveDirect, "validated pool"], ["Q281–Q300", "discriminator", counts.adaptiveForced, "validated pool"]].map(([range, type, count, status]) => <div className="admin-table-row" key={range}><span>{range}</span><span>{type}</span><strong>{count}</strong><Badge variant={status === "validated pool" ? "secondary" : "outline"}>{status}</Badge></div>)}</div></CardContent></Card><Card className="admin-panel"><CardHeader><CardTitle>Последний run</CardTitle><CardDescription>{metrics ? "Сводка доступна только allowlisted admin" : "Для сводки нужен admin allowlist"}</CardDescription></CardHeader><CardContent><div className="audit-list"><div><span className="audit-icon"><Check size={14} /></span><span><strong>Score JSON</strong><small>{profile ? "готов · " + profile.versions.scoring : "ожидает сессию"}</small></span></div><div><span className="audit-icon"><ShieldCheck size={14} /></span><span><strong>Quality flags</strong><small>{profile ? profile.responseQuality.flags.length + " flags" : "не запускался"}</small></span></div><div><span className="audit-icon"><FileText size={14} /></span><span><strong>Report JSON</strong><small>{metrics ? completedReports + " complete" : "protected metrics"}</small></span></div><div><span className="audit-icon"><LockKeyhole size={14} /></span><span><strong>PII boundary</strong><small>{metrics ? "aggregate only" : "payload minimized"}</small></span></div></div><Button className="orbita-button secondary-button full-button" onClick={() => onNavigate("methodology")}>Открыть методологию <ArrowRight size={15} /></Button></CardContent></Card></div>
+      <div className="admin-metrics"><div><span>Item bank</span><strong>{counts.total}</strong><small>Q001–Q300 · draft for pilot</small></div><div><span>Users</span><strong>{metrics?.users ?? "—"}</strong><small>server-side aggregate</small></div><div><span>Paid orders</span><strong>{metrics ? paidOrders : "—"}</strong><small>signed webhook events</small></div><div><span>Reports</span><strong>{metrics ? completedReports : "—"}</strong><small>{metrics ? failedReports + " retryable" : "admin allowlist required"}</small></div><div><span>Pilot sample</span><strong>{metrics?.pilotAnalytics.sampleSize ?? "—"}</strong><small>{metrics?.pilotAnalytics.insufficientData ? `нужно ≥${metrics.pilotAnalytics.minimumSampleForPsychometrics}, stats скрыты` : "descriptive pilot only"}</small></div></div>
+      <div className="admin-grid"><Card className="admin-panel"><CardHeader><CardTitle>Item Bank</CardTitle><CardDescription>Структура, необходимая для локального review</CardDescription></CardHeader><CardContent><div className="admin-table"><div className="admin-table-head"><span>ID range</span><span>Тип</span><span>Кол-во</span><span>Статус</span></div>{[["Q001–Q150", "forced-choice", counts.forced, "draft"], ["Q151–Q240", "Likert core", counts.likert, "draft"], ["Q241–Q250", "quality", counts.quality, "research-only"], ["Q251–Q280", "adaptive direct", counts.adaptiveDirect, "pilot pool"], ["Q281–Q300", "discriminator", counts.adaptiveForced, "pilot pool"]].map(([range, type, count, status]) => <div className="admin-table-row" key={range}><span>{range}</span><span>{type}</span><strong>{count}</strong><Badge variant={status === "pilot pool" ? "secondary" : "outline"}>{status}</Badge></div>)}</div></CardContent></Card><Card className="admin-panel"><CardHeader><CardTitle>Последний run</CardTitle><CardDescription>{metrics ? "Сводка доступна только allowlisted admin" : "Для сводки нужен admin allowlist"}</CardDescription></CardHeader><CardContent><div className="audit-list"><div><span className="audit-icon"><Check size={14} /></span><span><strong>Score JSON</strong><small>{profile ? "готов · " + profile.versions.scoring : "ожидает сессию"}</small></span></div><div><span className="audit-icon"><ShieldCheck size={14} /></span><span><strong>Quality flags</strong><small>{profile ? profile.responseQuality.flags.length + " flags" : "не запускался"}</small></span></div><div><span className="audit-icon"><FileText size={14} /></span><span><strong>Report JSON</strong><small>{metrics ? completedReports + " complete" : "protected metrics"}</small></span></div><div><span className="audit-icon"><LockKeyhole size={14} /></span><span><strong>PII boundary</strong><small>{metrics ? "aggregate only" : "payload minimized"}</small></span></div></div><Button className="orbita-button secondary-button full-button" onClick={() => onNavigate("methodology")}>Открыть методологию <ArrowRight size={15} /></Button></CardContent></Card></div>
     </div>
   );
 }
@@ -1017,6 +871,7 @@ export function OrbitaApp({
   const [requestError, setRequestError] = useState<string>();
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string>();
+  const [publicCatalog, setPublicCatalog] = useState<PublicCatalog>();
   const [accountOverview, setAccountOverview] = useState<AccountOverview>();
   const [accountLoading, setAccountLoading] = useState(initialView === "account");
   const [accountActionStatus, setAccountActionStatus] = useState<string>();
@@ -1101,6 +956,10 @@ export function OrbitaApp({
     setPhase(payload.state.includes("ADAPTIVE") || payload.state === "REPORT_GENERATING" || payload.state === "REPORT_FAILED_RETRYABLE" || payload.state === "COMPLETE" ? "adaptive" : "core");
     const coreIndex = CORE_ITEMS.findIndex((item) => typeof payload.responses[item.id] !== "number");
     setQuestionIndex(coreIndex >= 0 ? coreIndex : CORE_ITEMS.length - 1);
+    void apiJson("/api/telemetry", {
+      method: "POST",
+      body: JSON.stringify({ name: "resume", assessment_id: payload.id, metadata: { status: payload.state, count: Object.keys(payload.responses).length } }),
+    }).catch(() => undefined);
   };
 
   const loadReportData = async (id: string, openWhenReady = false) => {
@@ -1308,9 +1167,14 @@ export function OrbitaApp({
   };
 
   const startCheckout = async () => {
+    if (!publicCatalog?.test.availableForCheckout) {
+      setCheckoutError("Оплата пока недоступна: цена или Stripe ещё не настроены.");
+      return;
+    }
     setCheckoutBusy(true);
     setCheckoutError(undefined);
     try {
+      void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "checkout_started", metadata: { provider: "stripe", mode: "hosted" } }) }).catch(() => undefined);
       const result = await apiJson<{ checkout_url: string }>('/api/checkout', {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
@@ -1473,6 +1337,35 @@ export function OrbitaApp({
   }, [view, phase, questionIndex, adaptiveIndex]);
 
   useEffect(() => {
+    if (view !== "checkout" && view !== "support") return;
+    let cancelled = false;
+    void apiJson<PublicCatalog>("/api/catalog")
+      .then((payload) => { if (!cancelled) setPublicCatalog(payload); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [view]);
+
+  useEffect(() => {
+    if (view !== "catalog" || demoMode) return;
+    void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "catalog_viewed" }) }).catch(() => undefined);
+    void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "test_view", metadata: { test_id: "orbita30" } }) }).catch(() => undefined);
+  }, [view, demoMode]);
+
+  useEffect(() => {
+    if (view !== "assessment" || demoMode || !sessionIdRef.current) return;
+    const onBeforeUnload = () => {
+      const payload = JSON.stringify({ name: "assessment_abandoned", assessment_id: sessionIdRef.current });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/telemetry", new Blob([payload], { type: "application/json" }));
+      } else {
+        void apiJson("/api/telemetry", { method: "POST", body: payload }).catch(() => undefined);
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [view, demoMode, phase]);
+
+  useEffect(() => {
     if (view !== "account") return;
     let cancelled = false;
     let timer: number | undefined;
@@ -1582,16 +1475,16 @@ export function OrbitaApp({
     if (view === "home") return <HomeView onNavigate={go} onDemo={openDemo} />;
     if (view === "catalog") return <CatalogView onNavigate={go} />;
     if (view === "detail") return <DetailView onNavigate={go} onDemo={openDemo} />;
-    if (view === "checkout") return <CheckoutView onNavigate={go} onCheckout={startCheckout} busy={checkoutBusy} error={checkoutError} />;
+    if (view === "checkout") return <CheckoutView onNavigate={go} onCheckout={startCheckout} busy={checkoutBusy} error={checkoutError} catalog={publicCatalog} />;
     if (view === "consent") return <ConsentView consents={consents} onConsentChange={setConsent} onBegin={beginAssessment} onBack={() => go("account")} onPrivacy={() => go("privacy")} />;
     if (view === "assessment") return <AssessmentView phase={phase} item={activeItem} currentIndex={phase === "core" ? questionIndex % 50 : adaptiveIndex} total={phase === "core" ? 50 : adaptiveItems.length} blockNumber={Math.floor(questionIndex / 50) + 1} selectedValue={activeValue} onAnswer={saveResponse} onNext={nextQuestion} onPause={() => go("break")} autosaveStatus={autosaveStatus} elapsedSeconds={elapsedSeconds} />;
     if (view === "break") return <BreakView adaptiveReady={phase === "adaptive"} selection={selection} onContinue={continueFromBreak} onExit={() => go("account")} />;
     if (view === "processing") return <ProcessingView status={processingStatus} onOpenResults={() => go("results")} onRetry={retryReport} profile={profile} />;
     if (view === "results" && profile && report) return <ResultsView profile={profile} report={report} provider={reportProvider} onNavigate={go} onPrint={downloadReport} />;
-    if (view === "account") return <AccountView onNavigate={go} profile={profile} demoMode={demoMode} overview={accountOverview} loading={accountLoading} actionStatus={accountActionStatus} onStartAssessment={startAssessmentFromAccount} onOpenReport={(id) => void openReport(id)} onExport={async () => { try { const result = await apiJson<{ downloadPath: string }>("/api/account/export", { method: "POST" }); setAccountActionStatus("экспорт готов"); window.location.assign(result.downloadPath); } catch (error) { setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось подготовить экспорт."); } }} onDelete={async () => { if (!window.confirm("Удалить аккаунт и все сохранённые ответы? Это действие нельзя отменить.")) return; try { await apiJson("/api/account/delete", { method: "POST", body: JSON.stringify({ confirm: "DELETE" }) }); window.location.assign("/signout-with-chatgpt?return_to=%2F"); } catch (error) { setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось удалить аккаунт."); } }} />;
+    if (view === "account") return <AccountView onNavigate={go} profile={profile} demoMode={demoMode} overview={accountOverview} loading={accountLoading} actionStatus={accountActionStatus} onStartAssessment={startAssessmentFromAccount} onOpenReport={(id) => void openReport(id)} onExport={async () => { try { const result = await apiJson<{ downloadPath: string }>("/api/account/export", { method: "POST" }); setAccountActionStatus("экспорт готов"); topLevelNavigate(result.downloadPath); } catch (error) { setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось подготовить экспорт."); } }} onDelete={async () => { if (!window.confirm("Удалить аккаунт и все сохранённые ответы? Это действие нельзя отменить.")) return; try { await apiJson("/api/account/delete", { method: "POST", body: JSON.stringify({ confirm: "DELETE" }) }); topLevelNavigate("/signout-with-chatgpt?return_to=%2F"); } catch (error) { setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось удалить аккаунт."); } }} />;
     if (view === "methodology") return <MethodologyView onNavigate={go} />;
     if (view === "admin") return <AdminView profile={profile} metrics={adminMetrics} onNavigate={go} />;
-    if (view === "privacy" || view === "terms" || view === "faq" || view === "support") return <InfoView kind={view} onNavigate={go} />;
+    if (view === "privacy" || view === "terms" || view === "faq" || view === "support") return <InfoView kind={view} onNavigate={go} supportContact={publicCatalog?.supportContact} />;
     return <HomeView onNavigate={go} onDemo={openDemo} />;
   };
 

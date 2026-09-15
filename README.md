@@ -1,6 +1,6 @@
 # ORBITA—30
 
-Production-ready foundation for the ORBITA—30 strengths assessment: a 300-item Russian item bank, deterministic scoring, backend-validated adaptive selection, protected ChatGPT identity, durable Cloudflare D1 state, private R2 report artifacts, short-lived signed PDF links, Stripe Checkout/webhooks, exports and deletion workflows, telemetry, and a private Sites deployment.
+Production-oriented foundation for the ORBITA—30 strengths assessment: a 300-item Russian item bank, deterministic scoring, backend-validated adaptive selection, protected ChatGPT identity, durable Cloudflare D1 state, private R2 report artifacts, short-lived signed PDF links, Stripe Checkout/webhooks, exports and deletion workflows, privacy-safe telemetry, scheduled retention, and a private Sites deployment.
 
 The assessment is an original developmental product. It is not a Gallup/CliftonStrengths® implementation, a diagnosis, or a high-stakes decision tool. Items are marked `draft for pilot` until independent psychometric validation is completed.
 
@@ -10,6 +10,18 @@ The assessment is an original developmental product. It is not a Gallup/CliftonS
 - Portable: Windows, macOS, or Linux; no Bash required
 - Managed Linux: managed Linux runtime with Bash, `flock`, `curl`, `sha256sum`, and GNU `timeout`
 - Git is required only for publishing
+
+## Release gates
+
+The current code is safe for controlled pilot work when the operator has approved the pilot content and legal text. It is not a public paid launch and it does not make validated normative claims:
+
+```text
+READY_FOR_CLOSED_PILOT=YES (technical gate; operator/content/legal approval still required)
+READY_FOR_PUBLIC_PAID_LAUNCH=NO (production price and Stripe secrets are not invented)
+READY_FOR_VALIDATED_CLAIMS=NO (pilot data, norms, reliability, validity, DIF/invariance are pending)
+```
+
+The score contract exposes `normStatus=unvalidated`, calls the visible number a `pilot profile index`, and labels the interval an `uncertainty range`. No percentile or population-comparison claim is shown. The assessment and item-bank version IDs are frozen in `lib/assessment-engine.ts`; changing them requires a new version and migration/release note.
 
 ## Sites Lifecycle
 
@@ -32,7 +44,7 @@ On managed Linux, use `sites-preview start` only for requested browser QA. The p
 
 The portable profile simulates ChatGPT sign-in only for loopback development requests. Visit `/signin-with-chatgpt?return_to=/` to sign in as `local_seedy` (`seedy@sites.test`, display name `Seedy`) and `/signout-with-chatgpt?return_to=/` to sign out. The development cookie preserves that identity across server restarts. Mock auth is disabled in the managed-linux profile and is not included in production builds; hosted authentication remains dispatch-owned.
 
-The Worker uses `vinext/server/fetch-handler`, including Vinext's config-aware image handling. After building, `npm start` runs that Worker locally through Wrangler on `127.0.0.1`, sharing `.wrangler/state` with dev preview and local D1 migrations; it does not deploy the site or simulate sign-in. Use the URL printed by the server. Pass `npm start -- --port <port>` to select a different built-preview port.
+The Worker entrypoint is `worker/index.ts`. It delegates HTTP requests to `vinext/server/fetch-handler` and also exports the scheduled retention handler. After building, `npm start` runs that Worker locally through Wrangler on `127.0.0.1`, sharing `.wrangler/state` with dev preview and local D1 migrations; it does not deploy the site or simulate sign-in. Use the URL printed by the server. Pass `npm start -- --port <port>` to select a different built-preview port.
 
 Local previews use Miniflare's placeholder `Request.cf` metadata without a network lookup. Set `CLOUDFLARE_CF_FETCH_ENABLED=true` to opt into fetching preview metadata; this setting does not change hosted request metadata.
 
@@ -41,11 +53,15 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 ## Project shape
 
 - `app/orbita-app.tsx` — client assessment flow, account, checkout, reports and WebMCP tools.
-- `lib/assessment-engine.ts` and `lib/item-bank.ts` — scoring, quality flags, report inputs and the 300-item bank.
+- `lib/assessment-engine.ts` and `lib/item-bank.ts` — scoring, quality flags, report inputs and the preserved 300-item bank.
+- `lib/interpretation-library.ts` — versioned approved trait/pair semantics; AI output cannot add unsupported claims.
 - `lib/durable-store.ts` — all user-owned state transitions and ownership checks.
-- `lib/payment-provider.ts` — Stripe Checkout creation and signed, idempotent webhook handling.
-- `lib/report-provider.ts` — deterministic approved-library reports by default, with an optional strict OpenAI Responses API provider.
+- `lib/payment-provider.ts` and `lib/payment-integrity.ts` — signed Stripe Checkout creation and exact, idempotent webhook verification.
+- `lib/report-provider.ts` — deterministic approved-library reports by default, with an optional strict OpenAI Responses API provider and fallback.
 - `lib/pdf-generator.ts` — 24-page A4 PDF report generation with embedded Roboto TTF.
+- `lib/retention.ts` and `worker/index.ts` — idempotent R2/D1 retention sweep, dry-run mode, manual internal endpoint, and daily cron.
+- `lib/pilot-analytics.ts` and `app/api/admin/overview/route.ts` — aggregate-only pilot analytics with a minimum-sample guard.
+- `app/orbita-api.ts` and `app/orbita-view-types.ts` — client API/retry queue and shared view contracts extracted from the controller.
 - `db/schema.ts` and `drizzle/` — D1 schema and append-only migrations.
 - `.openai/hosting.json` — logical Sites bindings (`DB` and `BUCKET`) and the existing private project ID.
 
@@ -74,21 +90,30 @@ Required before accepting real payments:
 
 Before an assessment can start, the server records four independent, versioned decisions in D1: Terms, Privacy/processing, research opt-in, and marketing opt-in. Terms and Privacy are required; the latter two are optional and are never inferred from purchase.
 
-Optional AI narrative provider:
+Optional AI narrative provider (managed secret only; approved-library fallback is always available):
 
 - `REPORT_PROVIDER=openai` and secret `OPENAI_API_KEY`.
 - Optional `REPORT_MODEL` (defaults to `gpt-5`) and `OPENAI_BASE_URL`.
+- Store `OPENAI_API_KEY` in the Sites/Cloudflare managed secret store. Never put it in `.env.example`, Git, the browser bundle, telemetry, or a report payload. A timeout, schema violation, unavailable key, or provider error records a fallback and returns the deterministic approved-library report.
 
 Optional AI adaptive selector:
 
 - `ADAPTIVE_PROVIDER=openai` and the same secret `OPENAI_API_KEY`.
 - Optional `ADAPTIVE_MODEL` and `ADAPTIVE_TIMEOUT_MS`; invalid, unavailable, or timed-out selection is recorded and falls back to the deterministic selector.
 
+Scheduled retention and manual recovery:
+
+- `RETENTION_DRY_RUN=true` is the safe default for a new deployment. Set it to `false` only after the operator has reviewed the retention policy.
+- The Worker cron is `0 2 * * *` and invokes `runRetentionSweep` without accepting public input. It excludes active assessment states, deletes R2 artifacts before D1 rows, records a pseudonymous audit event, and is safe to rerun.
+- `ORBITA_INTERNAL_TOKEN` protects `POST /internal/retention`; send `{ "dry_run": true, "limit": 100 }` for an explicit preview. Do not expose this token to the client.
+
+Legal configuration is env-driven through `lib/legal-config.ts`. Replace every `ТРЕБУЕТСЯ УТВЕРЖДЕНИЕ`/`ТРЕБУЕТСЯ НАСТРОЙКА` placeholder with operator, contact, jurisdiction, purposes, categories, retention, processors, cross-border, rights, security, research and marketing decisions. The full versioned pages are `/privacy` and `/terms`; Kazakhstan legal review is a launch gate, not a code assumption. Russian is the only published locale in this release; KZ/EN are intentionally marked unpublished until translation, back-translation, cognitive review and measurement-invariance review are complete.
+
 The default `approved-library` provider is deterministic and safe to run without an AI key. It never pretends that an AI call happened. Set `ORBITA_ADMIN_USER_IDS` only for the ChatGPT user IDs that should access aggregate admin metrics.
 
 See [`.env.example`](./.env.example) for the complete variable list.
 
-The explicit release handoff, missing external values and non-code launch gates are recorded in [`PROJECT_HANDOFF.md`](./PROJECT_HANDOFF.md).
+The explicit release handoff, audit evidence, missing external values and non-code launch gates are recorded in [`PROJECT_HANDOFF.md`](./PROJECT_HANDOFF.md) and [`AUDIT_REMEDIATION.md`](./AUDIT_REMEDIATION.md).
 
 ## Workspace Auth Headers
 
@@ -148,7 +173,7 @@ For a D1-backed local preview, generate SQL with `npm run db:generate`. Build on
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_example.sql
 ```
 
-Replace the filename with the pending migration and `DB` with your D1 binding name if different. Use `.wrangler/state`, not `.wrangler/state/v3`; Wrangler adds the versioned directories. Do not replay migrations already applied locally. This updates only the preview database; publishing applies production migrations separately.
+Replace the filename with each pending migration and `DB` with your D1 binding name if different. Use `.wrangler/state`, not `.wrangler/state/v3`; Wrangler adds the versioned directories. Do not replay migrations already applied locally. This updates only the preview database; Sites applies the packaged `dist/.openai/drizzle/` migrations to production separately.
 
 ## Local QA flow
 
@@ -166,6 +191,12 @@ The critical contract checks are:
 - reports freeze the score JSON, retry only the report layer, and produce a 24-page PDF;
 - export is owner-scoped and deletion removes R2 artifacts before soft-deleting the identity.
 
+The repeatable smoke gate covers the public catalog, auth boundary, entitlement, versioned consent, all Q001–Q250 responses, response idempotency, adaptive selection, frozen norm-safe score, approved report, signed PDF, privacy-safe telemetry and export:
+
+```sh
+npm run test:e2e
+```
+
 ## Diagnostic Commands
 
 - `npm run install:ci`: perform the one locked dependency install
@@ -173,6 +204,10 @@ The critical contract checks are:
 - `npm run build`: build the deployable Sites artifact
 - `npm run start`: preview the built Worker locally with D1/R2 support
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+- `npm run test`: run unit/contract tests
+- `npm run test:e2e`: run the full local Worker/D1/R2 smoke flow
+- `npm run ci:verify`: lint, TypeScript, tests and build
+- `npm run package:source`: create a clean, reproducible source archive without generated/dependency artifacts
 
 When using the Sites plugin, follow its skill instructions for installation, builds, and publishing. These npm commands remain available for standalone use.
 
