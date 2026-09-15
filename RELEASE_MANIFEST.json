@@ -1,29 +1,19 @@
 {
-  "schemaVersion": "orbita-30-release-manifest-v1",
-  "generatedAt": "2026-09-15T11:03:50.676Z",
-  "sourceGitSha": "295bbd9230dc6f404760fd568afea9cd68747541",
-  "sourcePackage": {
+  "schema_version": "orbita-30-release-manifest-v2",
+  "generated_at": "2026-09-15T23:07:11.676Z",
+  "source_git_sha": "55b3ecf05c879b134c64836ecf210264fd02dbf7",
+  "source_package": {
     "file": "orbita-30-source-release.tar.gz",
-    "sha256": "b38bf311392caac78f10833ddff7cc0b86fa48756e4204c0d3cabf879065b6be",
-    "excludes": [
-      "node_modules",
-      "dist",
-      ".next",
-      ".wrangler",
-      ".vinext",
-      ".vite",
-      ".sites-runtime",
-      ".DS_Store",
-      "release evidence records"
-    ]
+    "sha256": "117891812dcbc25d19316a5e6366b0a124681f849539501f0bf741610d737bdb",
+    "packaging_rule": "tracked blobs from exact source_git_sha; generated release evidence excluded"
   },
   "runtime": {
-    "node": "v25.9.0",
-    "engine": ">=22.13.0",
-    "packageLockSha256": "d2e7665051a86c1de9f5eb451df8a641a0aa964237893fd087816830bcd8d584"
+    "node": "22.13.0",
+    "required_node": "22.13.0",
+    "package_lock_sha256": "f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57"
   },
   "database": {
-    "latestMigration": "0007_tough_gorgon.sql",
+    "latest_migration": "0008_young_adam_warlock.sql",
     "migrations": [
       "drizzle/0000_tired_satana.sql",
       "drizzle/0001_futuristic_zeigeist.sql",
@@ -32,26 +22,27 @@
       "drizzle/0004_clean_calypso.sql",
       "drizzle/0005_charming_devos.sql",
       "drizzle/0006_common_rick_jones.sql",
-      "drizzle/0007_tough_gorgon.sql"
+      "drizzle/0007_tough_gorgon.sql",
+      "drizzle/0008_young_adam_warlock.sql"
     ]
   },
   "versions": {
     "assessment": "orbita30_ru_v1",
-    "itemBank": "draft-pilot-v1",
+    "item_bank": "draft-pilot-v1",
     "scoring": "mvp-0.4-norm-safe",
     "norms": "pilot-index-unvalidated-v1",
-    "adaptiveSelector": "selector-0.3",
+    "adaptive_selector": "selector-0.3",
     "report": "report-0.3",
-    "reportPrompt": "report-writer-0.3",
+    "report_prompt": "report-writer-0.3",
     "translation": "ru-source-v1",
-    "interpretationLibrary": "approved-interpretation-v1",
+    "interpretation_library": "approved-interpretation-v1",
     "consent": "privacy-2026-09"
   },
-  "gatePolicy": {
-    "engineering": "NO until clean Linux CI and clean release checkout evidence",
-    "closedPilot": "NO until external content/legal/protocol/support approvals",
-    "publicPaid": "NO until public auth/live Stripe/KZ legal/operations approvals",
-    "validatedClaims": "NO until preregistered psychometric evidence and independent review",
-    "normativePercentiles": "NO until approved language/population-specific norms"
+  "acceptance_gates": {
+    "ready_for_engineering_100": "PENDING_CLEAN_LINUX_RELEASE_VERIFICATION",
+    "ready_for_closed_pilot": "NO_EXTERNAL_APPROVALS",
+    "ready_for_public_paid_launch": "NO_PUBLIC_AUTH_LIVE_STRIPE_LEGAL_OPERATIONS",
+    "ready_for_validated_claims": "NO_PSYCHOMETRIC_VALIDATION",
+    "ready_for_normative_percentiles": "NO_APPROVED_NORMS"
   }
 }
