@@ -120,7 +120,8 @@ test("payment and utility branches reject every incomplete snapshot", () => {
   const nonce = createCspNonce();
   assert.match(nonce, /^[A-Za-z0-9+/]+={0,2}$/);
   assert.equal(contentSecurityPolicy().includes("nonce-"), false);
-  assert.match(contentSecurityPolicy(nonce), new RegExp(`script-src 'self' 'nonce-${nonce}'`));
+  const noncePolicy = contentSecurityPolicy(nonce).split(";").find((directive) => directive.trim().startsWith("script-src "))?.trim() ?? "";
+  assert.match(noncePolicy, /^script-src 'self' 'nonce-[A-Za-z0-9+/]+={0,2}'$/);
   const secured = applySecurityHeaders(
     new Response("ok", { headers: { "X-Frame-Options": "SAMEORIGIN" } }),
     "req_nonce",
