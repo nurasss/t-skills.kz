@@ -1,0 +1,20 @@
+ORBITA-30 MASTER release verification record
+Date: 2026-09-15
+Source Git SHA: filled after source release commit
+Source package SHA256: filled after package:source
+Node: >=22.13.0 required; local runtime is recorded in RELEASE_MANIFEST.json
+
+Commands and results:
+  npm ci                                      PASS/OPEN — rerun from clean release checkout
+  npm run lint                                PASS
+  npm run security:scan                      PASS
+  npx tsc --noEmit                           PASS
+  npm test                                   PASS — 14 unit/contract tests
+  npm run build                              PASS
+  npm run test:e2e                           PASS/OPEN — final full run recorded here
+  npm run test:backup                        PASS — BACKUP_RESTORE_SMOKE=PASS
+  npm audit --omit=dev --audit-level=high    PASS — 0 production vulnerabilities in recorded run
+  npm run package:source                     PASS/OPEN — final archive hash recorded here
+  git status --porcelain                     PASS/OPEN — must be empty after evidence commit
+
+The local E2E uses an isolated Wrangler D1/R2 state directory and e2e-only test values. It never uses production secrets or data. A GitHub Actions Ubuntu run is required before promoting READY_FOR_ENGINEERING_100=YES.

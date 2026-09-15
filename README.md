@@ -13,12 +13,14 @@ The assessment is an original developmental product. It is not a Gallup/CliftonS
 
 ## Release gates
 
-The current code is safe for controlled pilot work when the operator has approved the pilot content and legal text. It is not a public paid launch and it does not make validated normative claims:
+This repository is an engineering-complete candidate for a controlled pilot, but the final master gates remain evidence-driven. It is not a public paid launch and it does not make validated normative claims:
 
 ```text
-READY_FOR_CLOSED_PILOT=YES (technical gate; operator/content/legal approval still required)
+READY_FOR_ENGINEERING_100=NO (clean Linux CI and release-checkout evidence still required)
+READY_FOR_CLOSED_PILOT=NO (content, legal, recruitment, support and protocol sign-off still required)
 READY_FOR_PUBLIC_PAID_LAUNCH=NO (production price and Stripe secrets are not invented)
 READY_FOR_VALIDATED_CLAIMS=NO (pilot data, norms, reliability, validity, DIF/invariance are pending)
+READY_FOR_NORMATIVE_PERCENTILES=NO (no approved norms are installed)
 ```
 
 The score contract exposes `normStatus=unvalidated`, calls the visible number a `pilot profile index`, and labels the interval an `uncertainty range`. No percentile or population-comparison claim is shown. The assessment and item-bank version IDs are frozen in `lib/assessment-engine.ts`; changing them requires a new version and migration/release note.
@@ -60,9 +62,12 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `lib/report-provider.ts` — deterministic approved-library reports by default, with an optional strict OpenAI Responses API provider and fallback.
 - `lib/pdf-generator.ts` — 24-page A4 PDF report generation with embedded Roboto TTF.
 - `lib/retention.ts` and `worker/index.ts` — idempotent R2/D1 retention sweep, dry-run mode, manual internal endpoint, and daily cron.
+- `lib/security-headers.ts`, `lib/observability.ts` and `lib/ops-monitoring.ts` — request IDs, security headers, PII-safe logs and explicit alert thresholds.
+- `lib/provider-contract.ts`, `lib/adaptive-contract.ts` and `lib/report-safety.ts` — strict provider output, source-key grounding and deterministic safety boundaries.
 - `lib/pilot-analytics.ts` and `app/api/admin/overview/route.ts` — aggregate-only pilot analytics with a minimum-sample guard.
 - `app/orbita-api.ts` and `app/orbita-view-types.ts` — client API/retry queue and shared view contracts extracted from the controller.
 - `db/schema.ts` and `drizzle/` — D1 schema and append-only migrations.
+- `FINAL_ACCEPTANCE.md`, `TEST_MATRIX.md`, `RELEASE_MANIFEST.json`, `CI_EVIDENCE.txt`, `SECURITY_REVIEW.md`, `DATA_PRIVACY_REVIEW.md`, `LEGAL_LAUNCH_APPROVAL.md`, `PILOT_PROTOCOL.md`, `PREREGISTRATION.md`, `PSYCHOMETRIC_REPORT.md`, `NORMING_REPORT.md` and `RUNBOOKS.md` — release evidence and explicit open gates.
 - `.openai/hosting.json` — logical Sites bindings (`DB` and `BUCKET`) and the existing private project ID.
 
 The production site is owner-private. User identity comes from the Sites/ChatGPT headers; local preview-only auth is available only when `ORBITA_ENV=development`. State-changing API routes enforce same-origin requests and per-user server-side fixed-window limits; no permissive CORS policy is enabled. TLS, WAF/CDN policy, and edge security headers remain deployment controls of the Sites platform.
@@ -107,13 +112,13 @@ Scheduled retention and manual recovery:
 - The Worker cron is `0 2 * * *` and invokes `runRetentionSweep` without accepting public input. It excludes active assessment states, deletes R2 artifacts before D1 rows, records a pseudonymous audit event, and is safe to rerun.
 - `ORBITA_INTERNAL_TOKEN` protects `POST /internal/retention`; send `{ "dry_run": true, "limit": 100 }` for an explicit preview. Do not expose this token to the client.
 
-Legal configuration is env-driven through `lib/legal-config.ts`. Replace every `ТРЕБУЕТСЯ УТВЕРЖДЕНИЕ`/`ТРЕБУЕТСЯ НАСТРОЙКА` placeholder with operator, contact, jurisdiction, purposes, categories, retention, processors, cross-border, rights, security, research and marketing decisions. The full versioned pages are `/privacy` and `/terms`; Kazakhstan legal review is a launch gate, not a code assumption. Russian is the only published locale in this release; KZ/EN are intentionally marked unpublished until translation, back-translation, cognitive review and measurement-invariance review are complete.
+Legal configuration is env-driven through `lib/legal-config.ts`. Replace every `ТРЕБУЕТСЯ УТВЕРЖДЕНИЕ`/`ТРЕБУЕТСЯ НАСТРОЙКА` placeholder with operator, contact, jurisdiction, purposes, categories, retention, processors, cross-border, rights, security, research and marketing decisions. The full versioned pages are `/privacy` and `/terms`; Kazakhstan legal review is a launch gate, not a code assumption. Russian is the only published locale in this release; `kk` is the canonical Kazakh code and `kz` is accepted only as a legacy alias. KZ/EN are intentionally marked unpublished until translation, back-translation, cognitive review and measurement-invariance review are complete.
 
 The default `approved-library` provider is deterministic and safe to run without an AI key. It never pretends that an AI call happened. Set `ORBITA_ADMIN_USER_IDS` only for the ChatGPT user IDs that should access aggregate admin metrics.
 
 See [`.env.example`](./.env.example) for the complete variable list.
 
-The explicit release handoff, audit evidence, missing external values and non-code launch gates are recorded in [`PROJECT_HANDOFF.md`](./PROJECT_HANDOFF.md) and [`AUDIT_REMEDIATION.md`](./AUDIT_REMEDIATION.md).
+The explicit release handoff, audit evidence, missing external values and non-code launch gates are recorded in [`PROJECT_HANDOFF.md`](./PROJECT_HANDOFF.md), [`AUDIT_REMEDIATION.md`](./AUDIT_REMEDIATION.md) and [`FINAL_ACCEPTANCE.md`](./FINAL_ACCEPTANCE.md).
 
 ## Workspace Auth Headers
 
@@ -206,7 +211,9 @@ npm run test:e2e
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 - `npm run test`: run unit/contract tests
 - `npm run test:e2e`: run the full local Worker/D1/R2 smoke flow
-- `npm run ci:verify`: lint, TypeScript, tests and build
+- `npm run test:backup`: local D1 export/restore smoke
+- `npm run security:scan`: tracked-source secret/generated-state scan
+- `npm run ci:verify`: lint, secret scan, TypeScript, tests and build
 - `npm run package:source`: create a clean, reproducible source archive without generated/dependency artifacts
 
 When using the Sites plugin, follow its skill instructions for installation, builds, and publishing. These npm commands remain available for standalone use.

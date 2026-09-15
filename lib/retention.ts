@@ -22,6 +22,18 @@ type AssessmentCandidate = {
 type KeyRow = { assessment_id: string; pdf_key: string | null };
 type PrivacyKeyRow = { id: string; artifact_key: string };
 
+async function recordRetentionTelemetry(database: D1Database, result: RetentionSweepResult) {
+  await database
+    .prepare(`INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at) VALUES (?, 'retention_sweep', NULL, NULL, ?, ?)`)
+    .bind(
+      `tel_retention_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
+      JSON.stringify({ status: result.dryRun ? "DRY_RUN" : result.failedArtifacts ? "FAILED" : "COMPLETE", count: result.candidateAssessments, failed_artifacts: result.failedArtifacts }),
+      Date.now(),
+    )
+    .run()
+    .catch(() => undefined);
+}
+
 export async function runRetentionSweep(options: {
   database?: D1Database;
   bucket?: R2Bucket;
@@ -77,20 +89,27 @@ export async function runRetentionSweep(options: {
     failedArtifacts: 0,
     privacyArtifactsCleared: 0,
   };
-  if (dryRun) return baseResult;
+  if (dryRun) {
+    await recordRetentionTelemetry(database, baseResult);
+    return baseResult;
+  }
 
   const bucket = options.bucket ?? getR2();
   const artifactResults = await Promise.all(uniqueKeys.map(async (key) => {
     try {
       await bucket.delete(key);
       return true;
-    } catch (error) {
-      console.error("retention_artifact_delete_failed", { error });
+    } catch {
+      console.error("retention_artifact_delete_failed", { error_code: "R2_DELETE_FAILED" });
       return false;
     }
   }));
   const failedArtifacts = artifactResults.filter((result) => !result).length;
-  if (failedArtifacts > 0) return { ...baseResult, failedArtifacts };
+  if (failedArtifacts > 0) {
+    const result = { ...baseResult, failedArtifacts };
+    await recordRetentionTelemetry(database, result);
+    return result;
+  }
 
   let purgedAssessments = 0;
   for (const candidate of candidates) {
@@ -110,8 +129,8 @@ export async function runRetentionSweep(options: {
         ),
       ]);
       purgedAssessments += 1;
-    } catch (error) {
-      console.error("retention_assessment_purge_failed", { error });
+    } catch {
+      console.error("retention_assessment_purge_failed", { error_code: "D1_DELETE_FAILED" });
     }
   }
 
@@ -119,9 +138,11 @@ export async function runRetentionSweep(options: {
     .prepare(`UPDATE privacy_requests SET artifact_key = NULL WHERE created_at < ? AND artifact_key IS NOT NULL`)
     .bind(cutoffMs)
     .run();
-  return {
+  const result = {
     ...baseResult,
     purgedAssessments,
     privacyArtifactsCleared: privacyUpdate.meta?.changes ?? 0,
   };
+  await recordRetentionTelemetry(database, result);
+  return result;
 }

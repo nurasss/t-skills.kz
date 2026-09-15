@@ -47,7 +47,10 @@ export function errorResponse(error: unknown) {
     const status = error instanceof StoreError ? error.status : 503;
     return NextResponse.json({ error: error.code, message: publicMessage(error.code) }, { status });
   }
-  console.error("api_request_failed", error);
+  const code = error && typeof error === "object" && "code" in error && typeof (error as { code?: unknown }).code === "string"
+    ? (error as { code: string }).code
+    : "INTERNAL_SERVER_ERROR";
+  console.error("api_request_failed", { error_code: code });
   return NextResponse.json({ error: "INTERNAL_SERVER_ERROR", message: "Не удалось выполнить запрос. Попробуйте ещё раз." }, { status: 500 });
 }
 
@@ -91,6 +94,10 @@ function publicMessage(code: string) {
     RATE_LIMITED: "Слишком много запросов. Попробуйте ещё раз позже.",
     CSRF_ORIGIN_INVALID: "Запрос должен быть отправлен с этого сайта.",
     TELEMETRY_EVENT_NOT_ALLOWED: "Это событие аналитики не разрешено.",
+    LOCALE_NOT_PUBLISHED: "Эта версия языка ещё не опубликована для прохождения оценки.",
+    DELETE_CONFIRMATION_REQUIRED: "Для удаления нужна явная команда подтверждения.",
+    ASSESSMENT_DELETE_CONFIRMATION_REQUIRED: "Для удаления оценки нужна явная команда подтверждения.",
+    ASSESSMENT_DELETE_FAILED: "Не удалось удалить данные оценки. Запрос отмечен для повторной обработки.",
   };
   return messages[code] ?? "Запрос не выполнен.";
 }

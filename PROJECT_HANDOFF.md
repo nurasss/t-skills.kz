@@ -2,12 +2,14 @@
 
 ## Release status
 
-The project is technically prepared for a controlled closed pilot after operator/content/legal sign-off. It is deliberately blocked from a public paid launch until real payment configuration and Kazakhstan legal approval are supplied.
+The project contains the engineering implementation for a controlled closed pilot, but master acceptance remains evidence-driven. It is deliberately blocked from pilot/public launch until the required external content, legal, support and operations approvals are supplied.
 
 ```text
-READY_FOR_CLOSED_PILOT=YES (technical gate; approved pilot operators only)
+READY_FOR_ENGINEERING_100=NO (clean Linux CI and clean release-checkout evidence are still required)
+READY_FOR_CLOSED_PILOT=NO (content/legal/protocol/support sign-off is still required)
 READY_FOR_PUBLIC_PAID_LAUNCH=NO
 READY_FOR_VALIDATED_CLAIMS=NO
+READY_FOR_NORMATIVE_PERCENTILES=NO
 ```
 
 The current release keeps the complete Russian Q001–Q300 source bank and taxonomy unchanged. Every score carries explicit assessment, item-bank, scoring, selector, report and norm version IDs. `normStatus=unvalidated` is the only production-safe norm state in this release; UI/PDF wording is `pilot profile index` and `uncertainty range`, never percentile or population norm.
@@ -67,7 +69,7 @@ Before any publish, run the Sites build/package/save/deploy workflow and verify 
    - The scheduled and internal retention paths exclude active sessions, delete R2 artifacts before D1 rows, retain transaction records, record pseudonymous purge audit entries and support bounded idempotent dry-runs.
    - Full versioned Privacy and Terms documents are rendered from env-driven operator/legal configuration. Kazakhstan legal review and replacement of every placeholder are launch gates.
    - Analytics is allowlisted and strips raw answers, response payloads and identity fields. Admin analytics returns aggregate funnel/provider/fallback/latency/report/PDF/quality data and hides psychometrics until the minimum pilot sample (200) exists.
-   - Russian is published. KZ/EN remain unpublished until translation, back-translation, cognitive review and measurement-invariance review.
+- Russian is published. `kk` is the canonical Kazakh code and `kz` is legacy input only. KZ/EN remain unpublished until translation, back-translation, cognitive review and measurement-invariance review.
 
 ## Production values still required
 
@@ -95,7 +97,7 @@ npm run package:source
 npm audit --omit=dev --audit-level=high
 ```
 
-The smoke test runs a real local Worker with D1/R2 bindings and exercises the catalog, auth, entitlement, versioned consent, Q001–Q250, idempotency, adaptive completion, frozen score, approved report, signed PDF and export paths.
+The smoke test runs a real local Worker with D1/R2 bindings and exercises the catalog, auth, entitlement, versioned consent, Q001–Q250, idempotency, restart/resume, adaptive completion, frozen score, approved report, signed PDF negative paths, ownership, rate limiting, payment races/refund/dispute states and privacy deletion/export paths.
 
 ## Known non-code gates
 
@@ -104,5 +106,5 @@ The smoke test runs a real local Worker with D1/R2 bindings and exercises the ca
 - Reliability/SE, EFA/CFA, validity, DIF, measurement invariance and preregistered pilot analysis.
 - Norm construction and cross-validation; no norm table is installed.
 - Kazakhstan privacy/consumer/payment/legal review and approved retention/processor/cross-border wording.
-- Real Stripe business account, amount, webhook endpoint and operational support channel.
+- Real Stripe business account, amount, webhook endpoint, refund policy and operational support channel.
 - KZ/EN translations with back-translation and cognitive/invariance checks.

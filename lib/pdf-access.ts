@@ -1,4 +1,5 @@
 import { getRuntimeEnv } from "@/db";
+import { validatePdfGrantClaims } from "@/lib/pdf-token-policy";
 
 export type PdfDownloadGrant = {
   reportId: string;
@@ -56,16 +57,8 @@ export async function verifyPdfDownloadToken(token: string): Promise<PdfDownload
       new TextEncoder().encode(payload),
     );
     if (!valid) return null;
-    const parsed = JSON.parse(new TextDecoder().decode(decodeBase64Url(payload))) as Partial<PdfDownloadGrant>;
-    const expiresAt = parsed.expiresAt;
-    if (
-      typeof parsed.reportId !== "string" ||
-      typeof parsed.userId !== "string" ||
-      typeof expiresAt !== "number" ||
-      !Number.isInteger(expiresAt) ||
-      expiresAt <= Math.floor(Date.now() / 1000)
-    ) return null;
-    return { reportId: parsed.reportId, userId: parsed.userId, expiresAt };
+    const parsed = JSON.parse(new TextDecoder().decode(decodeBase64Url(payload)));
+    return validatePdfGrantClaims(parsed);
   } catch {
     return null;
   }

@@ -1,0 +1,44 @@
+name: ORBITA-30 CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout clean source
+        uses: actions/checkout@v4
+      - name: Use supported Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Secret and source hygiene scan
+        run: npm run security:scan
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Unit and contract tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Local Worker/D1/R2 negative smoke
+        run: npm run test:e2e
+      - name: Backup and restore smoke
+        run: npm run test:backup
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Reproducible source package
+        run: npm run package:source -- /tmp/orbita-30-source.tar.gz
+      - name: Verify clean checkout
+        run: test -z "$(git status --porcelain)"

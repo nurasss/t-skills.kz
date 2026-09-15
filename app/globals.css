@@ -532,6 +532,7 @@ p, h1, h2, h3 { margin: 0; }
 .account-history-row strong { font-size: 12px; }
 .account-history-row small { color: var(--muted); font-family: ui-monospace, monospace; font-size: 9px; margin-top: 3px; }
 .account-history-row > span:last-of-type { text-align: right; }
+.account-row-actions { align-items: center; display: flex; gap: 6px; justify-content: flex-end; }
 .account-muted { color: var(--muted); font-size: 13px; }
 .account-data-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; margin-top: 24px; }
 .global-error { align-items: center; background: #fff0ec; border: 1px solid #edc0b4; border-radius: 8px; color: #8d493a; display: flex; font-size: 12px; gap: 14px; justify-content: space-between; margin: 14px auto -26px; max-width: 1180px; padding: 10px 14px; position: relative; width: calc(100% - 48px); z-index: 5; }

@@ -29,7 +29,7 @@ export type AccountOrder = {
   testId: string;
   amountMinor: number;
   currency: string;
-  status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED";
+  status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED" | "REFUNDED" | "DISPUTED" | "DISPUTE_CLOSED";
   provider: string;
   checkoutUrl: string | null;
   createdAt: string;
@@ -39,6 +39,7 @@ export type AccountAssessment = {
   id: string;
   testId: string;
   state: string;
+  locale?: "ru" | "kk" | "en";
   clientSeq: number;
   adaptiveCount: number;
   reportId: string | null;
@@ -47,7 +48,7 @@ export type AccountAssessment = {
 };
 
 export type AccountOverview = {
-  user: { id: string; email: string; displayName: string };
+  user: { id: string; email: string; displayName: string; locale?: "ru" | "kk" | "en" };
   orders: AccountOrder[];
   assessments: AccountAssessment[];
 };
@@ -64,6 +65,7 @@ export type PendingResponse = {
 export type SessionPayload = {
   id: string;
   state: string;
+  locale?: "ru" | "kk" | "en";
   selection_mode: "deterministic-fallback" | "ai-openai" | null;
   versions: ScoreProfile["versions"];
   next_item_id: string | null;
@@ -119,6 +121,13 @@ export type AdminMetrics = {
 
 export type PublicCatalog = {
   supportContact: string | null;
+  locale?: {
+    requested: string | null;
+    canonical: "ru" | "kk" | "en";
+    legacyAlias: boolean;
+    status: "published" | "unpublished";
+    translationVersion: string | null;
+  };
   test: {
     id: "orbita30";
     name: string;

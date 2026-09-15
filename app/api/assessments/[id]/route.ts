@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
-import { consumeRateLimit, consentSessionForUser, getConsentsForUser, getSessionForUser, type ConsentChoices } from "@/lib/durable-store";
+import { consumeRateLimit, consentSessionForUser, deleteAssessmentForUser, getConsentsForUser, getSessionForUser, type ConsentChoices } from "@/lib/durable-store";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = viewerOrResponse(request);
@@ -15,6 +15,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       id: session.id,
       state: session.state,
       selection_mode: session.selectionMode ?? null,
+      locale: session.locale,
       versions: session.versions,
       next_item_id: session.responses.Q001 === undefined ? "Q001" : null,
       core_answered: Object.keys(session.responses).filter((itemId) => Number(itemId.slice(1)) <= 250).length,
@@ -62,6 +63,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     const session = await consentSessionForUser(id, viewer, choices);
     return NextResponse.json({ id: session.id, state: session.state, consents: await getConsentsForUser(id, viewer) });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const viewer = viewerOrResponse(request);
+  if (isResponse(viewer)) return viewer;
+  const originError = sameOriginOrResponse(request);
+  if (originError) return originError;
+  const { id } = await params;
+  try {
+    const body = (await request.json()) as { confirm?: string };
+    if (body.confirm !== "DELETE_ASSESSMENT") {
+      return NextResponse.json({ error: "ASSESSMENT_DELETE_CONFIRMATION_REQUIRED" }, { status: 422 });
+    }
+    const rate = await consumeRateLimit({ userId: viewer.userId, scope: "privacy-assessment-delete", limit: 3, windowMs: 24 * 60 * 60 * 1000 });
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
+    return NextResponse.json(await deleteAssessmentForUser(id, viewer));
   } catch (error) {
     return errorResponse(error);
   }

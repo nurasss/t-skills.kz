@@ -14,6 +14,8 @@ import { buildReportPdf } from "@/lib/pdf-generator";
 import { generateReportContent } from "@/lib/report-provider";
 import { validatePaymentSnapshot } from "@/lib/payment-integrity";
 import { isTelemetryEventName, sanitizeTelemetryMetadata, type TelemetryEventName } from "@/lib/analytics";
+import { canPublishLocale, resolveLocale, type Locale } from "@/lib/i18n";
+import { nextPaymentStatus, paymentTelemetryEvent, type PaymentEventStatus, type PaymentOperationalStatus } from "@/lib/payment-event-policy";
 import type { Viewer } from "@/lib/server-auth";
 
 export type SessionState =
@@ -38,6 +40,7 @@ export type DurableSession = {
   id: string;
   userId: string;
   testId: string;
+  locale: Locale;
   entitlementId: string;
   state: SessionState;
   versions: typeof VERSION_IDS;
@@ -56,7 +59,7 @@ export type OrderRecord = {
   testId: string;
   amountMinor: number;
   currency: string;
-  status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED";
+  status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED" | "REFUNDED" | "DISPUTED" | "DISPUTE_CLOSED";
   provider: string;
   checkoutUrl: string | null;
   createdAt: string;
@@ -114,6 +117,7 @@ type AssessmentRow = {
   user_id: string;
   entitlement_id: string | null;
   test_id: string;
+  locale: string;
   state: SessionState;
   versions_json: string;
   adaptive_item_ids_json: string;
@@ -154,6 +158,7 @@ type PaymentOrderRow = {
   status: OrderRecord["status"];
   provider: string;
   provider_checkout_id: string | null;
+  provider_payment_id: string | null;
 };
 
 type ReportRow = {
@@ -251,7 +256,7 @@ function ensureDatabase() {
   }
 }
 
-async function ensureUser(viewer: Viewer) {
+async function ensureUser(viewer: Viewer, requestedLocale?: Locale) {
   const database = ensureDatabase();
   const timestamp = now();
   const existing = await database
@@ -259,17 +264,23 @@ async function ensureUser(viewer: Viewer) {
     .bind(viewer.userId)
     .first<{ deleted_at: number | null }>();
   if (existing?.deleted_at) throw new StoreError("ACCOUNT_DELETED", 410);
+  if (existing) {
+    await database
+      .prepare(
+        `UPDATE users SET email = ?, full_name = ?,
+           locale = CASE WHEN ? IS NULL THEN CASE WHEN lower(locale) = 'kz' THEN 'kk' ELSE locale END ELSE ? END,
+           updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+      )
+      .bind(viewer.email, viewer.fullName, requestedLocale ?? null, requestedLocale ?? null, timestamp, viewer.userId)
+      .run();
+    return;
+  }
   await database
     .prepare(
       `INSERT INTO users (id, email, full_name, locale, created_at, updated_at, deleted_at)
-       VALUES (?, ?, ?, 'ru', ?, ?, NULL)
-       ON CONFLICT(id) DO UPDATE SET
-         email = excluded.email,
-         full_name = excluded.full_name,
-         updated_at = excluded.updated_at
-       WHERE users.deleted_at IS NULL`,
+       VALUES (?, ?, ?, ?, ?, ?, NULL)`,
     )
-    .bind(viewer.userId, viewer.email, viewer.fullName, timestamp, timestamp)
+    .bind(viewer.userId, viewer.email, viewer.fullName, requestedLocale ?? "ru", timestamp, timestamp)
     .run();
 }
 
@@ -297,8 +308,8 @@ async function audit(
         now(),
       )
       .run();
-  } catch (error) {
-    console.error("audit_write_failed", error);
+  } catch {
+    console.error("audit_write_failed", { error_code: "AUDIT_WRITE_FAILED" });
   }
 }
 
@@ -315,8 +326,8 @@ async function serverTelemetry(input: {
       .prepare(`INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .bind(newId("tel"), input.name, input.userId, input.assessmentId ?? null, Object.keys(metadata).length ? JSON.stringify(metadata) : null, now())
       .run();
-  } catch (error) {
-    console.error("telemetry_write_failed", { error });
+  } catch {
+    console.error("telemetry_write_failed", { error_code: "TELEMETRY_WRITE_FAILED" });
   }
 }
 
@@ -324,7 +335,7 @@ async function loadSession(sessionId: string, userId: string): Promise<DurableSe
   const database = ensureDatabase();
   const row = await database
     .prepare(
-      `SELECT id, user_id, entitlement_id, test_id, state, versions_json,
+      `SELECT id, user_id, entitlement_id, test_id, locale, state, versions_json,
               adaptive_item_ids_json, selection_mode, preliminary_score_json,
               final_score_json, report_id, client_seq, created_at,
               consented_at, completed_at, updated_at
@@ -350,6 +361,7 @@ async function loadSession(sessionId: string, userId: string): Promise<DurableSe
     id: row.id,
     userId: row.user_id,
     testId: row.test_id,
+    locale: resolveLocale(row.locale),
     entitlementId: row.entitlement_id,
     state: row.state,
     versions: parseJson(row.versions_json, VERSION_IDS),
@@ -452,7 +464,7 @@ export async function createPendingOrder(input: {
         timestamp,
       )
       .run();
-  } catch (error) {
+  } catch {
     const race = await database
       .prepare(
         `SELECT id, test_id, amount_minor, currency, status, provider,
@@ -462,7 +474,7 @@ export async function createPendingOrder(input: {
       .bind(input.viewer.userId, input.idempotencyKey)
       .first<OrderRow>();
     if (race) return { order: publicOrder(race), reused: true };
-    console.error("order_insert_failed", error);
+    console.error("order_insert_failed", { error_code: "ORDER_INSERT_FAILED" });
     throw new StoreError("ORDER_CREATE_FAILED", 500);
   }
   await audit(input.viewer.userId, "ORDER_CREATED", "order", orderId, {
@@ -516,11 +528,19 @@ export async function markOrderPaymentFailed(orderId: string, reason: string) {
   await audit(null, "PAYMENT_PROVIDER_FAILED", "order", orderId, { reason });
 }
 
+export async function findOrderIdByPaymentId(providerPaymentId: string) {
+  const row = await ensureDatabase()
+    .prepare(`SELECT id FROM orders WHERE provider_payment_id = ? ORDER BY updated_at DESC LIMIT 1`)
+    .bind(providerPaymentId)
+    .first<{ id: string }>();
+  return row?.id ?? null;
+}
+
 export async function handlePaymentEvent(input: {
   providerEventId: string;
   eventType: string;
   orderId: string;
-  status: "PAID" | "PAYMENT_FAILED";
+  status: PaymentEventStatus;
   providerPaymentId?: string | null;
   providerCheckoutId?: string | null;
   amountMinor?: number | null;
@@ -540,7 +560,7 @@ export async function handlePaymentEvent(input: {
   }
 
   const order = await database
-    .prepare(`SELECT id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id FROM orders WHERE id = ? LIMIT 1`)
+    .prepare(`SELECT id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id, provider_payment_id FROM orders WHERE id = ? LIMIT 1`)
     .bind(input.orderId)
     .first<PaymentOrderRow>();
   if (!order) throw new StoreError("ORDER_NOT_FOUND", 404);
@@ -567,6 +587,8 @@ export async function handlePaymentEvent(input: {
 
   const entitlementId = newId("ent");
   const timestamp = now();
+  const nextStatus = nextPaymentStatus(order.status as PaymentOperationalStatus, input.status);
+  const telemetryEvent = paymentTelemetryEvent(input.status);
   const statements = [
     database
       .prepare(
@@ -585,20 +607,15 @@ export async function handlePaymentEvent(input: {
     database
       .prepare(
         `UPDATE orders
-         SET status = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID' THEN status ELSE ? END,
-             provider_payment_id = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID'
-               THEN provider_payment_id ELSE COALESCE(?, provider_payment_id) END,
-             provider_event_id = CASE WHEN ? = 'PAYMENT_FAILED' AND status = 'PAID'
-               THEN provider_event_id ELSE ? END,
+         SET status = ?,
+             provider_payment_id = COALESCE(?, provider_payment_id),
+             provider_event_id = ?,
              updated_at = ?
          WHERE id = ?`,
       )
       .bind(
-        input.status,
-        input.status,
-        input.status,
+        nextStatus,
         input.providerPaymentId ?? null,
-        input.status,
         input.providerEventId,
         timestamp,
         input.orderId,
@@ -617,14 +634,23 @@ export async function handlePaymentEvent(input: {
       database
         .prepare(
           `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
-           VALUES (?, 'payment_confirmed', ?, NULL, ?, ?)`,
+           VALUES (?, ?, ?, NULL, ?, ?)`,
         )
-        .bind(newId("tel"), order.user_id, JSON.stringify({ provider: "stripe", status: "PAID" }), timestamp),
+        .bind(newId("tel"), telemetryEvent, order.user_id, JSON.stringify({ provider: "stripe", status: input.status }), timestamp),
+    );
+  } else if (telemetryEvent) {
+    statements.push(
+      database
+        .prepare(
+          `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
+           VALUES (?, ?, ?, NULL, ?, ?)`,
+        )
+        .bind(newId("tel"), telemetryEvent, order.user_id, JSON.stringify({ provider: "stripe", status: input.status, event_type: input.eventType }), timestamp),
     );
   }
   try {
     await database.batch(statements);
-  } catch (error) {
+  } catch {
     const race = await database
       .prepare(`SELECT id, payload_hash FROM payment_events WHERE id = ? LIMIT 1`)
       .bind(input.providerEventId)
@@ -633,7 +659,7 @@ export async function handlePaymentEvent(input: {
       if (race.payload_hash !== input.payloadHash) throw new StoreError("PAYMENT_EVENT_REPLAY_MISMATCH", 409);
       return { duplicate: true, entitlementCreated: false };
     }
-    console.error("payment_event_write_failed", error);
+    console.error("payment_event_write_failed", { error_code: "PAYMENT_EVENT_WRITE_FAILED" });
     throw new StoreError("PAYMENT_EVENT_WRITE_FAILED", 500);
   }
   await audit(null, "PAYMENT_EVENT_ACCEPTED", "order", input.orderId, {
@@ -641,11 +667,13 @@ export async function handlePaymentEvent(input: {
     status: input.status,
     orderStatusBeforeEvent: order.status,
   });
-  return { duplicate: false, entitlementCreated: input.status === "PAID" };
+  return { duplicate: false, entitlementCreated: input.status === "PAID", orderStatus: nextStatus };
 }
 
-export async function createAssessmentForUser(input: { viewer: Viewer; testId: string }) {
-  await ensureUser(input.viewer);
+export async function createAssessmentForUser(input: { viewer: Viewer; testId: string; locale?: Locale }) {
+  const locale = input.locale ?? "ru";
+  if (!canPublishLocale(locale)) throw new StoreError("LOCALE_NOT_PUBLISHED", 422);
+  await ensureUser(input.viewer, locale);
   const database = ensureDatabase();
   const existing = await database
     .prepare(
@@ -679,17 +707,18 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
   await database
     .prepare(
       `INSERT INTO assessments
-        (id, user_id, entitlement_id, test_id, state, versions_json,
+        (id, user_id, entitlement_id, test_id, locale, state, versions_json,
          adaptive_item_ids_json, selection_mode, preliminary_score_json,
          final_score_json, report_id, client_seq, created_at, consented_at,
          completed_at, updated_at)
-       VALUES (?, ?, ?, ?, 'PAID', ?, '[]', NULL, NULL, NULL, NULL, 0, ?, NULL, NULL, ?)`,
+       VALUES (?, ?, ?, ?, ?, 'PAID', ?, '[]', NULL, NULL, NULL, NULL, 0, ?, NULL, NULL, ?)`,
     )
     .bind(
       sessionId,
       input.viewer.userId,
       entitlement.id,
       input.testId,
+      locale,
       JSON.stringify(versions),
       timestamp,
       timestamp,
@@ -704,6 +733,63 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
 export async function getSessionForUser(sessionId: string, viewer: Viewer) {
   await ensureUser(viewer);
   return loadSession(sessionId, viewer.userId);
+}
+
+export async function deleteAssessmentForUser(sessionId: string, viewer: Viewer) {
+  await ensureUser(viewer);
+  const database = ensureDatabase();
+  const assessment = await database
+    .prepare(`SELECT id, state FROM assessments WHERE id = ? AND user_id = ? LIMIT 1`)
+    .bind(sessionId, viewer.userId)
+    .first<{ id: string; state: SessionState }>();
+  if (!assessment) throw new StoreError("SESSION_NOT_FOUND", 404);
+
+  const reportKeys = await database
+    .prepare(`SELECT pdf_key FROM reports WHERE assessment_id = ? AND user_id = ? AND pdf_key IS NOT NULL`)
+    .bind(sessionId, viewer.userId)
+    .all<{ pdf_key: string }>();
+  const requestId = newId("privacy");
+  const timestamp = now();
+  await database
+    .prepare(
+      `INSERT INTO privacy_requests (id, user_id, type, status, artifact_key, created_at, completed_at)
+       VALUES (?, ?, 'ASSESSMENT_DELETE', 'PROCESSING', NULL, ?, NULL)`,
+    )
+    .bind(requestId, viewer.userId, timestamp)
+    .run();
+
+  try {
+    const bucket = getR2();
+    await Promise.all((reportKeys.results ?? []).map((row) => bucket.delete(row.pdf_key)));
+  } catch {
+    await database
+      .prepare(`UPDATE privacy_requests SET status = 'FAILED_RETRYABLE' WHERE id = ? AND user_id = ?`)
+      .bind(requestId, viewer.userId)
+      .run();
+    console.error("assessment_artifact_delete_failed", { error_code: "R2_DELETE_FAILED" });
+    throw new StoreError("ASSESSMENT_DELETE_FAILED", 503);
+  }
+
+  try {
+    await database.batch([
+      database.prepare(`DELETE FROM assessment_responses WHERE assessment_id = ?`).bind(sessionId),
+      database.prepare(`DELETE FROM adaptive_runs WHERE assessment_id = ?`).bind(sessionId),
+      database.prepare(`DELETE FROM consents WHERE assessment_id = ? AND user_id = ?`).bind(sessionId, viewer.userId),
+      database.prepare(`DELETE FROM reports WHERE assessment_id = ? AND user_id = ?`).bind(sessionId, viewer.userId),
+      database.prepare(`DELETE FROM assessments WHERE id = ? AND user_id = ?`).bind(sessionId, viewer.userId),
+      database.prepare(`UPDATE privacy_requests SET status = 'COMPLETE', completed_at = ? WHERE id = ? AND user_id = ?`).bind(timestamp, requestId, viewer.userId),
+    ]);
+  } catch {
+    await database
+      .prepare(`UPDATE privacy_requests SET status = 'FAILED_RETRYABLE' WHERE id = ? AND user_id = ?`)
+      .bind(requestId, viewer.userId)
+      .run();
+    console.error("assessment_row_delete_failed", { error_code: "D1_DELETE_FAILED" });
+    throw new StoreError("ASSESSMENT_DELETE_FAILED", 503);
+  }
+  await audit(viewer.userId, "ASSESSMENT_DELETED", "privacy_request", requestId, { assessmentState: assessment.state });
+  await serverTelemetry({ name: "privacy_delete", userId: viewer.userId, assessmentId: sessionId, metadata: { status: "COMPLETE" } });
+  return { requestId, assessmentId: sessionId, deleted: true };
 }
 
 export async function consumeRateLimit(input: {
@@ -819,8 +905,8 @@ export async function consentSessionForUser(
         )
         .bind(timestamp, timestamp, sessionId, viewer.userId),
     ]);
-  } catch (error) {
-    console.error("consent_write_failed", error);
+  } catch {
+    console.error("consent_write_failed", { error_code: "CONSENT_WRITE_FAILED" });
     throw new StoreError("CONSENT_SAVE_FAILED", 500);
   }
   const session = await loadSession(sessionId, viewer.userId);
@@ -903,7 +989,7 @@ export async function saveResponse(input: {
         )
         .bind(nextState, serverSeq, timestamp, input.sessionId, input.viewer.userId),
     ]);
-  } catch (error) {
+  } catch {
     const race = await database
       .prepare(
         `SELECT client_seq, idempotency_key FROM assessment_responses
@@ -922,7 +1008,7 @@ export async function saveResponse(input: {
       }
       throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
     }
-    console.error("response_write_failed", error);
+    console.error("response_write_failed", { error_code: "RESPONSE_WRITE_FAILED" });
     throw new StoreError("RESPONSE_SAVE_FAILED", 500);
   }
   return { saved: true, replay: false, serverSeq, nextItemId: nextItemId({ ...session, responses: { ...session.responses, [input.itemId]: input.response } }) };
@@ -989,7 +1075,7 @@ export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
           timestamp,
         ),
     ]);
-  } catch (error) {
+  } catch {
     const concurrent = await loadSession(sessionId, viewer.userId);
     if (concurrent?.adaptiveItemIds.length && concurrent.profile) {
       const run = await loadAdaptiveRun(sessionId);
@@ -1006,7 +1092,7 @@ export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
         reused: true,
       };
     }
-    console.error("adaptive_selection_write_failed", error);
+    console.error("adaptive_selection_write_failed", { error_code: "ADAPTIVE_SELECTION_WRITE_FAILED" });
     throw new StoreError("ADAPTIVE_SELECTION_SAVE_FAILED", 500);
   }
   await audit(viewer.userId, "ADAPTIVE_SELECTED", "assessment", sessionId, {
@@ -1030,6 +1116,14 @@ export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
     assessmentId: sessionId,
     metadata: { provider: decision.run.provider, fallback: decision.run.validationResult === "fallback", mode: selection.mode, latency_ms: decision.run.latencyMs, count: selection.selectedItemIds.length },
   });
+  if (decision.run.validationResult === "fallback") {
+    await serverTelemetry({
+      name: "adaptive_fallback",
+      userId: viewer.userId,
+      assessmentId: sessionId,
+      metadata: { provider: decision.run.provider, reason: decision.run.fallbackReason, latency_ms: decision.run.latencyMs },
+    });
+  }
   const updated = await loadSession(sessionId, viewer.userId);
   if (!updated) throw new StoreError("SESSION_NOT_FOUND", 404);
   return { session: updated, selection, run: decision.run, reused: false };
@@ -1068,13 +1162,13 @@ export async function completeAssessmentForUser(sessionId: string, viewer: Viewe
         )
         .bind(JSON.stringify(profile), reportId, timestamp, sessionId, viewer.userId),
     ]);
-  } catch (error) {
+  } catch {
     const existing = await database
       .prepare(`SELECT report_id FROM assessments WHERE id = ? AND user_id = ? LIMIT 1`)
       .bind(sessionId, viewer.userId)
       .first<{ report_id: string | null }>();
     if (existing?.report_id) return { session, reportId: existing.report_id, reused: true };
-    console.error("report_create_failed", error);
+    console.error("report_create_failed", { error_code: "REPORT_CREATE_FAILED" });
     throw new StoreError("REPORT_CREATE_FAILED", 500);
   }
   await audit(viewer.userId, "SCORING_COMPLETED", "assessment", sessionId, { reportId });
@@ -1145,6 +1239,9 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
     await audit(viewer.userId, "REPORT_COMPLETED", "report", reportId, { provider: generated.provider, fallback: Boolean(generated.fallbackReason), reason: generated.fallbackReason });
     await serverTelemetry({ name: "adaptive_completed", userId: viewer.userId, assessmentId: row.assessment_id, metadata: { count: score.adaptiveAnswered, status: "COMPLETE" } });
     await serverTelemetry({ name: "report_completed", userId: viewer.userId, assessmentId: row.assessment_id, metadata: { provider: generated.provider, fallback: Boolean(generated.fallbackReason), reason: generated.fallbackReason, status: "COMPLETE" } });
+    if (generated.fallbackReason) {
+      await serverTelemetry({ name: "report_fallback", userId: viewer.userId, assessmentId: row.assessment_id, metadata: { provider: generated.provider, reason: generated.fallbackReason } });
+    }
   } catch (error) {
     const code = error instanceof StoreError ? error.code : "REPORT_GENERATION_FAILED";
     await database
@@ -1154,7 +1251,8 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
       )
       .bind(code, now(), reportId, viewer.userId)
       .run();
-    console.error("report_generation_failed", { reportId, code, error });
+    console.error("report_generation_failed", { reportId, code, error_code: code });
+    await serverTelemetry({ name: "report_failed", userId: viewer.userId, assessmentId: row.assessment_id, metadata: { reason: code, status: "REPORT_FAILED_RETRYABLE" } });
   }
   return getReportForUser(reportId, viewer);
 }
@@ -1199,8 +1297,8 @@ export async function regenerateReportForUser(reportId: string, viewer: Viewer) 
     .prepare(`UPDATE reports SET status = 'REPORT_GENERATING', error_code = NULL, updated_at = ? WHERE id = ? AND user_id = ?`)
     .bind(now(), reportId, viewer.userId)
     .run();
-  return generateReportForUser(reportId, viewer).catch(async (error) => {
-    console.error("report_regeneration_failed", { reportId, error });
+  return generateReportForUser(reportId, viewer).catch(async () => {
+    console.error("report_regeneration_failed", { error_code: "REPORT_REGENERATION_FAILED" });
     return getReportForUser(reportId, viewer);
   });
 }
@@ -1217,8 +1315,8 @@ export async function getReportPdfForUser(reportId: string, viewer: Viewer) {
   let object;
   try {
     object = await getR2().get(row.pdf_key);
-  } catch (error) {
-    console.error("pdf_storage_read_failed", { reportId, error });
+  } catch {
+    console.error("pdf_storage_read_failed", { error_code: "PDF_STORAGE_READ_FAILED" });
     throw new StoreError("PDF_STORAGE_UNAVAILABLE", 503);
   }
   if (!object) throw new StoreError("PDF_NOT_FOUND", 404);
@@ -1228,6 +1326,10 @@ export async function getReportPdfForUser(reportId: string, viewer: Viewer) {
 export async function getAccountOverview(viewer: Viewer) {
   await ensureUser(viewer);
   const database = ensureDatabase();
+  const userRow = await database
+    .prepare(`SELECT locale FROM users WHERE id = ? LIMIT 1`)
+    .bind(viewer.userId)
+    .first<{ locale: string }>();
   const orderResult = await database
     .prepare(
       `SELECT id, test_id, amount_minor, currency, status, provider,
@@ -1258,6 +1360,7 @@ export async function getAccountOverview(viewer: Viewer) {
       id: viewer.userId,
       email: viewer.email,
       displayName: viewer.displayName,
+      locale: resolveLocale(userRow?.locale),
     },
     orders: (orderResult.results ?? []).map(publicOrder),
     assessments: (assessmentResult.results ?? []).map((row) => ({
@@ -1384,6 +1487,7 @@ export async function requestDataExport(viewer: Viewer) {
     )
     .bind(requestId, viewer.userId, key, now(), now())
     .run();
+  await serverTelemetry({ name: "privacy_export", userId: viewer.userId, metadata: { status: "COMPLETE" } });
   await audit(viewer.userId, "DATA_EXPORT_CREATED", "privacy_request", requestId);
   return { requestId, downloadPath: `/api/account/export/${requestId}` };
 }
@@ -1429,12 +1533,12 @@ export async function deleteAccount(viewer: Viewer) {
       ...(privacyArtifactResult.results ?? []).map((row) => row.artifact_key),
     ];
     await Promise.all(keys.map((key) => bucket.delete(key)));
-  } catch (error) {
+  } catch {
     await database
       .prepare(`UPDATE privacy_requests SET status = 'FAILED_RETRYABLE' WHERE id = ? AND user_id = ?`)
       .bind(requestId, viewer.userId)
       .run();
-    console.error("account_artifact_delete_failed", { userId: viewer.userId, error });
+    console.error("account_artifact_delete_failed", { error_code: "R2_DELETE_FAILED" });
     throw new StoreError("ACCOUNT_ARTIFACT_DELETE_FAILED", 503);
   }
   await database.batch([

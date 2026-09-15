@@ -69,6 +69,7 @@ export const assessments = sqliteTable(
     userId: text("user_id").notNull().references(() => users.id),
     entitlementId: text("entitlement_id").references(() => entitlements.id),
     testId: text("test_id").notNull(),
+    locale: text("locale").notNull().default("ru"),
     state: text("state").notNull(),
     versionsJson: text("versions_json").notNull(),
     adaptiveItemIdsJson: text("adaptive_item_ids_json").notNull().default("[]"),

@@ -2,7 +2,7 @@
 
 Date: 2026-09-15  
 Scope: attached ORBITA-30 remediation audit and production/pilot readiness review  
-Decision: technical closed-pilot gate is ready after the verification commands below; public paid launch and validated claims remain blocked by explicit external gates.
+Decision: engineering implementation is materially closed for review, but the master engineering gate remains NO until clean Linux CI/release evidence; closed-pilot, public-paid and validated-claims gates remain blocked by explicit external gates.
 
 ## Invariants preserved
 
@@ -28,7 +28,7 @@ Decision: technical closed-pilot gate is ready after the verification commands b
 |---|---|---|
 | Approved interpretation library | Separate versioned module with trait fields, exact overuse/development content, supported combinations and unsupported-combination rejection | CLOSED |
 | Structured PDF | JSON-driven 24-page A4 output with top five, full 30, six domains, combinations, teamwork/communication, thinking/execution/influence, self-management/stress/blind spots, plan, methodology and limits; no percentile | CLOSED |
-| Test/CI | Unit contracts, payment/adaptive/report/privacy/retention coverage, local Worker/D1/R2 E2E smoke, `ci:verify` | CLOSED after final run |
+| Test/CI | Unit contracts, payment/adaptive/report/privacy/retention coverage, local Worker/D1/R2 E2E smoke, `ci:verify` | PARTIAL until final full matrix and Linux run |
 | Reproducibility | lockfile, `npm ci`, clean source packager and `.gitignore` rules for `node_modules`, `dist`, `.next`, `.wrangler`, `.vite`, `.vinext`, OS artifacts | CLOSED |
 | Localization | Explicit RU/KZ/EN catalog; RU published; KZ/EN cannot be marked published before translation/back-translation/cognitive/invariance work | CLOSED |
 | Pilot analytics | Aggregate-only funnel, provider/fallback, latency, report/PDF and quality summaries; psychometric output is withheld below sample 200 | CLOSED |
@@ -71,8 +71,9 @@ The following are intentionally not guessed in source:
 Final release statuses:
 
 ```text
-READY_FOR_CLOSED_PILOT=YES (technical gate; use only after pilot content/legal approval)
+READY_FOR_ENGINEERING_100=NO
+READY_FOR_CLOSED_PILOT=NO (content/legal/protocol/support approval is still required)
 READY_FOR_PUBLIC_PAID_LAUNCH=NO
 READY_FOR_VALIDATED_CLAIMS=NO
+READY_FOR_NORMATIVE_PERCENTILES=NO
 ```
-

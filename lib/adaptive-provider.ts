@@ -4,10 +4,11 @@ import {
   validateAdaptiveSelection,
   ADAPTIVE_REASON_CODES,
   type AdaptiveSelection,
-  type AdaptiveReasonCode,
   type ScoreProfile,
 } from "@/lib/assessment-engine";
 import { ITEM_BANK, type Item } from "@/lib/item-bank";
+import { selectionFromPayload } from "@/lib/adaptive-contract";
+import { parseStrictJsonProviderOutput, providerFailureReason } from "@/lib/provider-contract";
 
 export type AdaptiveRunRecord = {
   selectorVersion: string;
@@ -89,47 +90,6 @@ export function buildAdaptivePayload(profile: ScoreProfile, answeredItemIds: str
   };
 }
 
-function outputText(payload: Record<string, unknown>) {
-  if (typeof payload.output_text === "string") return payload.output_text;
-  const output = Array.isArray(payload.output) ? payload.output : [];
-  const pieces: string[] = [];
-  for (const item of output) {
-    if (!item || typeof item !== "object") continue;
-    const content = (item as Record<string, unknown>).content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      if (!part || typeof part !== "object") continue;
-      const text = (part as Record<string, unknown>).text;
-      if (typeof text === "string") pieces.push(text);
-    }
-  }
-  return pieces.join("\n");
-}
-
-function selectionFromPayload(value: unknown) {
-  if (!value || typeof value !== "object") throw new Error("ADAPTIVE_OUTPUT_INVALID");
-  const payload = value as Record<string, unknown>;
-  const selected = payload.selected_item_ids;
-  const targetCount = payload.target_count;
-  if (!Array.isArray(selected) || !selected.every((id) => typeof id === "string")) throw new Error("ADAPTIVE_OUTPUT_INVALID");
-  if (!Number.isInteger(targetCount)) throw new Error("ADAPTIVE_OUTPUT_INVALID");
-  const reasonCodes: Record<string, AdaptiveReasonCode[]> = {};
-  if (Array.isArray(payload.reason_codes)) {
-    for (const entry of payload.reason_codes) {
-      if (!entry || typeof entry !== "object") continue;
-      const item = entry as Record<string, unknown>;
-      if (typeof item.item_id === "string" && Array.isArray(item.reasons) && item.reasons.every((reason) => typeof reason === "string")) {
-        reasonCodes[item.item_id] = item.reasons.slice(0, 8) as AdaptiveReasonCode[];
-      }
-    }
-  } else if (payload.reason_codes && typeof payload.reason_codes === "object") {
-    for (const [id, reasons] of Object.entries(payload.reason_codes as Record<string, unknown>)) {
-      if (Array.isArray(reasons)) reasonCodes[id] = reasons.slice(0, 8) as AdaptiveReasonCode[];
-    }
-  }
-  return { selectedItemIds: selected, targetCount, reasonCodes };
-}
-
 async function chooseWithOpenAI(
   profile: ScoreProfile,
   answeredItemIds: string[],
@@ -198,8 +158,9 @@ async function chooseWithOpenAI(
       }),
     });
     if (!response.ok) throw new Error(`ADAPTIVE_OPENAI_HTTP_${response.status}`);
-    const parsed = JSON.parse(outputText(await response.json() as Record<string, unknown>));
-    return selectionFromPayload(parsed);
+    const parsed = parseStrictJsonProviderOutput(await response.json() as Record<string, unknown>);
+    if (!parsed.ok) throw new Error(`ADAPTIVE_${parsed.reason}`);
+    return selectionFromPayload(parsed.value);
   } finally {
     clearTimeout(timer);
   }
@@ -274,7 +235,7 @@ export async function selectAdaptiveForProfile(
       },
     };
   } catch (error) {
-    const reason = error instanceof Error ? error.message.slice(0, 120) : "adaptive_provider_failed";
+    const reason = providerFailureReason(error, "ADAPTIVE");
     console.error("adaptive_provider_failed", { reason });
     return fallbackDecision(profile, answeredItemIds, targetCount, inputHash, startedAt, reason);
   }

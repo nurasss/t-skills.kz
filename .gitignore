@@ -16,6 +16,7 @@
 # next.js
 /.next/
 /.vinext/
+/.vite/
 /out/
 
 # misc
@@ -38,6 +39,7 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 /dist/
+*.tsbuildinfo
 /.wrangler/
 # Checkout-local execution profile and tool state; never publish them.
 /.sites-runtime/

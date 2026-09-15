@@ -4,18 +4,27 @@ export const TELEMETRY_EVENT_NAMES = [
   "checkout_started",
   "checkout_redirected",
   "payment_confirmed",
+  "payment_refunded",
+  "payment_disputed",
+  "payment_dispute_closed",
   "assessment_started",
   "resume",
   "answer_saved",
   "block_completed",
   "core_completed",
   "adaptive_started",
+  "adaptive_fallback",
   "adaptive_selected",
   "adaptive_completed",
   "assessment_abandoned",
   "report_viewed",
   "report_completed",
+  "report_failed",
+  "report_fallback",
   "pdf_downloaded",
+  "privacy_export",
+  "privacy_delete",
+  "retention_sweep",
   "support_opened",
 ] as const;
 
@@ -33,6 +42,7 @@ const SAFE_METADATA_KEYS = new Set([
   "rqi_bucket",
   "pdf_available",
   "test_id",
+  "event_type",
 ]);
 
 export function isTelemetryEventName(value: string): value is TelemetryEventName {

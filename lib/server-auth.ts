@@ -7,6 +7,8 @@ export type Viewer = {
   fullName: string | null;
 };
 
+export const AUTH_SESSION_BOUNDARY = "sites-dispatch-identity-v1";
+
 const USER_ID_HEADER = "oai-authenticated-user-id";
 const USER_EMAIL_HEADER = "oai-authenticated-user-email";
 const USER_FULL_NAME_HEADER = "oai-authenticated-user-full-name";

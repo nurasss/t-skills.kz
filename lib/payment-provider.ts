@@ -1,5 +1,6 @@
 import { getRuntimeEnv } from "@/db";
-import { attachCheckoutSession, createPendingOrder, markOrderPaymentFailed, handlePaymentEvent } from "@/lib/durable-store";
+import { attachCheckoutSession, createPendingOrder, findOrderIdByPaymentId, markOrderPaymentFailed, handlePaymentEvent } from "@/lib/durable-store";
+import type { PaymentEventStatus } from "@/lib/payment-event-policy";
 import { VERSION_IDS } from "@/lib/assessment-engine";
 import { verifyStripeSignature } from "@/lib/stripe-signature";
 import type { Viewer } from "@/lib/server-auth";
@@ -101,9 +102,9 @@ export async function createCheckout(input: { viewer: Viewer; testId: string; re
       },
       body: form.toString(),
     });
-  } catch (error) {
+  } catch {
     await markOrderPaymentFailed(orderResult.order.id, "STRIPE_NETWORK_ERROR");
-    console.error("stripe_checkout_network_error", error);
+    console.error("stripe_checkout_network_error", { error_code: "STRIPE_NETWORK_ERROR" });
     throw new PaymentProviderError("STRIPE_UNAVAILABLE");
   }
   if (!response.ok) {
@@ -149,15 +150,19 @@ export async function processStripeWebhook(payload: string, signature: string | 
   if (!event.id || !event.type || !event.data?.object) throw new PaymentProviderError("STRIPE_PAYLOAD_INVALID");
   const object = event.data.object;
   const metadata = object.metadata && typeof object.metadata === "object" ? object.metadata as Record<string, unknown> : {};
-  const orderId = typeof metadata.order_id === "string" ? metadata.order_id : typeof object.client_reference_id === "string" ? object.client_reference_id : null;
+  const paymentId = typeof object.payment_intent === "string" ? object.payment_intent : null;
+  const directOrderId = typeof metadata.order_id === "string" ? metadata.order_id : typeof object.client_reference_id === "string" ? object.client_reference_id : null;
+  const orderId = directOrderId ?? (paymentId ? await findOrderIdByPaymentId(paymentId) : null);
   if (!orderId) return { ignored: true, eventId: event.id, reason: "ORDER_ID_MISSING" };
 
-  let status: "PAID" | "PAYMENT_FAILED" | null = null;
+  let status: PaymentEventStatus | null = null;
   if ((event.type === "checkout.session.completed" && object.payment_status === "paid") || (event.type === "checkout.session.async_payment_succeeded" && object.payment_status === "paid")) status = "PAID";
   if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") status = "PAYMENT_FAILED";
+  if (event.type === "charge.refunded" || event.type === "refund.created" || event.type === "refund.updated") status = "REFUNDED";
+  if (event.type === "charge.dispute.created") status = "DISPUTED";
+  if (event.type === "charge.dispute.closed") status = "DISPUTE_CLOSED";
   if (!status) return { ignored: true, eventId: event.id, reason: "EVENT_NOT_ACTIONABLE" };
 
-  const paymentId = typeof object.payment_intent === "string" ? object.payment_intent : null;
   const result = await handlePaymentEvent({
     providerEventId: event.id,
     eventType: event.type,

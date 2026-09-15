@@ -4,6 +4,7 @@ import {
   getApprovedTraitInterpretation,
   INTERPRETATION_LIBRARY_VERSION,
 } from "@/lib/interpretation-library";
+import { buildReportSourceKeys } from "@/lib/report-safety";
 
 export const VERSION_IDS = {
   assessment: "orbita30_ru_v1",
@@ -12,6 +13,7 @@ export const VERSION_IDS = {
   norms: "pilot-index-unvalidated-v1",
   selector: "selector-0.3",
   report: "report-0.3",
+  translation: "ru-source-v1",
 } as const;
 
 export type NormStatus = "unvalidated" | "pilot" | "normed";
@@ -130,6 +132,23 @@ export type ReportJSON = {
   workEnvironments: string[];
   development30Days: string[];
   confidenceNote: string;
+  sourceKeys: {
+    executiveSummary: string[];
+    topStrengths: Array<{ trait: TraitCode; keys: string[] }>;
+    combinations: string[];
+    teamwork: string[];
+    thinkingStyle: string[];
+    executionStyle: string[];
+    influenceStyle: string[];
+    collaborationStyle: string[];
+    selfManagementStyle: string[];
+    communicationStyle: string[];
+    decisionStyle: string[];
+    stressAndBlindSpots: string[];
+    workEnvironments: string[];
+    development30Days: string[];
+    confidenceNote: string[];
+  };
 };
 
 const traitCodes = TRAITS.map((trait) => trait.code) as TraitCode[];
@@ -409,6 +428,7 @@ export function normalizeScoreProfile(value: unknown): ScoreProfile {
       norms: typeof rawVersions.norms === "string" ? rawVersions.norms : VERSION_IDS.norms,
       selector: VERSION_IDS.selector,
       report: VERSION_IDS.report,
+      translation: VERSION_IDS.translation,
     },
     normStatus: raw.normStatus === "pilot" || raw.normStatus === "normed" ? raw.normStatus : "unvalidated",
     traits,
@@ -613,7 +633,7 @@ export function buildReport(profile: ScoreProfile): ReportJSON {
       ? `Пилотный индикатор качества ответа ${Math.round(profile.responseQuality.rqi * 100)}%. Внутренние флаги: ${profile.responseQuality.flags.join(", ")}. Они не обнуляют профиль, но требуют осторожной интерпретации.`
       : "Диапазоны неопределённости показывают текущую точность измерения, а не неизменную характеристику личности. Пилотный индекс профиля не является процентом людей и не является диагностикой.";
 
-  return {
+  const report: ReportJSON = {
     interpretationLibraryVersion: INTERPRETATION_LIBRARY_VERSION,
     executiveSummary: `Ваш текущий профиль выделяет ${top
       .slice(0, 3)
@@ -650,7 +670,9 @@ export function buildReport(profile: ScoreProfile): ReportJSON {
       "Собрать один компенсирующий партнёрский ритуал для менее естественного режима.",
     ],
     confidenceNote,
+    sourceKeys: buildReportSourceKeys(profile),
   };
+  return report;
 }
 
 export function getItemById(id: string) {
