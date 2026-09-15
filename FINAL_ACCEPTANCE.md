@@ -6,8 +6,9 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | Filled by the release command and repeated in `RELEASE_MANIFEST.json` |
-| Source package SHA-256 | Filled by `npm run package:source` and repeated in `RELEASE_MANIFEST.json` |
+| Source release Git SHA | `295bbd9230dc6f404760fd568afea9cd68747541` |
+| Source package SHA-256 | `b38bf311392caac78f10833ddff7cc0b86fa48756e4204c0d3cabf879065b6be` |
+| Evidence-pack commit | Recorded in the final handoff after this evidence commit |
 | Release date | 2026-09-15 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
@@ -41,7 +42,7 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | TST-03 | PASS | `lib/provider-contract.ts`, `lib/report-safety.ts` | Unit provider failure and injection tests | Empty/malformed/extra text, schema and safety boundaries are covered. |
 | TST-04 | PASS | `lib/payment-integrity.ts`, `lib/payment-event-policy.ts` | E2E webhook mismatch/replay/race/refund/dispute | No live Stripe business transaction is claimed. |
 | TST-05 | PARTIAL | `lib/pdf-token-policy.ts`, `scripts/e2e-smoke.mjs` | PDF token, tamper, expiry, wrong owner, missing R2 and regeneration checks | Full multi-locale visual fixture suite remains open. |
-| TST-06 | PARTIAL | `lib/retention.ts`, `scripts/e2e-smoke.mjs` | Account/assessment delete, export, dry-run checks | Real retention purge and active-session exclusion still need a dedicated fixture. |
+| TST-06 | PASS | `lib/retention.ts`, `scripts/e2e-smoke.mjs` | Account/assessment delete, export, retention dry-run, real purge and active-session exclusion | Fixture uses paid entitlements and isolated local D1/R2 state. |
 | TST-07 | PASS | `scripts/e2e-smoke.mjs` | Restart/resume and idempotent response replay | Server restart occurs during the core flow. |
 | AUTH-01 | OPEN | `lib/server-auth.ts` | External public identity provider required | Current Sites identity is owner-private/dispatch-owned. |
 | AUTH-02 | OPEN | `lib/server-auth.ts` | External public verified identity acceptance required | No public account creation is fabricated. |
@@ -97,16 +98,16 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 
 | Command | Result | Evidence |
 |---|---|---|
-| `npm ci` | OPEN until clean release checkout | `.github/workflows/ci.yml` |
+| `npm ci` | PASS in locked local checkout; Node runtime recorded in manifest | `.github/workflows/ci.yml`, `package-lock.json` |
 | `npm run lint` | PASS | CI/local command output |
 | `npx tsc --noEmit` | PASS | CI/local command output |
 | `npm test` | PASS | 14 unit/contract tests in current release |
-| `npm run test:e2e` | PASS required at final | Full local Worker/D1/R2 smoke |
+| `npm run test:e2e` | PASS — `sess_61d8ba24faba42d0a72da856` | Full local Worker/D1/R2 smoke |
 | `npm run test:backup` | PASS | `BACKUP_RESTORE_SMOKE=PASS` |
 | `npm run build` | PASS | Vinext production build |
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
-| `npm run package:source` | PASS required at final | Archive SHA and manifest |
-| `git status --porcelain` | PASS required at final | Must be empty before release tag |
+| `npm run package:source` | PASS — deterministic hash reproduced twice | Archive SHA and `RELEASE_MANIFEST.json` |
+| `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register
 
@@ -119,7 +120,7 @@ None found in the tracked source scan or local ownership/webhook checks. Any fut
 - Clean Linux CI and staging/production resource isolation are not evidenced locally.
 - Public multi-user identity, logout/revocation, MFA/RBAC and support controls are not implemented by this private Site.
 - Live Stripe price/secrets/refund operations and approved Kazakhstan legal documents are open.
-- Full retention-real-purge/active-session and PDF visual fixture matrix is not yet complete.
+- Full multi-profile/multi-locale PDF visual fixture matrix is not yet complete; current typical-profile fixture is 24-page A4 and visually reviewed.
 
 ### P2
 

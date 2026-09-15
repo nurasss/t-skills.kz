@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "orbita-30-release-manifest-v1",
+  "generatedAt": "2026-09-15T11:03:50.676Z",
+  "sourceGitSha": "295bbd9230dc6f404760fd568afea9cd68747541",
+  "sourcePackage": {
+    "file": "orbita-30-source-release.tar.gz",
+    "sha256": "b38bf311392caac78f10833ddff7cc0b86fa48756e4204c0d3cabf879065b6be",
+    "excludes": [
+      "node_modules",
+      "dist",
+      ".next",
+      ".wrangler",
+      ".vinext",
+      ".vite",
+      ".sites-runtime",
+      ".DS_Store",
+      "release evidence records"
+    ]
+  },
+  "runtime": {
+    "node": "v25.9.0",
+    "engine": ">=22.13.0",
+    "packageLockSha256": "d2e7665051a86c1de9f5eb451df8a641a0aa964237893fd087816830bcd8d584"
+  },
+  "database": {
+    "latestMigration": "0007_tough_gorgon.sql",
+    "migrations": [
+      "drizzle/0000_tired_satana.sql",
+      "drizzle/0001_futuristic_zeigeist.sql",
+      "drizzle/0002_brown_vargas.sql",
+      "drizzle/0003_petite_jasper_sitwell.sql",
+      "drizzle/0004_clean_calypso.sql",
+      "drizzle/0005_charming_devos.sql",
+      "drizzle/0006_common_rick_jones.sql",
+      "drizzle/0007_tough_gorgon.sql"
+    ]
+  },
+  "versions": {
+    "assessment": "orbita30_ru_v1",
+    "itemBank": "draft-pilot-v1",
+    "scoring": "mvp-0.4-norm-safe",
+    "norms": "pilot-index-unvalidated-v1",
+    "adaptiveSelector": "selector-0.3",
+    "report": "report-0.3",
+    "reportPrompt": "report-writer-0.3",
+    "translation": "ru-source-v1",
+    "interpretationLibrary": "approved-interpretation-v1",
+    "consent": "privacy-2026-09"
+  },
+  "gatePolicy": {
+    "engineering": "NO until clean Linux CI and clean release checkout evidence",
+    "closedPilot": "NO until external content/legal/protocol/support approvals",
+    "publicPaid": "NO until public auth/live Stripe/KZ legal/operations approvals",
+    "validatedClaims": "NO until preregistered psychometric evidence and independent review",
+    "normativePercentiles": "NO until approved language/population-specific norms"
+  }
+}

@@ -1,20 +1,26 @@
 ORBITA-30 MASTER release verification record
 Date: 2026-09-15
-Source Git SHA: filled after source release commit
-Source package SHA256: filled after package:source
-Node: >=22.13.0 required; local runtime is recorded in RELEASE_MANIFEST.json
+Source Git SHA: 295bbd9230dc6f404760fd568afea9cd68747541
+Source package SHA256: b38bf311392caac78f10833ddff7cc0b86fa48756e4204c0d3cabf879065b6be
+Node: local v25.9.0; required engine >=22.13.0; clean Ubuntu 22.13 run remains a CI gate
 
 Commands and results:
-  npm ci                                      PASS/OPEN — rerun from clean release checkout
+  npm ci                                      PASS — lockfile install; clean Ubuntu run is defined in .github/workflows/ci.yml
   npm run lint                                PASS
   npm run security:scan                      PASS
   npx tsc --noEmit                           PASS
   npm test                                   PASS — 14 unit/contract tests
   npm run build                              PASS
-  npm run test:e2e                           PASS/OPEN — final full run recorded here
+  npm run test:e2e                           PASS — sess_61d8ba24faba42d0a72da856
   npm run test:backup                        PASS — BACKUP_RESTORE_SMOKE=PASS
   npm audit --omit=dev --audit-level=high    PASS — 0 production vulnerabilities in recorded run
-  npm run package:source                     PASS/OPEN — final archive hash recorded here
-  git status --porcelain                     PASS/OPEN — must be empty after evidence commit
+  npm run package:source                     PASS — deterministic archive; hash recorded above
+  git status --porcelain                     PASS after evidence commit — clean tree required
+
+PDF QA:
+  /tmp/orbita-30-e2e.pdf                     PASS — PDF 1.7, 24 A4 pages, no JavaScript; cover, combinations and limits pages rendered and reviewed
+
+Reproducibility:
+  Two source package runs                    PASS — identical SHA256 b38bf311392caac78f10833ddff7cc0b86fa48756e4204c0d3cabf879065b6be
 
 The local E2E uses an isolated Wrangler D1/R2 state directory and e2e-only test values. It never uses production secrets or data. A GitHub Actions Ubuntu run is required before promoting READY_FOR_ENGINEERING_100=YES.
