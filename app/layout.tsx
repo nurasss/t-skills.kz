@@ -1,5 +1,21 @@
 import type { Metadata } from "next";
+import { Inter, Instrument_Serif } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-landing-sans",
+  display: "swap",
+});
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
+  variable: "--font-landing-serif",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "ORBITA—30 · профиль способа действовать",
@@ -19,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru">
+    <html lang="ru" className={`${inter.variable} ${instrumentSerif.variable}`}>
       <body className="antialiased">{children}</body>
     </html>
   );

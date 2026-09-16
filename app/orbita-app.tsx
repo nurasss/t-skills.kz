@@ -2,10 +2,23 @@
 
 import { AppHeader, Footer } from "@/app/orbita-views";
 import { OrbitaViewRouter } from "@/app/orbita-view-router";
+import { LandingPage } from "@/app/landing/landing-page";
 import { useOrbitaController, type OrbitaControllerOptions } from "@/hooks/use-orbita-controller";
 
 export function OrbitaApp(options: OrbitaControllerOptions) {
   const controller = useOrbitaController(options);
+
+  if (controller.view === "home") {
+    return (
+      <LandingPage
+        onNavigate={controller.go}
+        onDemo={controller.openDemo}
+        requestError={controller.requestError}
+        onDismissError={controller.dismissRequestError}
+      />
+    );
+  }
+
   const immersive = controller.view === "assessment";
 
   return (
