@@ -23,17 +23,33 @@ const migrations = git(["ls-tree", "-r", "--name-only", sourceGitSha, "--", "dri
   .filter((file) => /^drizzle\/\d+_.*\.sql$/.test(file))
   .sort();
 const packageLock = execFileSync("git", ["show", `${sourceGitSha}:package-lock.json`], { cwd: root });
+const nodeVersion = process.version.replace(/^v/, "");
+const artifactName = "orbita-30-source-release.tar.gz";
+const artifactSha256 = sha256(readFileSync(archive));
 const manifest = {
   schema_version: "orbita-30-release-manifest-v2",
   generated_at: new Date().toISOString(),
   source_git_sha: sourceGitSha,
+  node_version: nodeVersion,
+  package_lock_sha256: sha256(packageLock),
+  artifact_name: artifactName,
+  artifact_sha256: artifactSha256,
+  assessment_version: "orbita30_ru_v1",
+  item_bank_version: "draft-pilot-v1",
+  scoring_version: "mvp-0.4-norm-safe",
+  selector_version: "selector-0.3",
+  report_version: "report-0.3",
+  report_prompt_version: "report-writer-0.3",
+  translation_version: "ru-source-v1",
+  interpretation_library_version: "approved-interpretation-v1",
+  norm_version: "pilot-index-unvalidated-v1",
   source_package: {
-    file: "orbita-30-source-release.tar.gz",
-    sha256: sha256(readFileSync(archive)),
+    file: artifactName,
+    sha256: artifactSha256,
     packaging_rule: "tracked blobs from exact source_git_sha; generated release evidence and PROJECT_HANDOFF.md excluded",
   },
   runtime: {
-    node: process.version.replace(/^v/, ""),
+    node: nodeVersion,
     required_node: "22.13.0",
     package_lock_sha256: sha256(packageLock),
   },
