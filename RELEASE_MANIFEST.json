@@ -1,11 +1,11 @@
 {
   "schema_version": "orbita-30-release-manifest-v2",
-  "generated_at": "2026-09-15T23:32:42.804Z",
-  "source_git_sha": "bf29682e6e41046516d7cc98bb9b493d25e26d30",
+  "generated_at": "2026-09-16T00:17:07.120Z",
+  "source_git_sha": "85374d290ce1a23ab7f398b647a3be9a2ca3ec66",
   "source_package": {
     "file": "orbita-30-source-release.tar.gz",
-    "sha256": "3c99b3bab0b040b4b5a50636684e7545238290a78e551a75df23cb1af57141d2",
-    "packaging_rule": "tracked blobs from exact source_git_sha; generated release evidence excluded"
+    "sha256": "db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff",
+    "packaging_rule": "tracked blobs from exact source_git_sha; generated release evidence and PROJECT_HANDOFF.md excluded"
   },
   "runtime": {
     "node": "22.13.0",
@@ -13,7 +13,7 @@
     "package_lock_sha256": "f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57"
   },
   "database": {
-    "latest_migration": "0008_young_adam_warlock.sql",
+    "latest_migration": "0009_careless_banshee.sql",
     "migrations": [
       "drizzle/0000_tired_satana.sql",
       "drizzle/0001_futuristic_zeigeist.sql",
@@ -23,7 +23,8 @@
       "drizzle/0005_charming_devos.sql",
       "drizzle/0006_common_rick_jones.sql",
       "drizzle/0007_tough_gorgon.sql",
-      "drizzle/0008_young_adam_warlock.sql"
+      "drizzle/0008_young_adam_warlock.sql",
+      "drizzle/0009_careless_banshee.sql"
     ]
   },
   "versions": {

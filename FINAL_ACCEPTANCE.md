@@ -6,9 +6,9 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | `bf29682e6e41046516d7cc98bb9b493d25e26d30` |
-| Source package SHA-256 | `3c99b3bab0b040b4b5a50636684e7545238290a78e551a75df23cb1af57141d2` |
-| Evidence-pack commit | `6c1bdd5183f9397751223076a68e1f4c62ccc470` |
+| Source release Git SHA | `85374d290ce1a23ab7f398b647a3be9a2ca3ec66` |
+| Source package SHA-256 | `db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff` |
+| Evidence-pack commit | `PENDING_EVIDENCE_COMMIT` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
@@ -35,7 +35,7 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | ENG-01 | PASS at release | `scripts/package-source.mjs` | `npm run package:source`, `SOURCE_MANIFEST.txt`, clean Git check | Archive excludes dependencies, build output, state and secrets. |
 | ENG-02 | OPEN | `.github/workflows/ci.yml` | GitHub Actions run required | Workflow is defined; this local Mac run is not Linux evidence. |
 | ENG-03 | PASS | `scripts/security-scan.mjs` | `npm run security:scan`, `npm audit --omit=dev --audit-level=high` | No tracked secret findings and no production high/critical audit finding in the recorded run. |
-| ENG-04 | PASS | `drizzle/0007_tough_gorgon.sql`, `scripts/backup-restore-smoke.mjs` | `npm run db:generate`, `npm run test:backup` | Locale migration and local export/restore smoke are evidenced. |
+| ENG-04 | PASS | `drizzle/0009_careless_banshee.sql`, `scripts/check-migration-drift.mjs`, `scripts/backup-restore-smoke.mjs` | `npm run db:check`, `npm run test:backup` | Migration chain 0000–0009 is drift-free and local export/restore smoke passes. |
 | ENG-05 | OPEN | `.env.example`, `PROJECT_HANDOFF.md` | Deployment configuration review required | Current Site is owner-private; staging/prod resource separation is an operator gate. |
 | TST-01 | PASS | `TEST_MATRIX.md`, `scripts/check-coverage.mjs` | 32 unit/contract tests, fixed-seed property tests, fault tests, load smoke, browser CSP and E2E | Repository test gates are automated; external auth and production-scale capacity remain separate gates. |
 | TST-02 | PASS | `scripts/e2e-smoke.mjs` | E2E ownership checks | User B receives 404/401 for assessment, report, PDF and export objects. |
@@ -102,17 +102,17 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | `npm run lint` | PASS | CI/local command output |
 | `npx tsc --noEmit` | PASS | CI/local command output |
 | `npm test` | PASS | 32 unit/contract/property/fault/routing/queue tests |
-| `npm run test:coverage` | PASS | total lib branches 88.67%; critical modules meet 90% gate |
-| `npm run test:e2e` | PASS — current run `sess_a97030cb0ef5491aa66fc6e6` | Full local Worker/D1/R2 smoke, restart/resume and retention recovery |
+| `npm run test:coverage` | PASS | total lib branches 88.63%; critical modules meet 90% gate |
+| `npm run test:e2e` | PASS — current run `sess_a60ec547d9ff43bb845f5578` | Full local Worker/D1/R2 smoke, required idempotency key, response metadata export, restart/resume and retention recovery |
 | `npm run test:browser` | PASS | Real browser hydration, strict CSP nonce, navigation and checkout redirect |
 | `npm run test:pdf-visual` | PASS | 4 deterministic 24-page A4 fixtures; visual render QA PASS |
-| `npm run test:load` | PASS | 275 requests; lost=0, duplicated=0, idempotency=PASS |
+| `npm run test:load` | PASS | 275 requests; lost=0, duplicated=0, idempotency=PASS; state=ADAPTIVE_IN_PROGRESS |
 | `npm run test:backup` | PASS | `BACKUP_RESTORE_SMOKE=PASS` |
 | `npm run build` | PASS | Vinext production build |
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx` |
-| Docker clean-room release archive | PASS | Linux Node 22.13.0: locked install, lint, typecheck, 32 tests, coverage, migration check, build, retention plan, backup/restore, E2E and load |
-| Docker Node 22.13.0 `release:verify` | PASS | exact-Git archive reproduced twice; manifest SHA `3c99b3bab0b0...57141d2` |
+| Docker clean-room release archive | PASS | Exact source archive in Linux Node 22.13.0: locked install, lint, typecheck, 32 tests, coverage, migration check, build, browser CSP, PDF visual QA, E2E, retention plan, load, backup/restore and dependency audit |
+| Docker Node 22.13.0 `release:verify` | PASS | exact-Git archive reproduced twice; manifest SHA `db8be2d9c8e0...6fc29ff` |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register
