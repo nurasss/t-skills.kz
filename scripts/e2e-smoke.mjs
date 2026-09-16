@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
