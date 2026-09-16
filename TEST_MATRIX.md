@@ -4,6 +4,9 @@ The matrix is intentionally scenario-based. Line coverage is not used as the rel
 
 | Area | Scenario | Expected result | Evidence |
 |---|---|---|---|
+| Frontend architecture | Render a view with injected props | Presentation layer has no network/scoring/payment side effects | `app/orbita-view-router.tsx`, `app/orbita-views.tsx`, `npm run lint`, `npx tsc --noEmit` |
+| Frontend architecture | Execute assessment flow actions through the controller | Flow/network/WebMCP orchestration is isolated from the shell and view components | `hooks/use-orbita-controller.ts`, `app/orbita-app.tsx` |
+| Frontend architecture | Persist/retry a response | Queue remains deterministic and DOM-free | `hooks/use-assessment-queue.ts`, `lib/response-retry-queue.ts`, `tests/retry-queue.test.ts` |
 | Scoring | Same response map scored twice | Byte-equivalent deterministic profile | `tests/unit.test.ts` — deterministic scoring |
 | Scoring | Reverse Likert and forced-choice direction | Direction is preserved | `tests/unit.test.ts` |
 | Scoring | Legacy percentile/CI snapshot | Normalized to profile index/uncertainty range; no percentile | `tests/unit.test.ts` |

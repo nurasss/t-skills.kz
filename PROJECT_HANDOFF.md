@@ -87,6 +87,13 @@ Before any publish, run the Sites build/package/save/deploy workflow and verify 
    - Analytics is allowlisted and strips raw answers, response payloads and identity fields. Admin analytics returns aggregate funnel/provider/fallback/latency/report/PDF/quality data and hides psychometrics until the minimum pilot sample (200) exists.
 - Russian is published. `kk` is the canonical Kazakh code and `kz` is legacy input only. KZ/EN remain unpublished until translation, back-translation, cognitive review and measurement-invariance review.
 
+## Frontend responsibility boundaries
+
+- `app/orbita-app.tsx` is a thin shell for global layout and error presentation.
+- `app/orbita-view-router.tsx` maps the current view state to presentational components without network calls or scoring/payment rules.
+- `hooks/use-orbita-controller.ts` owns client flow orchestration, network state, report/account actions and WebMCP registration; it returns a typed controller contract and no JSX.
+- `app/orbita-views.tsx` remains presentation-only. `app/orbita-api.ts` handles API/retry persistence, while `hooks/use-assessment-queue.ts`, `lib/response-retry-queue.ts` and `lib/view-routing.ts` remain testable without a DOM.
+
 ## Production values still required
 
 These values cannot be inferred or fabricated:

@@ -54,8 +54,10 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 
 ## Project shape
 
-- `app/orbita-app.tsx` — client state/controller and WebMCP orchestration.
-- `app/orbita-views.tsx` — presentation-only views; `lib/view-routing.ts` and `lib/response-retry-queue.ts` are pure, DOM-free controller boundaries.
+- `app/orbita-app.tsx` — thin client shell: header/footer, global error and view composition.
+- `app/orbita-view-router.tsx` — presentation routing for landing, catalog, checkout, consent, assessment, break, results, account, methodology and legal/support views.
+- `hooks/use-orbita-controller.ts` — assessment-flow orchestration, network state, WebMCP registration and account/checkout/report actions; it owns no JSX.
+- `app/orbita-views.tsx` — presentation-only views; `app/orbita-api.ts`, `hooks/use-assessment-queue.ts`, `lib/view-routing.ts` and `lib/response-retry-queue.ts` are API/queue/routing boundaries, with the queue and routing logic remaining DOM-free.
 - `lib/assessment-engine.ts` and `lib/item-bank.ts` — scoring, quality flags, report inputs and the preserved 300-item bank.
 - `lib/interpretation-library.ts` — versioned approved trait/pair semantics; AI output cannot add unsupported claims.
 - `lib/durable-store.ts` — all user-owned state transitions and ownership checks.
@@ -68,7 +70,7 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `lib/security-headers.ts`, `lib/observability.ts` and `lib/ops-monitoring.ts` — request IDs, security headers, PII-safe logs and explicit alert thresholds.
 - `lib/provider-contract.ts`, `lib/adaptive-contract.ts` and `lib/report-safety.ts` — strict provider output, source-key grounding and deterministic safety boundaries.
 - `lib/pilot-analytics.ts` and `app/api/admin/overview/route.ts` — aggregate-only pilot analytics with a minimum-sample guard.
-- `app/orbita-api.ts` and `app/orbita-view-types.ts` — client API/retry queue and shared view contracts extracted from the controller.
+- `app/orbita-api.ts` and `app/orbita-view-types.ts` — client API/retry persistence and shared view contracts.
 - `db/schema.ts` and `drizzle/` — D1 schema and append-only migrations.
 - `FINAL_ACCEPTANCE.md`, `TEST_MATRIX.md`, `RELEASE_MANIFEST.json`, `CI_EVIDENCE.txt`, `SECURITY_REVIEW.md`, `DATA_PRIVACY_REVIEW.md`, `LEGAL_LAUNCH_APPROVAL.md`, `PILOT_PROTOCOL.md`, `PREREGISTRATION.md`, `PSYCHOMETRIC_REPORT.md`, `NORMING_REPORT.md` and `RUNBOOKS.md` — release evidence and explicit open gates.
 - `.openai/hosting.json` — logical Sites bindings (`DB` and `BUCKET`) and the existing private project ID.
