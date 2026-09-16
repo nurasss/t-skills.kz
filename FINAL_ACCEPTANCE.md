@@ -36,7 +36,7 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | ID | Status | Evidence | Test/artifact | Notes | Owner | Date |
 |---|---|---|---|---|---|---|
 | ENG-01 | PASS at release | `scripts/package-source.mjs` | `npm run package:source`, `SOURCE_MANIFEST.txt`, clean Git check | Archive excludes dependencies, build output, state and secrets. | Engineering | 2026-09-16 |
-| ENG-02 | OPEN | `.github/workflows/ci.yml` | GitHub Actions run required | Workflow is defined; this local Mac run is not Linux evidence. | Engineering | 2026-09-16 |
+| ENG-02 | OPEN | `.github/workflows/ci.yml` | GitHub Actions run required | Workflow is defined; GitHub currently returns `startup_failure` with zero jobs for this private Free-plan repository, so no hosted Linux evidence exists. | Engineering | 2026-09-16 |
 | ENG-03 | PASS | `scripts/security-scan.mjs` | `npm run security:scan`, `npm audit --omit=dev --audit-level=high` | No tracked secret findings and no production high/critical audit finding in the recorded run. | Engineering | 2026-09-16 |
 | ENG-04 | PASS | `drizzle/0009_careless_banshee.sql`, `scripts/check-migration-drift.mjs`, `scripts/backup-restore-smoke.mjs` | `npm run db:check`, `npm run test:backup` | Migration chain 0000–0009 is drift-free and local export/restore smoke passes. | Engineering | 2026-09-16 |
 | ENG-05 | OPEN | `.env.example`, `PROJECT_HANDOFF.md` | Deployment configuration review required | Current Site is owner-private; staging/prod resource separation is an operator gate. | Engineering | 2026-09-16 |
@@ -131,7 +131,7 @@ None found in the tracked source scan or local ownership/webhook checks. Any fut
 - Clean Linux CI and staging/production resource isolation are not evidenced locally.
 - Public multi-user identity, logout/revocation, MFA/RBAC and support controls are not implemented by this private Site.
 - Live Stripe price/secrets/refund operations and approved Kazakhstan legal documents are open.
-- Production GitHub Actions Linux run, staging/prod resource isolation and managed backup/RPO evidence remain deployment gates.
+- Production GitHub Actions Linux run, staging/prod resource isolation and managed backup/RPO evidence remain deployment gates. GitHub branch protection/rulesets are also unavailable for this private repository on the current plan; the repository remains private and production is manual-only until plan access is changed.
 - The repository PDF matrix is complete for four RU profiles; kk/en remain unpublished until localization review and invariance evidence.
 
 ### P2

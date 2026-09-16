@@ -1,9 +1,9 @@
 # ORBITA-30 deployment evidence
 
 ```text
-GitHub URL: PENDING
-Visibility: PRIVATE (pending verification)
-Source SHA: PENDING
+GitHub URL: https://github.com/nurasss/orbita-30
+Visibility: PRIVATE
+Source SHA: 8af4c9ef7f25134aae929aece2e8815a0e2a8d16
 CI Run URL: PENDING
 CI Run ID: PENDING
 
@@ -32,7 +32,7 @@ ADAPTIVE_PROVIDER=deterministic
 REPORT_PROVIDER=approved-library
 normStatus=unvalidated
 
-GITHUB_PRIVATE_REPO_READY=NO
+GITHUB_PRIVATE_REPO_READY=YES (private repo with full history; main + develop pushed)
 EXTERNAL_CI_READY=NO
 CLOUDFLARE_STAGING_READY=NO
 CLOUDFLARE_PRODUCTION_BETA_READY=NO
@@ -40,6 +40,11 @@ ACCESS_ALLOWLIST_READY=NO
 BETA_FREE_FLOW_READY=YES (local automated evidence only)
 AI_OFF_FLOW_READY=YES (local automated evidence only)
 BETA_SMOKE_READY=NO
+
+External blockers recorded 2026-09-16:
+
+- GitHub Actions runs start with `startup_failure` and zero jobs on the current private Free-plan account. GitHub branch protection and repository rulesets return `Upgrade to GitHub Pro or make this repository public`.
+- Cloudflare R2 API returns error 10042 and requires one-time R2 activation in the Cloudflare Dashboard.
 ```
 
 No secret values belong in this file.
