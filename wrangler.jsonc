@@ -2,6 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "orbita-30",
   "main": "dist/server/index.js",
+  "workers_dev": true,
+  "preview_urls": false,
   "compatibility_date": "2026-05-15",
   "compatibility_flags": ["nodejs_compat"],
   "assets": { "directory": "dist/client" },
