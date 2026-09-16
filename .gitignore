@@ -49,3 +49,6 @@ next-env.d.ts
 /work/
 # Reproducibility artifacts are created outside the checkout by default.
 *.source.tar.gz
+# Keep the release package available locally for handoff without publishing it
+# as part of the Git source tree or accidentally including it in a source pack.
+/release-artifacts/
