@@ -8,7 +8,7 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 |---|---|
 | Source release Git SHA | `8d6eb2e9fe4ba1a3ed3f06b168294ed3e8b29500` |
 | Source package SHA-256 | `2d15fbe3f1cfcba2c1ec69344de466fb6b329c77c8f6de6f820863106eb68604` |
-| Evidence-pack commit | `PENDING_FINAL_EVIDENCE_COMMIT` |
+| Evidence-pack commit | `319c192ebb5b40b9f2a64e5ae50eb82e3e04e103` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
