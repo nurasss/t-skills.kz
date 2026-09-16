@@ -366,7 +366,9 @@ export function useOrbitaController({
     if (!window.confirm("Удалить аккаунт и все сохранённые ответы? Это действие нельзя отменить.")) return;
     try {
       await apiJson("/api/account/delete", { method: "POST", body: JSON.stringify({ confirm: "DELETE" }) });
-      topLevelNavigate("/signout-with-chatgpt?return_to=%2F");
+      topLevelNavigate(publicCatalog?.authProvider === "cloudflare-access"
+        ? "/cdn-cgi/access/logout?returnTo=%2F"
+        : "/signout-with-chatgpt?return_to=%2F");
     } catch (error) {
       setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось удалить аккаунт.");
     }

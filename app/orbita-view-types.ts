@@ -121,6 +121,7 @@ export type AdminMetrics = {
 
 export type PublicCatalog = {
   supportContact: string | null;
+  authProvider?: "legacy-private" | "cloudflare-access" | "development";
   locale?: {
     requested: string | null;
     canonical: "ru" | "kk" | "en";
