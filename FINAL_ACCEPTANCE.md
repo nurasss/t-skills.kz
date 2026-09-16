@@ -29,72 +29,74 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 
 `READY_FOR_ENGINEERING_100` remains `NO` until the external GitHub Actions clean Linux CI job passes. The release archive has now passed a clean Linux Node 22.13.0 checkout and reproducibility verification. The other four statuses remain `NO` because they require external content/legal/operations, public authentication/live payment, psychometric validation, and approved norms respectively. No status is promoted by documentation alone.
 
+The status block is checked by `npm run check:gates`. The evaluator requires the complete requirement checklist, a consistent release manifest, a clean tree, the hosted-CI marker for G0, and signed external evidence files for G1/G2/G3/G3B; documentation alone cannot promote a gate.
+
 ## Requirement evidence
 
-| ID | Status | Evidence | Test/artifact | Notes |
-|---|---|---|---|---|
-| ENG-01 | PASS at release | `scripts/package-source.mjs` | `npm run package:source`, `SOURCE_MANIFEST.txt`, clean Git check | Archive excludes dependencies, build output, state and secrets. |
-| ENG-02 | OPEN | `.github/workflows/ci.yml` | GitHub Actions run required | Workflow is defined; this local Mac run is not Linux evidence. |
-| ENG-03 | PASS | `scripts/security-scan.mjs` | `npm run security:scan`, `npm audit --omit=dev --audit-level=high` | No tracked secret findings and no production high/critical audit finding in the recorded run. |
-| ENG-04 | PASS | `drizzle/0009_careless_banshee.sql`, `scripts/check-migration-drift.mjs`, `scripts/backup-restore-smoke.mjs` | `npm run db:check`, `npm run test:backup` | Migration chain 0000–0009 is drift-free and local export/restore smoke passes. |
-| ENG-05 | OPEN | `.env.example`, `PROJECT_HANDOFF.md` | Deployment configuration review required | Current Site is owner-private; staging/prod resource separation is an operator gate. |
-| ENG-06 | PASS | `app/orbita-app.tsx`, `app/orbita-view-router.tsx`, `hooks/use-orbita-controller.ts`, `app/orbita-views.tsx`, `hooks/use-assessment-queue.ts` | `npm run lint`, `npx tsc --noEmit`, `npm test`; typed controller and DOM-free queue/routing boundaries | Shell, routing, orchestration, presentation, API and queue responsibilities are separated; server business rules remain outside views. |
-| TST-01 | PASS | `TEST_MATRIX.md`, `scripts/check-coverage.mjs` | 32 unit/contract tests, fixed-seed property tests, fault tests, load smoke, browser CSP and E2E | Repository test gates are automated; external auth and production-scale capacity remain separate gates. |
-| TST-02 | PASS | `scripts/e2e-smoke.mjs` | E2E ownership checks | User B receives 404/401 for assessment, report, PDF and export objects. |
-| TST-03 | PASS | `lib/provider-contract.ts`, `lib/report-safety.ts` | Unit provider failure and injection tests | Empty/malformed/extra text, schema and safety boundaries are covered. |
-| TST-04 | PASS | `lib/payment-integrity.ts`, `lib/payment-event-policy.ts` | E2E webhook mismatch/replay/race/refund/dispute | No live Stripe business transaction is claimed. |
-| TST-05 | PASS | `lib/pdf-token-policy.ts`, `scripts/pdf-visual-qa.mjs` | PDF token/tamper/expiry/owner/regeneration E2E plus 4 RU visual fixtures | 4 x 24-page A4 fixtures include analytical, execution, long-text and low-confidence profiles; kk/en remain intentionally unpublished. |
-| TST-06 | PASS | `lib/retention.ts`, `scripts/e2e-smoke.mjs` | Account/assessment delete, export, retention dry-run, real purge and active-session exclusion | Fixture uses paid entitlements and isolated local D1/R2 state. |
-| TST-07 | PASS | `scripts/e2e-smoke.mjs` | Restart/resume and idempotent response replay | Server restart occurs during the core flow. |
-| AUTH-01 | OPEN | `lib/server-auth.ts` | External public identity provider required | Current Sites identity is owner-private/dispatch-owned. |
-| AUTH-02 | OPEN | `lib/server-auth.ts` | External public verified identity acceptance required | No public account creation is fabricated. |
-| AUTH-03 | OPEN | `PROJECT_HANDOFF.md` | Logout/revoke acceptance required | Dispatch-owned session lifecycle is outside the repository. |
-| AUTH-04 | OPEN | `scripts/e2e-smoke.mjs` | Same-device Worker restart is tested | Cross-device public auth is still an external gate. |
-| AUTH-05 | OPEN | `SECURITY_REVIEW.md` | MFA/RBAC deployment acceptance required | Admin is allowlist/read-only aggregate in this release. |
-| SEC-01 | PASS | `lib/security-headers.ts`, `worker/index.ts`, `tests/browser/csp.spec.ts` | Unit + real-browser nonce/CSP assertions | CSP has no `unsafe-inline`/`unsafe-eval` in `script-src`; hydration and checkout pass. |
-| SEC-02 | PASS | `lib/durable-store.ts` | E2E 429/Retry-After boundary | Limits are server-side and scoped; tuning remains deployment-specific. |
-| SEC-03 | PASS | `lib/observability.ts`, `scripts/security-scan.mjs` | Structured log shape and scan | Logs omit answers, email, payment data and raw provider output. |
-| SEC-04 | PASS | `lib/durable-store.ts`, `.openai/hosting.json` | Private R2 binding and owner-checked reads | Hosted access policy must remain private. |
-| SEC-05 | PASS | `scripts/backup-restore-smoke.mjs` | `BACKUP_RESTORE_SMOKE=PASS` | Local D1 export/restore is tested; managed backup policy remains operational. |
-| SEC-06 | PASS | `RUNBOOKS.md` | Incident and recovery procedures | Owners and live contact details still need operator assignment. |
-| PAY-01 | OPEN | `.env.example`, `README.md` | Business-approved price required | No price is invented in source or evidence. |
-| PAY-02 | OPEN | `lib/payment-provider.ts` | Live managed secrets required | Test fixtures use only local test values. |
-| PAY-03 | PASS | `lib/stripe-signature.ts`, `lib/payment-integrity.ts` | Signature, snapshot, replay and race E2E | Grant follows exact order/session/amount/currency/test/payment checks. |
-| PAY-04 | PARTIAL | `lib/payment-event-policy.ts`, `RUNBOOKS.md` | Refund/dispute state transitions and webhook tests | Approved commercial refund policy and support action are external. |
-| PAY-05 | OPEN | `RUNBOOKS.md` | Named support owner/channel required | No support SLA or contact is fabricated. |
-| AI-01 | PASS | `lib/adaptive-provider.ts`, `lib/adaptive-contract.ts` | Adaptive contract and selection tests | AI is constrained to Q251–Q300; deterministic selector remains authoritative. |
-| AI-02 | PASS | `lib/provider-contract.ts`, `tests/unit.test.ts` | Provider failure and malformed-output tests | Fallback is structured and auditable. |
-| AI-03 | PASS | `lib/report-safety.ts`, `lib/report-provider.ts` | Source-key, forbidden-claim and prompt-injection tests | Frozen score and approved library are authoritative. |
-| AI-04 | PARTIAL | `lib/ops-monitoring.ts`, `lib/analytics.ts` | Telemetry and alert helper tests | A deployed alert sink and on-call escalation are not configured. |
-| AI-05 | PASS | `lib/assessment-engine.ts`, `lib/report-provider.ts` | Version snapshot and provider contract checks | Model/prompt/report/library versions are persisted where applicable. |
-| PSY-01 | OPEN | `PILOT_PROTOCOL.md` | External qualified-review record required | No expert review is claimed. |
-| PSY-02 | OPEN | `PILOT_PROTOCOL.md` | External cognitive interview record required | No participant data is fabricated. |
-| PSY-03 | OPEN | `PILOT_PROTOCOL.md` | External pilot sample N≥500 required | Synthetic E2E data is not evidence. |
-| PSY-04 | OPEN | `PREREGISTRATION.md` | Reliability/retest analysis required | Norm-safe MVP claims remain disabled. |
-| PSY-05 | OPEN | `PREREGISTRATION.md` | Factor analysis required | Model choice is data-dependent. |
-| PSY-06 | OPEN | `PREREGISTRATION.md` | Validity evidence required | No validated construct claim is made. |
-| PSY-07 | OPEN | `PREREGISTRATION.md` | DIF/fairness evidence required | Language and subgroup invariance are not established. |
-| PSY-08 | OPEN | `PREREGISTRATION.md` | Calibration evidence required | Adaptive information is proxy-based until calibration. |
-| PSY-09 | OPEN | `NORMING_REPORT.md` | Norm sample/tables required | No percentiles are available. |
-| PSY-10 | OPEN | `PREREGISTRATION.md` | Independent cross-validation required | No external review is claimed. |
-| LOC-01 | PASS | `lib/i18n.ts`, `drizzle/0009_careless_banshee.sql` | Unit/E2E canonical `kz → kk` checks | New persisted locale values are canonical. |
-| LOC-02 | PASS | `PILOT_PROTOCOL.md`, `lib/i18n.ts` | Versioned translation metadata | RU source remains authoritative for pilot. |
-| LOC-03 | OPEN | `PILOT_PROTOCOL.md` | kk translation/cognitive review required | Locale is intentionally unpublished. |
-| LOC-04 | OPEN | `PILOT_PROTOCOL.md` | EN translation/cognitive review required | Locale is intentionally unpublished. |
-| LOC-05 | OPEN | `PREREGISTRATION.md` | Measurement invariance required | No cross-language pooling is enabled. |
-| LOC-06 | PASS | `lib/i18n.ts`, `lib/assessment-engine.ts` | Unvalidated norm/version boundary | Norm versions are language/population-specific by policy. |
-| OPS-01 | PASS | `lib/observability.ts`, `lib/ops-monitoring.ts` | Structured request logs and SLO helper tests | No external alert sink is implied. |
-| OPS-02 | OPEN | `RUNBOOKS.md` | Transactional notification provider required | No email/SMS provider is wired in this release. |
-| OPS-03 | OPEN | `RUNBOOKS.md` | Approved support channel/SLA required | Contact remains a configuration gate. |
-| OPS-04 | PASS (local gate) | `scripts/load-smoke.mjs` | 275 requests; p50/p95/p99, errors, throughput, 429 and idempotency reported | Local Wrangler/D1 load is not a production capacity claim; target production load remains an operations gate. |
-| OPS-05 | PARTIAL | `lib/ops-monitoring.ts`, `worker/index.ts` | Metrics/cron events exist | Uptime/error alert destination is a deployment task. |
-| OPS-06 | OPEN | `RUNBOOKS.md` | Named on-call rotation required | No person or SLA is invented. |
-| LEG-01 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Written privacy approval required | Runtime legal config still has operator placeholders. |
-| LEG-02 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Written terms approval required | Runtime legal config still has operator placeholders. |
-| LEG-03 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Approved refund policy required | Code does not invent refund rights. |
-| LEG-04 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Research consent approval required | Consent versioning is implemented; approval is not. |
-| LEG-05 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Similarity/trademark review required | ORBITA-30 is original scope but external review is required. |
-| LEG-06 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Kazakhstan legal sign-off required | This is a non-automatable launch gate. |
+| ID | Status | Evidence | Test/artifact | Notes | Owner | Date |
+|---|---|---|---|---|---|---|
+| ENG-01 | PASS at release | `scripts/package-source.mjs` | `npm run package:source`, `SOURCE_MANIFEST.txt`, clean Git check | Archive excludes dependencies, build output, state and secrets. | Engineering | 2026-09-16 |
+| ENG-02 | OPEN | `.github/workflows/ci.yml` | GitHub Actions run required | Workflow is defined; this local Mac run is not Linux evidence. | Engineering | 2026-09-16 |
+| ENG-03 | PASS | `scripts/security-scan.mjs` | `npm run security:scan`, `npm audit --omit=dev --audit-level=high` | No tracked secret findings and no production high/critical audit finding in the recorded run. | Engineering | 2026-09-16 |
+| ENG-04 | PASS | `drizzle/0009_careless_banshee.sql`, `scripts/check-migration-drift.mjs`, `scripts/backup-restore-smoke.mjs` | `npm run db:check`, `npm run test:backup` | Migration chain 0000–0009 is drift-free and local export/restore smoke passes. | Engineering | 2026-09-16 |
+| ENG-05 | OPEN | `.env.example`, `PROJECT_HANDOFF.md` | Deployment configuration review required | Current Site is owner-private; staging/prod resource separation is an operator gate. | Engineering | 2026-09-16 |
+| ENG-06 | PASS | `app/orbita-app.tsx`, `app/orbita-view-router.tsx`, `hooks/use-orbita-controller.ts`, `app/orbita-views.tsx`, `hooks/use-assessment-queue.ts` | `npm run lint`, `npx tsc --noEmit`, `npm test`; typed controller and DOM-free queue/routing boundaries | Shell, routing, orchestration, presentation, API and queue responsibilities are separated; server business rules remain outside views. | Engineering | 2026-09-16 |
+| TST-01 | PASS | `TEST_MATRIX.md`, `scripts/check-coverage.mjs` | 32 unit/contract tests, fixed-seed property tests, fault tests, load smoke, browser CSP and E2E | Repository test gates are automated; external auth and production-scale capacity remain separate gates. | Engineering | 2026-09-16 |
+| TST-02 | PASS | `scripts/e2e-smoke.mjs` | E2E ownership checks | User B receives 404/401 for assessment, report, PDF and export objects. | Engineering | 2026-09-16 |
+| TST-03 | PASS | `lib/provider-contract.ts`, `lib/report-safety.ts` | Unit provider failure and injection tests | Empty/malformed/extra text, schema and safety boundaries are covered. | Engineering | 2026-09-16 |
+| TST-04 | PASS | `lib/payment-integrity.ts`, `lib/payment-event-policy.ts` | E2E webhook mismatch/replay/race/refund/dispute | No live Stripe business transaction is claimed. | Engineering | 2026-09-16 |
+| TST-05 | PASS | `lib/pdf-token-policy.ts`, `scripts/pdf-visual-qa.mjs` | PDF token/tamper/expiry/owner/regeneration E2E plus 4 RU visual fixtures | 4 x 24-page A4 fixtures include analytical, execution, long-text and low-confidence profiles; kk/en remain intentionally unpublished. | Engineering | 2026-09-16 |
+| TST-06 | PASS | `lib/retention.ts`, `scripts/e2e-smoke.mjs` | Account/assessment delete, export, retention dry-run, real purge and active-session exclusion | Fixture uses paid entitlements and isolated local D1/R2 state. | Engineering | 2026-09-16 |
+| TST-07 | PASS | `scripts/e2e-smoke.mjs` | Restart/resume and idempotent response replay | Server restart occurs during the core flow. | Engineering | 2026-09-16 |
+| AUTH-01 | OPEN | `lib/server-auth.ts` | External public identity provider required | Current Sites identity is owner-private/dispatch-owned. | Product / Identity | 2026-09-16 |
+| AUTH-02 | OPEN | `lib/server-auth.ts` | External public verified identity acceptance required | No public account creation is fabricated. | Product / Identity | 2026-09-16 |
+| AUTH-03 | OPEN | `PROJECT_HANDOFF.md` | Logout/revoke acceptance required | Dispatch-owned session lifecycle is outside the repository. | Product / Identity | 2026-09-16 |
+| AUTH-04 | OPEN | `scripts/e2e-smoke.mjs` | Same-device Worker restart is tested | Cross-device public auth is still an external gate. | Product / Identity | 2026-09-16 |
+| AUTH-05 | OPEN | `SECURITY_REVIEW.md` | MFA/RBAC deployment acceptance required | Admin is allowlist/read-only aggregate in this release. | Product / Identity | 2026-09-16 |
+| SEC-01 | PASS | `lib/security-headers.ts`, `worker/index.ts`, `tests/browser/csp.spec.ts` | Unit + real-browser nonce/CSP assertions | CSP has no `unsafe-inline`/`unsafe-eval` in `script-src`; hydration and checkout pass. | Engineering | 2026-09-16 |
+| SEC-02 | PASS | `lib/durable-store.ts` | E2E 429/Retry-After boundary | Limits are server-side and scoped; tuning remains deployment-specific. | Engineering | 2026-09-16 |
+| SEC-03 | PASS | `lib/observability.ts`, `scripts/security-scan.mjs` | Structured log shape and scan | Logs omit answers, email, payment data and raw provider output. | Engineering | 2026-09-16 |
+| SEC-04 | PASS | `lib/durable-store.ts`, `.openai/hosting.json` | Private R2 binding and owner-checked reads | Hosted access policy must remain private. | Engineering | 2026-09-16 |
+| SEC-05 | PASS | `scripts/backup-restore-smoke.mjs` | `BACKUP_RESTORE_SMOKE=PASS` | Local D1 export/restore is tested; managed backup policy remains operational. | Engineering | 2026-09-16 |
+| SEC-06 | PASS | `RUNBOOKS.md` | Incident and recovery procedures | Owners and live contact details still need operator assignment. | Engineering | 2026-09-16 |
+| PAY-01 | OPEN | `.env.example`, `README.md` | Business-approved price required | No price is invented in source or evidence. | Product / Payments | 2026-09-16 |
+| PAY-02 | OPEN | `lib/payment-provider.ts` | Live managed secrets required | Test fixtures use only local test values. | Product / Payments | 2026-09-16 |
+| PAY-03 | PASS | `lib/stripe-signature.ts`, `lib/payment-integrity.ts` | Signature, snapshot, replay and race E2E | Grant follows exact order/session/amount/currency/test/payment checks. | Product / Payments | 2026-09-16 |
+| PAY-04 | PARTIAL | `lib/payment-event-policy.ts`, `RUNBOOKS.md` | Refund/dispute state transitions and webhook tests | Approved commercial refund policy and support action are external. | Product / Payments | 2026-09-16 |
+| PAY-05 | OPEN | `RUNBOOKS.md` | Named support owner/channel required | No support SLA or contact is fabricated. | Product / Payments | 2026-09-16 |
+| AI-01 | PASS | `lib/adaptive-provider.ts`, `lib/adaptive-contract.ts` | Adaptive contract and selection tests | AI is constrained to Q251–Q300; deterministic selector remains authoritative. | Engineering | 2026-09-16 |
+| AI-02 | PASS | `lib/provider-contract.ts`, `tests/unit.test.ts` | Provider failure and malformed-output tests | Fallback is structured and auditable. | Engineering | 2026-09-16 |
+| AI-03 | PASS | `lib/report-safety.ts`, `lib/report-provider.ts` | Source-key, forbidden-claim and prompt-injection tests | Frozen score and approved library are authoritative. | Engineering | 2026-09-16 |
+| AI-04 | PARTIAL | `lib/ops-monitoring.ts`, `lib/analytics.ts` | Telemetry and alert helper tests | A deployed alert sink and on-call escalation are not configured. | Engineering | 2026-09-16 |
+| AI-05 | PASS | `lib/assessment-engine.ts`, `lib/report-provider.ts` | Version snapshot and provider contract checks | Model/prompt/report/library versions are persisted where applicable. | Engineering | 2026-09-16 |
+| PSY-01 | OPEN | `PILOT_PROTOCOL.md` | External qualified-review record required | No expert review is claimed. | Science / Validation | 2026-09-16 |
+| PSY-02 | OPEN | `PILOT_PROTOCOL.md` | External cognitive interview record required | No participant data is fabricated. | Science / Validation | 2026-09-16 |
+| PSY-03 | OPEN | `PILOT_PROTOCOL.md` | External pilot sample N≥500 required | Synthetic E2E data is not evidence. | Science / Validation | 2026-09-16 |
+| PSY-04 | OPEN | `PREREGISTRATION.md` | Reliability/retest analysis required | Norm-safe MVP claims remain disabled. | Science / Validation | 2026-09-16 |
+| PSY-05 | OPEN | `PREREGISTRATION.md` | Factor analysis required | Model choice is data-dependent. | Science / Validation | 2026-09-16 |
+| PSY-06 | OPEN | `PREREGISTRATION.md` | Validity evidence required | No validated construct claim is made. | Science / Validation | 2026-09-16 |
+| PSY-07 | OPEN | `PREREGISTRATION.md` | DIF/fairness evidence required | Language and subgroup invariance are not established. | Science / Validation | 2026-09-16 |
+| PSY-08 | OPEN | `PREREGISTRATION.md` | Calibration evidence required | Adaptive information is proxy-based until calibration. | Science / Validation | 2026-09-16 |
+| PSY-09 | OPEN | `NORMING_REPORT.md` | Norm sample/tables required | No percentiles are available. | Science / Validation | 2026-09-16 |
+| PSY-10 | OPEN | `PREREGISTRATION.md` | Independent cross-validation required | No external review is claimed. | Science / Validation | 2026-09-16 |
+| LOC-01 | PASS | `lib/i18n.ts`, `drizzle/0009_careless_banshee.sql` | Unit/E2E canonical `kz → kk` checks | New persisted locale values are canonical. | Product / Localization | 2026-09-16 |
+| LOC-02 | PASS | `PILOT_PROTOCOL.md`, `lib/i18n.ts` | Versioned translation metadata | RU source remains authoritative for pilot. | Product / Localization | 2026-09-16 |
+| LOC-03 | OPEN | `PILOT_PROTOCOL.md` | kk translation/cognitive review required | Locale is intentionally unpublished. | Product / Localization | 2026-09-16 |
+| LOC-04 | OPEN | `PILOT_PROTOCOL.md` | EN translation/cognitive review required | Locale is intentionally unpublished. | Product / Localization | 2026-09-16 |
+| LOC-05 | OPEN | `PREREGISTRATION.md` | Measurement invariance required | No cross-language pooling is enabled. | Product / Localization | 2026-09-16 |
+| LOC-06 | PASS | `lib/i18n.ts`, `lib/assessment-engine.ts` | Unvalidated norm/version boundary | Norm versions are language/population-specific by policy. | Product / Localization | 2026-09-16 |
+| OPS-01 | PASS | `lib/observability.ts`, `lib/ops-monitoring.ts` | Structured request logs and SLO helper tests | No external alert sink is implied. | Operations | 2026-09-16 |
+| OPS-02 | OPEN | `RUNBOOKS.md` | Transactional notification provider required | No email/SMS provider is wired in this release. | Operations | 2026-09-16 |
+| OPS-03 | OPEN | `RUNBOOKS.md` | Approved support channel/SLA required | Contact remains a configuration gate. | Operations | 2026-09-16 |
+| OPS-04 | PASS (local gate) | `scripts/load-smoke.mjs` | 275 requests; p50/p95/p99, errors, throughput, 429 and idempotency reported | Local Wrangler/D1 load is not a production capacity claim; target production load remains an operations gate. | Operations | 2026-09-16 |
+| OPS-05 | PARTIAL | `lib/ops-monitoring.ts`, `worker/index.ts` | Metrics/cron events exist | Uptime/error alert destination is a deployment task. | Operations | 2026-09-16 |
+| OPS-06 | OPEN | `RUNBOOKS.md` | Named on-call rotation required | No person or SLA is invented. | Operations | 2026-09-16 |
+| LEG-01 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Written privacy approval required | Runtime legal config still has operator placeholders. | Legal / Operator | 2026-09-16 |
+| LEG-02 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Written terms approval required | Runtime legal config still has operator placeholders. | Legal / Operator | 2026-09-16 |
+| LEG-03 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Approved refund policy required | Code does not invent refund rights. | Legal / Operator | 2026-09-16 |
+| LEG-04 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Research consent approval required | Consent versioning is implemented; approval is not. | Legal / Operator | 2026-09-16 |
+| LEG-05 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Similarity/trademark review required | ORBITA-30 is original scope but external review is required. | Legal / Operator | 2026-09-16 |
+| LEG-06 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Kazakhstan legal sign-off required | This is a non-automatable launch gate. | Legal / Operator | 2026-09-16 |
 
 ## Verification record
 
@@ -105,6 +107,7 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | `npx tsc --noEmit` | PASS | CI/local command output |
 | `npm test` | PASS | 32 unit/contract/property/fault/routing/queue tests |
 | `npm run test:coverage` | PASS | total lib branches 88.63%; critical modules meet 90% gate |
+| `npm run check:gates` | PASS | Current computed statuses remain NO until hosted CI and external gate evidence are present |
 | `npm run test:e2e` | PASS — clean-room run `sess_90b98b22befc48dda67d7708` | Full local Worker/D1/R2 smoke, required idempotency key, response metadata export, restart/resume and retention recovery |
 | `npm run test:browser` | PASS | Real browser hydration, strict CSP nonce, navigation and checkout redirect |
 | `npm run test:pdf-visual` | PASS | 4 deterministic 24-page A4 fixtures; visual render QA PASS |

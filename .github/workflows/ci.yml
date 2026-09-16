@@ -58,5 +58,9 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: Verify release manifest and reproducible package
         run: npm run release:verify
+      - name: Calculate release gate status
+        env:
+          ORBITA_CI_GATES_PASSED: "true"
+        run: npm run check:gates
       - name: Verify clean checkout
         run: test -z "$(git status --porcelain)"
