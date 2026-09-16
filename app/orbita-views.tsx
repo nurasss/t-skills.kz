@@ -375,30 +375,31 @@ export function CheckoutView({
     ? new Intl.NumberFormat("ru-RU", { style: "currency", currency: test.currency }).format(test.amountMinor / 100)
     : "Цена ещё не настроена";
   const checkoutAvailable = Boolean(test?.availableForCheckout);
+  const betaFree = test?.accessMode === "beta-free";
   return (
     <div className="page-wrap narrow-page">
       <button className="back-link" onClick={() => onNavigate("detail")} type="button"><ArrowLeft size={15} /> ORBITA—30</button>
-      <SectionHeading eyebrow="CHECKOUT" title="Оформление теста" body="После подтверждения оплаты создаётся одноразовый доступ к конкретной версии оценки." />
+      <SectionHeading eyebrow={betaFree ? "ЗАКРЫТАЯ BETA" : "CHECKOUT"} title={betaFree ? "Бесплатное пилотное тестирование" : "Оформление теста"} body={betaFree ? "Доступ предоставляется участникам закрытой beta без оплаты. Результаты не являются нормативной или диагностической оценкой." : "После подтверждения оплаты создаётся одноразовый доступ к конкретной версии оценки."} />
       <div className="checkout-grid">
         <Card className="checkout-card">
           <CardHeader><CardTitle>ORBITA—30</CardTitle><CardDescription>{test?.assessmentVersion ?? "orbita30_ru_v1"} · draft for pilot</CardDescription></CardHeader>
           <CardContent>
             <div className="order-line"><span>Оценка</span><strong>1 доступ</strong></div>
             <div className="order-line"><span>Результат</span><strong>Dashboard + PDF</strong></div>
-            <div className="order-line"><span>Тип оплаты</span><strong>один раз</strong></div>
-            <div className="order-total"><span>К оплате · {test?.currency ?? "—"}</span><strong>{displayedPrice}</strong></div>
-            <Button className="orbita-button primary-button full-button" disabled={busy || !checkoutAvailable} size="lg" onClick={onCheckout}>
-              {busy ? "Создаём защищённую оплату…" : checkoutAvailable ? "Перейти к защищённой оплате" : "Оплата пока недоступна"} <ArrowRight size={16} />
+            <div className="order-line"><span>{betaFree ? "Режим" : "Тип оплаты"}</span><strong>{betaFree ? "пилотная версия" : "один раз"}</strong></div>
+            <div className="order-total"><span>{betaFree ? "Стоимость участия" : `К оплате · ${test?.currency ?? "—"}`}</span><strong>{betaFree ? "Бесплатно" : displayedPrice}</strong></div>
+            <Button className="orbita-button primary-button full-button" disabled={busy || (!betaFree && !checkoutAvailable)} size="lg" onClick={onCheckout}>
+              {busy ? "Создаём доступ…" : betaFree ? "Начать закрытое тестирование" : checkoutAvailable ? "Перейти к защищённой оплате" : "Оплата пока недоступна"} <ArrowRight size={16} />
             </Button>
-            {!catalog ? <p className="validation-note">Проверяем цену и доступность оплаты…</p> : !checkoutAvailable ? <p className="validation-note">Оплата станет доступна после настройки цены и Stripe в production.</p> : null}
+            {!catalog ? <p className="validation-note">Проверяем доступ…</p> : !betaFree && !checkoutAvailable ? <p className="validation-note">Оплата станет доступна после настройки цены и Stripe в production.</p> : null}
             {error ? <p className="validation-note">{error}</p> : null}
-            <p className="micro-copy"><LockKeyhole size={13} /> Hosted checkout: карточные данные не проходят через backend ORBITA.</p>
+            <p className="micro-copy"><LockKeyhole size={13} /> {betaFree ? "Доступ ограничен allowlist Cloudflare Access. Платёжные данные не требуются." : "Hosted checkout: карточные данные не проходят через backend ORBITA."}</p>
           </CardContent>
         </Card>
         <div className="checkout-guardrails">
-          <div><ShieldCheck size={18} /><span><strong>Подтверждённый webhook</strong><small>Entitlement создаётся только после signed provider event.</small></span></div>
-          <div><RefreshCw size={18} /><span><strong>Идемпотентная оплата</strong><small>Повтор одного события не создаёт второй доступ.</small></span></div>
-          <div><FileText size={18} /><span><strong>Order snapshot</strong><small>Версия теста, цена и валюта сохраняются вместе с заказом.</small></span></div>
+          <div><ShieldCheck size={18} /><span><strong>{betaFree ? "Закрытый доступ" : "Подтверждённый webhook"}</strong><small>{betaFree ? "Войти могут только приглашённые участники." : "Entitlement создаётся только после signed provider event."}</small></span></div>
+          <div><RefreshCw size={18} /><span><strong>{betaFree ? "Beta entitlement" : "Идемпотентная оплата"}</strong><small>{betaFree ? "Бесплатный grant хранится отдельно и не считается оплатой." : "Повтор одного события не создаёт второй доступ."}</small></span></div>
+          <div><FileText size={18} /><span><strong>{betaFree ? "Пилотные ограничения" : "Order snapshot"}</strong><small>{betaFree ? "Профиль экспериментальный, unvalidated и не содержит percentiles." : "Версия теста, цена и валюта сохраняются вместе с заказом."}</small></span></div>
         </div>
       </div>
     </div>
@@ -747,6 +748,7 @@ export function AccountView({
   overview,
   loading,
   actionStatus,
+  betaFree,
   onStartAssessment,
   onOpenReport,
   onExport,
@@ -759,6 +761,7 @@ export function AccountView({
   overview?: AccountOverview;
   loading: boolean;
   actionStatus?: string;
+  betaFree: boolean;
   onStartAssessment: () => void;
   onOpenReport: (reportId: string) => void;
   onExport: () => void;
@@ -774,7 +777,7 @@ export function AccountView({
     ? "Открыть результат"
     : latestAssessment
       ? "Продолжить оценку"
-      : paidOrder
+      : paidOrder || betaFree
         ? "Начать оценку"
         : "Сначала оформить доступ";
   const profileAction = demoMode
@@ -789,8 +792,8 @@ export function AccountView({
       <SectionHeading eyebrow="ЛИЧНЫЙ КАБИНЕТ" title="Ваши сессии и результаты." body="Здесь хранятся доступы, прогресс и уже готовые версии отчётов." />
       <div className="account-grid">
         <Card className="account-card profile-account-card"><CardHeader><div className="account-profile-head"><span className="large-avatar">{displayName.slice(0, 1).toUpperCase()}</span><div><CardTitle>{displayName}</CardTitle><CardDescription>RU · данные под вашим контролем</CardDescription></div></div></CardHeader><CardContent><div className="account-setting"><span>Согласия</span><strong>управляются перед началом</strong><ChevronDown size={15} /></div><div className="account-setting"><span>Хранение</span><strong>экспорт и удаление доступны</strong><ChevronDown size={15} /></div><Button className="orbita-button secondary-button full-button" onClick={() => onNavigate("privacy")}>Управлять данными <LockKeyhole size={15} /></Button></CardContent></Card>
-        <Card className="account-card"><CardHeader><div className="card-topline"><Badge className={latestAssessment?.state === "COMPLETE" ? "lime-badge" : "outline-badge"}>{loading ? "Загрузка…" : latestAssessment?.state ?? (paidOrder ? "Доступ активен" : "Нет доступа")}</Badge><span className="card-id">orbita30_ru_v1</span></div><CardTitle>ORBITA—30</CardTitle><CardDescription>{demoMode ? "Демо-профиль · не сохранён на сервере" : latestAssessment ? "Сессия сохранена на сервере" : paidOrder ? "Оплата подтверждена · можно начать" : "Оформите доступ, чтобы начать"}</CardDescription></CardHeader><CardContent>
-          {profile ? <><div className="account-result-mini"><OrbitGraphic compact /><div><span>{demoMode ? "Демо Top 5" : latestAssessment?.state === "COMPLETE" ? "Top 5" : "Предварительный Top 5"}</span><strong>{profile.traits.slice(0, 3).map((trait) => trait.name).join(" · ")}</strong><small>RQI {Math.round(profile.responseQuality.rqi * 100)}%</small></div></div><Button className="orbita-button primary-button full-button" onClick={profileAction}>{demoMode ? "Открыть демо-результат" : assessmentAction} <ArrowRight size={16} /></Button></> : <><div className="account-empty"><span>{loading ? <RefreshCw size={17} /> : <Play size={17} />}</span><p>{loading ? "Загружаем ваши данные…" : hasWork ? "Сессия готова к продолжению." : paidOrder ? "Оплата подтверждена. Создайте сессию и начните с согласий." : "Пройдите тест или откройте демо, чтобы увидеть, как выглядит результат."}</p></div><Button className="orbita-button primary-button full-button" disabled={loading || (!paidOrder && !latestAssessment)} onClick={latestAssessment?.reportId ? () => onOpenReport(latestAssessment.reportId as string) : onStartAssessment}>{loading ? "Загрузка…" : latestAssessment ? assessmentAction : paidOrder ? "Начать оценку" : "Открыть каталог"} <ArrowRight size={16} /></Button>{!paidOrder && !latestAssessment ? <Button className="orbita-button ghost-button full-button" onClick={() => onNavigate("catalog")}>Посмотреть доступные оценки</Button> : null}</>}
+        <Card className="account-card"><CardHeader><div className="card-topline"><Badge className={latestAssessment?.state === "COMPLETE" ? "lime-badge" : "outline-badge"}>{loading ? "Загрузка…" : latestAssessment?.state ?? (paidOrder || betaFree ? "Доступ активен" : "Нет доступа")}</Badge><span className="card-id">orbita30_ru_v1</span></div><CardTitle>ORBITA—30</CardTitle><CardDescription>{demoMode ? "Демо-профиль · не сохранён на сервере" : latestAssessment ? "Сессия сохранена на сервере" : betaFree ? "Закрытая бесплатная beta · пилотная версия" : paidOrder ? "Оплата подтверждена · можно начать" : "Оформите доступ, чтобы начать"}</CardDescription></CardHeader><CardContent>
+          {profile ? <><div className="account-result-mini"><OrbitGraphic compact /><div><span>{demoMode ? "Демо Top 5" : latestAssessment?.state === "COMPLETE" ? "Top 5" : "Предварительный Top 5"}</span><strong>{profile.traits.slice(0, 3).map((trait) => trait.name).join(" · ")}</strong><small>RQI {Math.round(profile.responseQuality.rqi * 100)}%</small></div></div><Button className="orbita-button primary-button full-button" onClick={profileAction}>{demoMode ? "Открыть демо-результат" : assessmentAction} <ArrowRight size={16} /></Button></> : <><div className="account-empty"><span>{loading ? <RefreshCw size={17} /> : <Play size={17} />}</span><p>{loading ? "Загружаем ваши данные…" : hasWork ? "Сессия готова к продолжению." : betaFree ? "Закрытый beta-доступ активен. Начните с обязательных согласий." : paidOrder ? "Оплата подтверждена. Создайте сессию и начните с согласий." : "Пройдите тест или откройте демо, чтобы увидеть, как выглядит результат."}</p></div><Button className="orbita-button primary-button full-button" disabled={loading || (!betaFree && !paidOrder && !latestAssessment)} onClick={latestAssessment?.reportId ? () => onOpenReport(latestAssessment.reportId as string) : onStartAssessment}>{loading ? "Загрузка…" : latestAssessment ? assessmentAction : betaFree || paidOrder ? "Начать оценку" : "Открыть каталог"} <ArrowRight size={16} /></Button>{!betaFree && !paidOrder && !latestAssessment ? <Button className="orbita-button ghost-button full-button" onClick={() => onNavigate("catalog")}>Посмотреть доступные оценки</Button> : null}</>}
         </CardContent></Card>
       </div>
       <div className="account-history-grid"><Card className="account-card"><CardHeader><CardTitle>Заказы</CardTitle><CardDescription>Цена и валюта зафиксированы в каждом order.</CardDescription></CardHeader><CardContent>{overview?.orders.length ? <div className="account-history-list">{overview.orders.map((order) => <div className="account-history-row" key={order.id}><span><strong>{order.testId}</strong><small>{new Date(order.createdAt).toLocaleString("ru-RU")}</small></span><span><strong>{(order.amountMinor / 100).toLocaleString("ru-RU")} {order.currency}</strong><small>{order.status}</small></span></div>)}</div> : <p className="account-muted">Заказов пока нет.</p>}</CardContent></Card><Card className="account-card"><CardHeader><CardTitle>Сессии</CardTitle><CardDescription>Последнее подтверждённое состояние хранится на сервере.</CardDescription></CardHeader><CardContent>{overview?.assessments.length ? <div className="account-history-list">{overview.assessments.map((assessment) => <div className="account-history-row" key={assessment.id}><span><strong>{assessment.state}</strong><small>{assessment.clientSeq} ответов · {new Date(assessment.updatedAt).toLocaleString("ru-RU")}</small></span><span className="account-row-actions">{assessment.reportId ? <Button className="orbita-button ghost-button" size="sm" onClick={() => onOpenReport(assessment.reportId as string)}>Отчёт</Button> : null}<Button className="orbita-button ghost-button" size="sm" aria-label="Удалить оценку" onClick={() => onDeleteAssessment(assessment.id)}><Trash2 size={14} /></Button></span></div>)}</div> : <p className="account-muted">Сессий пока нет.</p>}</CardContent></Card></div>

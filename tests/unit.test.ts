@@ -26,6 +26,9 @@ import { nextPaymentStatus } from "@/lib/payment-event-policy";
 import { evaluateOperationalAlerts, latencyBucket } from "@/lib/ops-monitoring";
 import { selectionFromPayload } from "@/lib/adaptive-contract";
 import { validatePdfGrantClaims } from "@/lib/pdf-token-policy";
+import { aiEnabled, entitlementMode, isBetaFreeMode, paymentsEnabled } from "@/lib/runtime-config";
+import { canSessionTransition } from "@/lib/assessment-state-machine";
+import type { OrbitaRuntimeEnv } from "@/db";
 
 test("item bank and taxonomy remain the complete 300-item Russian source", () => {
   assert.deepEqual(itemCountSummary(), { total: 300, forced: 150, likert: 90, quality: 10, adaptiveDirect: 30, adaptiveForced: 20 });
@@ -208,4 +211,19 @@ test("privacy-safe analytics, localization, and retention policies are explicit"
   assert.equal(isRetentionCandidate("CORE_IN_PROGRESS", 10, 20), false);
   assert.equal(retentionDaysFrom("1"), 30);
   assert.equal(retentionDaysFrom("99999"), 3650);
+});
+
+test("closed beta flags disable payments and AI without mutating paid-mode defaults", () => {
+  const beta = { PAYMENTS_ENABLED: "false", ENTITLEMENT_MODE: "beta-free", AI_ENABLED: "false" } as OrbitaRuntimeEnv;
+  assert.equal(paymentsEnabled(beta), false);
+  assert.equal(aiEnabled(beta), false);
+  assert.equal(entitlementMode(beta), "beta-free");
+  assert.equal(isBetaFreeMode(beta), true);
+  assert.equal(paymentsEnabled({} as OrbitaRuntimeEnv), true);
+  assert.equal(aiEnabled({} as OrbitaRuntimeEnv), true);
+});
+
+test("beta entitlement state can enter consent without payment state", () => {
+  assert.equal(canSessionTransition("ENTITLED", "CONSENTED"), true);
+  assert.equal(canSessionTransition("ENTITLED", "PAID"), false);
 });

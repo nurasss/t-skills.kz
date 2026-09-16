@@ -1,0 +1,54 @@
+name: Deploy staging
+
+on:
+  workflow_run:
+    workflows: ["ORBITA-30 CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbita-staging
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'develop'
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+    steps:
+      - name: Checkout exact green SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Validate isolated bindings and beta flags
+        run: npm run deploy:config-check
+      - name: Apply staging migrations
+        run: npx wrangler d1 migrations apply DB --remote --env staging
+      - name: Deploy staging Worker
+        run: npx wrangler deploy --env staging | tee staging-deploy.log
+      - name: Access-protected smoke
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID_STAGING }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET_STAGING }}
+          STAGING_URL: ${{ vars.STAGING_URL }}
+        run: node scripts/hosted-smoke.mjs staging
+      - name: Save staging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbita-staging-${{ github.event.workflow_run.head_sha }}
+          path: |
+            staging-deploy.log
+            hosted-smoke-staging.json
+

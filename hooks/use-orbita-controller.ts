@@ -191,7 +191,7 @@ export function useOrbitaController({
       const payload = await apiJson<SessionPayload>(`/api/assessments/${encodeURIComponent(id)}`);
       hydrateSession(payload);
       if (payload.report_id) void loadReportData(payload.report_id, initialView === "results");
-      if (payload.state === "PAID") setView("consent");
+      if (payload.state === "PAID" || payload.state === "ENTITLED") setView("consent");
       else if (payload.state === "CONSENTED" || payload.state === "CORE_IN_PROGRESS") setView(initialView === "break" ? "break" : "assessment");
       else if (payload.state === "ADAPTIVE_IN_PROGRESS") setView(initialView === "processing" ? "processing" : "break");
       else if (payload.state === "REPORT_GENERATING" || payload.state === "REPORT_FAILED_RETRYABLE") setView("processing");
@@ -325,6 +325,10 @@ export function useOrbitaController({
   };
 
   const startCheckout = async () => {
+    if (publicCatalog?.test.accessMode === "beta-free") {
+      await startAssessmentFromAccount();
+      return;
+    }
     if (!publicCatalog?.test.availableForCheckout) {
       setCheckoutError("Оплата пока недоступна: цена или Stripe ещё не настроены.");
       return;
@@ -516,7 +520,7 @@ export function useOrbitaController({
   }, [view, phase, questionIndex, adaptiveIndex]);
 
   useEffect(() => {
-    if (view !== "checkout" && view !== "support") return;
+    if (view !== "checkout" && view !== "support" && view !== "account") return;
     let cancelled = false;
     void apiJson<PublicCatalog>("/api/catalog")
       .then((payload) => { if (!cancelled) setPublicCatalog(payload); })

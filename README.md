@@ -4,6 +4,10 @@ Production-oriented foundation for the ORBITA—30 strengths assessment: a 300-i
 
 The assessment is an original developmental product. It is not a Gallup/CliftonStrengths® implementation, a diagnosis, or a high-stakes decision tool. Items are marked `draft for pilot` until independent psychometric validation is completed.
 
+## Closed beta deployment
+
+The Cloudflare beta profile is intentionally free and closed: `PAYMENTS_ENABLED=false`, `ENTITLEMENT_MODE=beta-free`, `AI_ENABLED=false`, deterministic adaptive selection and the approved interpretation library. Staging and production use separate Workers, D1 databases, R2 buckets, credentials and Cloudflare Access applications. See `docs/deployment/` and `BETA_TESTER_GUIDE.md`. The legacy owner-private Site remains available as a reference and is not deleted by this deployment.
+
 ## Prerequisites
 
 - Node.js `>=22.13.0`

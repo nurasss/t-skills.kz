@@ -27,6 +27,8 @@ The current release keeps the complete Russian Q001–Q300 source bank and taxon
 
 ## Deployment
 
+The GitHub + Cloudflare closed-beta track is defined in `.github/workflows/deploy-staging.yml`, `.github/workflows/deploy-production.yml` and `wrangler.jsonc`. It adds Cloudflare Access identity, a non-payment `beta_free` entitlement, an explicit `ENTITLED` assessment state, payments/AI kill switches and isolated staging/production bindings without changing the frozen assessment/scoring core. Current external completion evidence is recorded in `DEPLOYMENT_EVIDENCE.md`.
+
 - Production URL: `https://orbita-30.yzh905284.chatgpt.site`
 - Hosting project: `.openai/hosting.json` (`appgprj_6aa859a4ac588191b9560deef28958a9`)
 - Source is versioned in Git and published through the Sites `sites` remote.

@@ -11,9 +11,14 @@ export type OrbitaRuntimeEnv = {
   OPENAI_MODEL?: string;
   OPENAI_BASE_URL?: string;
   PAYMENT_PROVIDER?: string;
+  PAYMENTS_ENABLED?: string;
+  ENTITLEMENT_MODE?: string;
+  AI_ENABLED?: string;
+  AUTH_PROVIDER?: string;
   ASSESSMENT_PRICE_MINOR?: string;
   ASSESSMENT_CURRENCY?: string;
   APP_BASE_URL?: string;
+  APP_ENV?: string;
   REPORT_PROVIDER?: string;
   REPORT_MODEL?: string;
   REPORT_TIMEOUT_MS?: string;

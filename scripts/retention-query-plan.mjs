@@ -24,6 +24,7 @@ try {
     "CREATED",
     "PAYMENT_PENDING",
     "PAID",
+    "ENTITLED",
     "CONSENTED",
     "CORE_IN_PROGRESS",
     "ADAPTIVE_SELECTING",

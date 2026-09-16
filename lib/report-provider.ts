@@ -8,6 +8,7 @@ import {
 } from "@/lib/interpretation-library";
 import { validateReportSafety } from "@/lib/report-safety";
 import { extractProviderOutputText, parseStrictJsonProviderOutput } from "@/lib/provider-contract";
+import { aiEnabled } from "@/lib/runtime-config";
 
 export type GeneratedReport = {
   report: ReportJSON;
@@ -369,7 +370,7 @@ export async function generateReportContent(profile: ScoreProfile): Promise<Gene
   };
   const inputText = JSON.stringify(input);
   const inputHash = await sha256(inputText);
-  if (provider === "openai") {
+  if (aiEnabled(runtimeEnv) && provider === "openai") {
     const modelId = runtimeEnv.REPORT_MODEL ?? runtimeEnv.OPENAI_MODEL ?? "gpt-5";
     if (runtimeEnv.OPENAI_API_KEY) {
       try {

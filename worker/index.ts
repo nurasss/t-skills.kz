@@ -9,6 +9,23 @@ const worker = {
     const requestId = requestIdFrom(request);
     const nonce = createCspNonce();
     const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete("x-orbita-access-sub");
+    requestHeaders.delete("x-orbita-access-email");
+    requestHeaders.delete("x-orbita-access-name");
+    if (env.AUTH_PROVIDER === "cloudflare-access") {
+      const access = (ctx as ExecutionContext & {
+        access?: { getIdentity(): Promise<{ sub?: string; email?: string; name?: string; commonName?: string } | null> };
+      }).access;
+      if (!access) return applySecurityHeaders(new Response("Access required", { status: 401 }), requestId, nonce);
+      const identity = await access.getIdentity();
+      const subject = identity?.sub?.trim() || identity?.commonName?.trim();
+      const email = identity?.email?.trim().toLowerCase()
+        || (identity?.commonName ? `${identity.commonName.replace(/[^a-zA-Z0-9._-]/g, "_")}@service.invalid` : "");
+      if (!subject || !email) return applySecurityHeaders(new Response("Access identity required", { status: 401 }), requestId, nonce);
+      requestHeaders.set("x-orbita-access-sub", subject);
+      requestHeaders.set("x-orbita-access-email", email);
+      if (identity?.name) requestHeaders.set("x-orbita-access-name", identity.name);
+    }
     requestHeaders.set("Content-Security-Policy", contentSecurityPolicy(nonce));
     const securedRequest = new Request(request, { headers: requestHeaders });
     const startedAt = Date.now();

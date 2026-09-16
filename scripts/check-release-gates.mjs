@@ -103,9 +103,34 @@ const g2 = g1 && allPass(g2Checklist) && signedExternalEvidence("G2");
 const g3 = g2 && allPass(g3Checklist) && signedExternalEvidence("G3");
 const g3b = g3 && allPass(g3bChecklist) && signedExternalEvidence("G3B");
 
+function deploymentEvidence() {
+  const path = process.env.ORBITA_DEPLOYMENT_EVIDENCE_FILE;
+  if (!path) return {};
+  try {
+    const evidence = JSON.parse(readFileSync(resolve(path), "utf8"));
+    if (evidence.source_git_sha !== manifest.source_git_sha) return {};
+    return evidence.statuses ?? {};
+  } catch {
+    return {};
+  }
+}
+
+const deployment = deploymentEvidence();
+const deploymentStatus = (name) => deployment[name] === true;
+
 console.log(`READY_FOR_ENGINEERING_100=${g0 ? "YES" : "NO"}`);
 console.log(`READY_FOR_CLOSED_PILOT=${g1 ? "YES" : "NO"}`);
 console.log(`READY_FOR_PUBLIC_PAID_LAUNCH=${g2 ? "YES" : "NO"}`);
 console.log(`READY_FOR_VALIDATED_CLAIMS=${g3 ? "YES" : "NO"}`);
 console.log(`READY_FOR_NORMATIVE_PERCENTILES=${g3b ? "YES" : "NO"}`);
+for (const status of [
+  "GITHUB_PRIVATE_REPO_READY",
+  "EXTERNAL_CI_READY",
+  "CLOUDFLARE_STAGING_READY",
+  "CLOUDFLARE_PRODUCTION_BETA_READY",
+  "ACCESS_ALLOWLIST_READY",
+  "BETA_FREE_FLOW_READY",
+  "AI_OFF_FLOW_READY",
+  "BETA_SMOKE_READY",
+]) console.log(`${status}=${deploymentStatus(status) ? "YES" : "NO"}`);
 console.log(`GATE_EVALUATION=PASS local_release_checks=${localReleaseChecks ? "PASS" : "FAIL"} hosted_ci=${hostedCiEvidence ? "PASS" : "MISSING"}`);

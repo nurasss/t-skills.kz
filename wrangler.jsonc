@@ -1,0 +1,55 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "orbita-30",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "dist/client" },
+  "observability": { "enabled": true },
+  "env": {
+    "staging": {
+      "name": "orbita-30-staging",
+      "vars": {
+        "APP_ENV": "staging",
+        "ORBITA_ENV": "staging",
+        "AUTH_PROVIDER": "cloudflare-access",
+        "PAYMENTS_ENABLED": "false",
+        "ENTITLEMENT_MODE": "beta-free",
+        "AI_ENABLED": "false",
+        "ADAPTIVE_PROVIDER": "deterministic",
+        "REPORT_PROVIDER": "approved-library",
+        "RETENTION_DRY_RUN": "true"
+      },
+      "d1_databases": [{
+        "binding": "DB",
+        "database_name": "orbita30-staging",
+        "database_id": "7b422314-c2a5-424a-8b66-464f9e63e02e",
+        "migrations_dir": "drizzle"
+      }],
+      "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "orbita30-staging" }],
+      "triggers": { "crons": ["0 2 * * *"] }
+    },
+    "production": {
+      "name": "orbita-30-production",
+      "vars": {
+        "APP_ENV": "production-beta",
+        "ORBITA_ENV": "production",
+        "AUTH_PROVIDER": "cloudflare-access",
+        "PAYMENTS_ENABLED": "false",
+        "ENTITLEMENT_MODE": "beta-free",
+        "AI_ENABLED": "false",
+        "ADAPTIVE_PROVIDER": "deterministic",
+        "REPORT_PROVIDER": "approved-library",
+        "RETENTION_DRY_RUN": "true"
+      },
+      "d1_databases": [{
+        "binding": "DB",
+        "database_name": "orbita30-production",
+        "database_id": "17655eda-ebd5-407d-a127-df1ad62fead5",
+        "migrations_dir": "drizzle"
+      }],
+      "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "orbita30-production" }],
+      "triggers": { "crons": ["0 2 * * *"] }
+    }
+  }
+}

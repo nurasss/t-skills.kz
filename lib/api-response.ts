@@ -56,8 +56,9 @@ export function errorResponse(error: unknown) {
 
 function publicMessage(code: string) {
   const messages: Record<string, string> = {
-    AUTHENTICATION_REQUIRED: "Войдите через ChatGPT, чтобы продолжить.",
-    PAYMENT_REQUIRED: "Для этой оценки нужен оплаченный доступ.",
+    AUTHENTICATION_REQUIRED: "Войдите через защищённый контур, чтобы продолжить.",
+    PAYMENTS_DISABLED: "Оплата отключена для закрытого beta-тестирования.",
+    PAYMENT_REQUIRED: "Для этой оценки нужен активный доступ.",
     PAYMENT_PRICE_NOT_CONFIGURED: "Оплата ещё не настроена для этой версии.",
     PAYMENT_CURRENCY_INVALID: "В настройках оплаты указана некорректная валюта.",
     PAYMENT_PROVIDER_UNSUPPORTED: "Выбранный платёжный провайдер не поддерживается.",

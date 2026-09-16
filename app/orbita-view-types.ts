@@ -135,6 +135,7 @@ export type PublicCatalog = {
     amountMinor: number | null;
     currency: string;
     availableForCheckout: boolean;
+    accessMode: "payment" | "beta-free";
     includesPdf: true;
     oneTime: true;
     description: string;

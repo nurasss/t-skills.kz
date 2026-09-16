@@ -19,6 +19,7 @@ import { nextPaymentStatus, paymentTelemetryEvent, type PaymentEventStatus, type
 import { canSessionTransition, type SessionState } from "@/lib/assessment-state-machine";
 import { purgeAfterFrom, retentionDaysFrom } from "@/lib/retention-policy";
 import type { Viewer } from "@/lib/server-auth";
+import { isBetaFreeMode } from "@/lib/runtime-config";
 
 export type { SessionState } from "@/lib/assessment-state-machine";
 
@@ -617,8 +618,8 @@ export async function handlePaymentEvent(input: {
       database
         .prepare(
           `INSERT OR IGNORE INTO entitlements
-            (id, order_id, user_id, test_id, status, created_at, revoked_at)
-           SELECT ?, id, user_id, test_id, 'ACTIVE', ?, NULL
+            (id, order_id, user_id, test_id, grant_source, grant_reference, status, created_at, revoked_at)
+           SELECT ?, id, user_id, test_id, 'stripe', 'stripe:' || id, 'ACTIVE', ?, NULL
            FROM orders WHERE id = ?`,
         )
         .bind(entitlementId, timestamp, input.orderId),
@@ -666,6 +667,17 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
   if (!canPublishLocale(locale)) throw new StoreError("LOCALE_NOT_PUBLISHED", 422);
   await ensureUser(input.viewer, locale);
   const database = ensureDatabase();
+  if (isBetaFreeMode(getRuntimeEnv())) {
+    const reference = `beta_free:${input.viewer.userId}:${input.testId}`;
+    await database
+      .prepare(
+        `INSERT OR IGNORE INTO entitlements
+          (id, order_id, user_id, test_id, grant_source, grant_reference, status, created_at, revoked_at)
+         VALUES (?, NULL, ?, ?, 'beta_free', ?, 'ACTIVE', ?, NULL)`,
+      )
+      .bind(newId("ent"), input.viewer.userId, input.testId, reference, now())
+      .run();
+  }
   const existing = await database
     .prepare(
       `SELECT a.id
@@ -683,18 +695,19 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
 
   const entitlement = await database
     .prepare(
-      `SELECT id FROM entitlements
+      `SELECT id, grant_source FROM entitlements
        WHERE user_id = ? AND test_id = ? AND status = 'ACTIVE'
          AND id NOT IN (SELECT entitlement_id FROM assessments WHERE entitlement_id IS NOT NULL)
        ORDER BY created_at ASC LIMIT 1`,
     )
     .bind(input.viewer.userId, input.testId)
-    .first<{ id: string }>();
+    .first<{ id: string; grant_source: string }>();
   if (!entitlement) throw new StoreError("PAYMENT_REQUIRED", 402);
 
   const timestamp = now();
   const sessionId = newId("sess");
   const versions = VERSION_IDS;
+  const initialState: SessionState = entitlement.grant_source === "beta_free" ? "ENTITLED" : "PAID";
   try {
     await database
       .prepare(
@@ -703,7 +716,7 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
            adaptive_item_ids_json, selection_mode, preliminary_score_json,
            final_score_json, report_id, client_seq, created_at, consented_at,
            completed_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'PAID', ?, '[]', NULL, NULL, NULL, NULL, 0, ?, NULL, NULL, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, '[]', NULL, NULL, NULL, NULL, 0, ?, NULL, NULL, ?)`,
       )
       .bind(
         sessionId,
@@ -711,6 +724,7 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
         entitlement.id,
         input.testId,
         locale,
+        initialState,
         JSON.stringify(versions),
         timestamp,
         timestamp,
@@ -732,7 +746,10 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
     console.error("assessment_create_failed", { error_code: "ASSESSMENT_CREATE_FAILED" });
     throw new StoreError("ASSESSMENT_CREATE_FAILED", 500);
   }
-  await audit(input.viewer.userId, "ASSESSMENT_CREATED", "assessment", sessionId, { testId: input.testId });
+  await audit(input.viewer.userId, "ASSESSMENT_CREATED", "assessment", sessionId, {
+    testId: input.testId,
+    grantSource: entitlement.grant_source,
+  });
   const session = await loadSession(sessionId, input.viewer.userId);
   if (!session) throw new StoreError("ASSESSMENT_CREATE_FAILED", 500);
   return { session, reused: false };
@@ -881,7 +898,7 @@ export async function consentSessionForUser(
     .bind(sessionId, viewer.userId)
     .first<{ state: SessionState }>();
   if (!assessment) throw new StoreError("SESSION_NOT_FOUND", 404);
-  if (!(["PAID", "CONSENTED"] as SessionState[]).includes(assessment.state)) {
+  if (!(["PAID", "ENTITLED", "CONSENTED"] as SessionState[]).includes(assessment.state)) {
     throw new StoreError("CONSENT_NOT_AVAILABLE", 409);
   }
   if (!canSessionTransition(assessment.state, "CONSENTED")) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
@@ -897,20 +914,22 @@ export async function consentSessionForUser(
         database
           .prepare(
             `INSERT INTO consents
-              (id, user_id, assessment_id, consent_type, text_version, granted, decided_at, revoked_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+              (id, user_id, assessment_id, consent_type, text_version, privacy_notice_version, purpose, granted, decided_at, revoked_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
              ON CONFLICT(assessment_id, consent_type) DO UPDATE SET
                text_version = excluded.text_version,
+               privacy_notice_version = excluded.privacy_notice_version,
+               purpose = excluded.purpose,
                granted = excluded.granted,
                decided_at = excluded.decided_at,
                revoked_at = CASE WHEN excluded.granted = 1 THEN NULL ELSE COALESCE(consents.revoked_at, excluded.decided_at) END`,
           )
-          .bind(newId("consent"), viewer.userId, sessionId, consentType, CONSENT_TEXT_VERSION, granted ? 1 : 0, timestamp),
+          .bind(newId("consent"), viewer.userId, sessionId, consentType, CONSENT_TEXT_VERSION, CONSENT_TEXT_VERSION, "developmental-assessment", granted ? 1 : 0, timestamp),
       ),
       database
         .prepare(
           `UPDATE assessments SET state = 'CONSENTED', consented_at = ?, updated_at = ?
-           WHERE id = ? AND user_id = ? AND state IN ('PAID', 'CONSENTED')`,
+           WHERE id = ? AND user_id = ? AND state IN ('PAID', 'ENTITLED', 'CONSENTED')`,
         )
         .bind(timestamp, timestamp, sessionId, viewer.userId),
     ]);

@@ -4,6 +4,7 @@ import type { PaymentEventStatus } from "@/lib/payment-event-policy";
 import { VERSION_IDS } from "@/lib/assessment-engine";
 import { verifyStripeSignature } from "@/lib/stripe-signature";
 import type { Viewer } from "@/lib/server-auth";
+import { paymentsEnabled } from "@/lib/runtime-config";
 
 export class PaymentProviderError extends Error {
   constructor(public readonly code: string, message = code) {
@@ -31,6 +32,7 @@ export type PublicTestConfig = {
   amountMinor: number | null;
   currency: string;
   availableForCheckout: boolean;
+  accessMode: "payment" | "beta-free";
   includesPdf: true;
   oneTime: true;
   description: string;
@@ -38,6 +40,7 @@ export type PublicTestConfig = {
 
 export function getPublicTestConfig(): PublicTestConfig {
   const runtimeEnv = getRuntimeEnv();
+  const paymentFlowEnabled = paymentsEnabled(runtimeEnv);
   const rawAmount = Number(runtimeEnv.ASSESSMENT_PRICE_MINOR ?? "");
   const amountMinor = Number.isSafeInteger(rawAmount) && rawAmount > 0 ? rawAmount : null;
   const configuredCurrency = (runtimeEnv.ASSESSMENT_CURRENCY ?? "KZT").trim().toUpperCase();
@@ -49,7 +52,8 @@ export function getPublicTestConfig(): PublicTestConfig {
     assessmentVersion: VERSION_IDS.assessment,
     amountMinor,
     currency: validCurrency ? configuredCurrency : "KZT",
-    availableForCheckout: amountMinor !== null && validCurrency && provider === "stripe" && Boolean(runtimeEnv.STRIPE_SECRET_KEY && runtimeEnv.STRIPE_WEBHOOK_SECRET && runtimeEnv.PDF_SIGNING_SECRET),
+    availableForCheckout: paymentFlowEnabled && amountMinor !== null && validCurrency && provider === "stripe" && Boolean(runtimeEnv.STRIPE_SECRET_KEY && runtimeEnv.STRIPE_WEBHOOK_SECRET && runtimeEnv.PDF_SIGNING_SECRET),
+    accessMode: paymentFlowEnabled ? "payment" : "beta-free",
     includesPdf: true,
     oneTime: true,
     description: "Развивающий профиль способа действовать",
@@ -58,6 +62,7 @@ export function getPublicTestConfig(): PublicTestConfig {
 
 export async function createCheckout(input: { viewer: Viewer; testId: string; request: Request; idempotencyKey: string }) {
   const runtimeEnv = getRuntimeEnv();
+  if (!paymentsEnabled(runtimeEnv)) throw new PaymentProviderError("PAYMENTS_DISABLED");
   const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").toLowerCase();
   if (provider !== "stripe") throw new PaymentProviderError("PAYMENT_PROVIDER_UNSUPPORTED");
   const secret = runtimeEnv.STRIPE_SECRET_KEY;

@@ -1,4 +1,5 @@
 import { getRuntimeEnv } from "@/db";
+import { aiEnabled } from "@/lib/runtime-config";
 import {
   selectAdaptiveItems,
   validateAdaptiveSelection,
@@ -201,7 +202,7 @@ export async function selectAdaptiveForProfile(
   const inputHash = await sha256(JSON.stringify(payload));
   const runtimeEnv = getRuntimeEnv();
   const provider = (runtimeEnv.ADAPTIVE_PROVIDER ?? "approved-library").toLowerCase();
-  if (provider !== "openai" || !runtimeEnv.OPENAI_API_KEY) {
+  if (!aiEnabled(runtimeEnv) || provider !== "openai" || !runtimeEnv.OPENAI_API_KEY) {
     return fallbackDecision(profile, answeredItemIds, targetCount, inputHash, startedAt, "provider_disabled");
   }
 

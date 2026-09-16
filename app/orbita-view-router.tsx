@@ -76,6 +76,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
         overview={accountOverview}
         loading={accountLoading}
         actionStatus={accountActionStatus}
+        betaFree={publicCatalog?.test.accessMode === "beta-free"}
         onStartAssessment={startAssessmentFromAccount}
         onOpenReport={(id) => void openReport(id)}
         onExport={exportAccountData}

@@ -49,15 +49,18 @@ export const entitlements = sqliteTable(
   "entitlements",
   {
     id: text("id").primaryKey(),
-    orderId: text("order_id").notNull().references(() => orders.id),
+    orderId: text("order_id").references(() => orders.id),
     userId: text("user_id").notNull().references(() => users.id),
     testId: text("test_id").notNull(),
+    grantSource: text("grant_source").notNull().default("stripe"),
+    grantReference: text("grant_reference"),
     status: text("status").notNull().default("ACTIVE"),
     createdAt: integer("created_at", { mode: "number" }).notNull(),
     revokedAt: integer("revoked_at", { mode: "number" }),
   },
   (table) => [
     uniqueIndex("entitlements_order_unique").on(table.orderId),
+    uniqueIndex("entitlements_grant_reference_unique").on(table.grantReference),
     index("entitlements_user_status_idx").on(table.userId, table.status),
   ],
 );
@@ -102,6 +105,8 @@ export const consents = sqliteTable(
     assessmentId: text("assessment_id").notNull().references(() => assessments.id),
     consentType: text("consent_type").notNull(),
     textVersion: text("text_version").notNull(),
+    privacyNoticeVersion: text("privacy_notice_version").notNull().default("privacy-2026-09"),
+    purpose: text("purpose").notNull().default("developmental-assessment"),
     granted: integer("granted").notNull(),
     decidedAt: integer("decided_at", { mode: "number" }).notNull(),
     revokedAt: integer("revoked_at", { mode: "number" }),
