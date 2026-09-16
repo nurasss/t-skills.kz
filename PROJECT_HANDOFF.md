@@ -34,7 +34,7 @@ The current release keeps the complete Russian Q001–Q300 source bank and taxon
 - D1 binding is `DB`; R2 binding is `BUCKET`. The custom deploy Worker is `worker/index.ts`; its built `dist/server/index.js` exports both HTTP `fetch` and scheduled retention `scheduled`.
 - Cron: `0 2 * * *`. Retention defaults to dry-run until explicitly disabled.
 
-Before any publish, run the Sites build/package/save/deploy workflow and verify the exact full Git SHA. The archive must include `dist/server/index.js`, `dist/.openai/hosting.json` and `dist/.openai/drizzle/**`, and must exclude dependencies, generated local state and OS artifacts.
+Before any publish, run the Sites build/package/save/deploy workflow and verify the exact full Git SHA. The immutable source archive is source-only and intentionally excludes generated `dist/`; the separate Sites deployment build must contain `dist/server/index.js`, `dist/.openai/hosting.json` and `dist/.openai/drizzle/**`, while excluding dependencies, generated local state and OS artifacts.
 
 ## What is implemented
 
