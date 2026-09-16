@@ -29,6 +29,7 @@ The matrix is intentionally scenario-based. Line coverage is not used as the rel
 | Lifecycle | Missing or malformed response idempotency key | 422; no response row is created | `app/api/assessments/[id]/responses/route.ts`, `scripts/e2e-smoke.mjs` |
 | Lifecycle | Response presentation metadata | Server timestamp, sequence, phase/position, locale and version metadata are persisted and exported | `lib/durable-store.ts`, `scripts/e2e-smoke.mjs` |
 | Lifecycle | Worker restart after Q001 | Server state resumes with confirmed answer | `scripts/e2e-smoke.mjs` |
+| Lifecycle | Concurrent answer writes with distinct idempotency keys | One server sequence per accepted response; transient write conflicts are safely retryable | `scripts/load-smoke.mjs`, `lib/durable-store.ts` |
 | PDF | Valid signed link | 200 private PDF | `scripts/e2e-smoke.mjs` |
 | PDF | Missing/tampered/expired/wrong owner token | 401 | `scripts/e2e-smoke.mjs`, `tests/unit.test.ts` |
 | PDF | Missing R2 object | 404 safe error; no database score mutation | `scripts/e2e-smoke.mjs` |

@@ -48,7 +48,11 @@ async function timed(name, path, init = {}) {
         await delay(250 * (attempt + 1));
         continue;
       }
-      samples.get(name)?.push({ ms: performance.now() - started, status: response.status });
+      samples.get(name)?.push({
+        ms: performance.now() - started,
+        status: response.status,
+        expectedRetryable: response.status === 409 && body?.error === "RESPONSE_WRITE_CONFLICT",
+      });
       return { response, body };
     } catch (error) {
       lastError = error;
@@ -104,19 +108,24 @@ try {
   await waitForServer();
   const started = performance.now();
   const queue = Array.from({ length: 250 }, (_, index) => index + 1);
-  // Response creation is an ordered client stream; concurrency is exercised
-  // below for retries and the state-transition endpoint.
-  const workers = Array.from({ length: 1 }, async () => {
+  // Production clients submit one answer at a time, but this load gate also
+  // exercises optimistic server sequencing under concurrent retries.
+  const workers = Array.from({ length: 2 }, async () => {
     while (queue.length) {
       const number = queue.shift();
       if (!number) return;
       const itemId = `Q${String(number).padStart(3, "0")}`;
       const responseValue = number === 241 ? 5 : number === 244 ? 2 : number === 247 ? 6 : number >= 241 ? 2 : number <= 150 ? 0 : 1;
-      const result = await timed("responses", `/api/assessments/${sessionId}/responses`, {
-        method: "POST",
-        headers: { "Idempotency-Key": `${sessionId}:${itemId}` },
-        body: JSON.stringify({ item_id: itemId, response: responseValue, response_time_ms: 800, client_seq: number }),
-      });
+      let result;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        result = await timed("responses", `/api/assessments/${sessionId}/responses`, {
+          method: "POST",
+          headers: { "Idempotency-Key": `${sessionId}:${itemId}` },
+          body: JSON.stringify({ item_id: itemId, response: responseValue, response_time_ms: 800, client_seq: number }),
+        });
+        if (result.response.status !== 409 || result.body?.error !== "RESPONSE_WRITE_CONFLICT") break;
+        await delay(10 * (attempt + 1));
+      }
       assert(result.response.status === 200, `${itemId} status=${result.response.status} body=${JSON.stringify(result.body)}`);
     }
   });
@@ -145,8 +154,9 @@ try {
   const elapsedSeconds = (performance.now() - started) / 1000;
   for (const [name, entries] of samples) {
     const latencies = entries.map((entry) => entry.ms);
-    const errors = entries.filter((entry) => entry.status >= 400 && entry.status !== 429).length;
+    const errors = entries.filter((entry) => entry.status >= 400 && entry.status !== 429 && !entry.expectedRetryable).length;
     const limited = entries.filter((entry) => entry.status === 429).length;
+    const retryableConflicts = entries.filter((entry) => entry.expectedRetryable).length;
     console.log(JSON.stringify({
       endpoint: name,
       requests: entries.length,
@@ -156,6 +166,7 @@ try {
       error_rate: errors / Math.max(entries.length, 1),
       throughput_rps: Number((entries.length / elapsedSeconds).toFixed(2)),
       rate_429: limited / Math.max(entries.length, 1),
+      retryable_conflicts: retryableConflicts,
     }));
   }
   console.log("LOAD_GATE=PASS lost=0 duplicated=0 idempotency=PASS state=ADAPTIVE_IN_PROGRESS");

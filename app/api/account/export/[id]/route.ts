@@ -12,7 +12,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       headers: {
         "Content-Type": object.httpMetadata?.contentType ?? "application/json",
         "Content-Disposition": object.httpMetadata?.contentDisposition ?? ('attachment; filename="orbita-data-' + id + '.json"'),
-        "Cache-Control": "private, max-age=300",
+        "Cache-Control": "private, no-store",
       },
     });
   } catch (error) {

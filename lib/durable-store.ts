@@ -395,6 +395,10 @@ function nextItemId(session: DurableSession) {
   return nextAdaptive ?? null;
 }
 
+export function nextItemIdForSession(session: DurableSession) {
+  return nextItemId(session);
+}
+
 function publicOrder(row: OrderRow): OrderRecord {
   return {
     id: row.id,
@@ -691,26 +695,43 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
   const timestamp = now();
   const sessionId = newId("sess");
   const versions = VERSION_IDS;
-  await database
-    .prepare(
-      `INSERT INTO assessments
-        (id, user_id, entitlement_id, test_id, locale, state, versions_json,
-         adaptive_item_ids_json, selection_mode, preliminary_score_json,
-         final_score_json, report_id, client_seq, created_at, consented_at,
-         completed_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'PAID', ?, '[]', NULL, NULL, NULL, NULL, 0, ?, NULL, NULL, ?)`,
-    )
-    .bind(
-      sessionId,
-      input.viewer.userId,
-      entitlement.id,
-      input.testId,
-      locale,
-      JSON.stringify(versions),
-      timestamp,
-      timestamp,
-    )
-    .run();
+  try {
+    await database
+      .prepare(
+        `INSERT INTO assessments
+          (id, user_id, entitlement_id, test_id, locale, state, versions_json,
+           adaptive_item_ids_json, selection_mode, preliminary_score_json,
+           final_score_json, report_id, client_seq, created_at, consented_at,
+           completed_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'PAID', ?, '[]', NULL, NULL, NULL, NULL, 0, ?, NULL, NULL, ?)`,
+      )
+      .bind(
+        sessionId,
+        input.viewer.userId,
+        entitlement.id,
+        input.testId,
+        locale,
+        JSON.stringify(versions),
+        timestamp,
+        timestamp,
+      )
+      .run();
+  } catch {
+    const concurrent = await database
+      .prepare(
+        `SELECT id FROM assessments
+         WHERE entitlement_id = ? AND user_id = ? AND test_id = ?
+         ORDER BY created_at ASC LIMIT 1`,
+      )
+      .bind(entitlement.id, input.viewer.userId, input.testId)
+      .first<{ id: string }>();
+    if (concurrent) {
+      const resumed = await loadSession(concurrent.id, input.viewer.userId);
+      if (resumed) return { session: resumed, reused: true };
+    }
+    console.error("assessment_create_failed", { error_code: "ASSESSMENT_CREATE_FAILED" });
+    throw new StoreError("ASSESSMENT_CREATE_FAILED", 500);
+  }
   await audit(input.viewer.userId, "ASSESSMENT_CREATED", "assessment", sessionId, { testId: input.testId });
   const session = await loadSession(sessionId, input.viewer.userId);
   if (!session) throw new StoreError("ASSESSMENT_CREATE_FAILED", 500);
@@ -967,13 +988,16 @@ export async function saveResponse(input: {
     translationVersion: session.versions.translation,
   });
   try {
-    await database.batch([
+    const writeResults = await database.batch([
       database
         .prepare(
           `INSERT INTO assessment_responses
             (id, assessment_id, item_id, response, response_time_ms,
             client_seq, idempotency_key, presentation_metadata_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+           FROM assessments
+           WHERE id = ? AND user_id = ? AND client_seq = ?
+             AND state IN ('CONSENTED', 'CORE_IN_PROGRESS', 'ADAPTIVE_IN_PROGRESS')`,
         )
         .bind(
           `${input.sessionId}:${input.itemId}`,
@@ -985,14 +1009,20 @@ export async function saveResponse(input: {
           idempotencyKey,
           presentationMetadata,
           timestamp,
+          input.sessionId,
+          input.viewer.userId,
+          session.clientSeq,
         ),
       database
         .prepare(
           `UPDATE assessments SET state = ?, client_seq = ?, updated_at = ?
-           WHERE id = ? AND user_id = ?`,
+           WHERE id = ? AND user_id = ? AND client_seq = ?`,
         )
-        .bind(nextState, serverSeq, timestamp, input.sessionId, input.viewer.userId),
+        .bind(nextState, serverSeq, timestamp, input.sessionId, input.viewer.userId, session.clientSeq),
     ]);
+    if ((writeResults[0]?.meta?.changes ?? 0) !== 1 || (writeResults[1]?.meta?.changes ?? 0) !== 1) {
+      throw new StoreError("RESPONSE_WRITE_CONFLICT", 409);
+    }
   } catch {
     const race = await database
       .prepare(
@@ -1011,6 +1041,10 @@ export async function saveResponse(input: {
         };
       }
       throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
+    }
+    const current = await loadSession(input.sessionId, input.viewer.userId);
+    if (current && typeof current.responses[input.itemId] !== "number") {
+      throw new StoreError("RESPONSE_WRITE_CONFLICT", 409);
     }
     console.error("response_write_failed", { error_code: "RESPONSE_WRITE_FAILED" });
     throw new StoreError("RESPONSE_SAVE_FAILED", 500);
@@ -1485,17 +1519,31 @@ export async function requestDataExport(viewer: Viewer) {
     consents: consentResult.results ?? [],
   };
   const bucket = getR2();
-  await bucket.put(key, JSON.stringify(payload, null, 2), {
-    httpMetadata: { contentType: "application/json", contentDisposition: `attachment; filename="orbita-data-${requestId}.json"` },
-    customMetadata: { requestId, userId: viewer.userId },
-  });
   await database
     .prepare(
       `INSERT INTO privacy_requests (id, user_id, type, status, artifact_key, created_at, completed_at)
-       VALUES (?, ?, 'EXPORT', 'COMPLETE', ?, ?, ?)`,
+       VALUES (?, ?, 'EXPORT', 'PROCESSING', ?, ?, NULL)`,
     )
-    .bind(requestId, viewer.userId, key, now(), now())
+    .bind(requestId, viewer.userId, key, now())
     .run();
+  try {
+    await bucket.put(key, JSON.stringify(payload, null, 2), {
+      httpMetadata: { contentType: "application/json", contentDisposition: `attachment; filename="orbita-data-${requestId}.json"` },
+      customMetadata: { requestId, userId: viewer.userId },
+    });
+    await database
+      .prepare(`UPDATE privacy_requests SET status = 'COMPLETE', completed_at = ? WHERE id = ? AND user_id = ? AND status = 'PROCESSING'`)
+      .bind(now(), requestId, viewer.userId)
+      .run();
+  } catch {
+    await database
+      .prepare(`UPDATE privacy_requests SET status = 'FAILED_RETRYABLE' WHERE id = ? AND user_id = ? AND status = 'PROCESSING'`)
+      .bind(requestId, viewer.userId)
+      .run()
+      .catch(() => undefined);
+    console.error("account_export_failed", { error_code: "EXPORT_CREATE_FAILED" });
+    throw new StoreError("EXPORT_CREATE_FAILED", 503);
+  }
   await serverTelemetry({ name: "privacy_export", userId: viewer.userId, metadata: { status: "COMPLETE" } });
   await audit(viewer.userId, "DATA_EXPORT_CREATED", "privacy_request", requestId);
   return { requestId, downloadPath: `/api/account/export/${requestId}` };
@@ -1505,7 +1553,7 @@ export async function getExportForUser(requestId: string, viewer: Viewer) {
   await ensureUser(viewer);
   const database = ensureDatabase();
   const row = await database
-    .prepare(`SELECT artifact_key FROM privacy_requests WHERE id = ? AND user_id = ? AND type = 'EXPORT' LIMIT 1`)
+    .prepare(`SELECT artifact_key FROM privacy_requests WHERE id = ? AND user_id = ? AND type = 'EXPORT' AND status = 'COMPLETE' LIMIT 1`)
     .bind(requestId, viewer.userId)
     .first<{ artifact_key: string | null }>();
   if (!row?.artifact_key) throw new StoreError("EXPORT_NOT_FOUND", 404);
@@ -1550,20 +1598,30 @@ export async function deleteAccount(viewer: Viewer) {
     console.error("account_artifact_delete_failed", { error_code: "R2_DELETE_FAILED" });
     throw new StoreError("ACCOUNT_ARTIFACT_DELETE_FAILED", 503);
   }
-  await database.batch([
-    database.prepare(`DELETE FROM assessment_responses WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
-    database.prepare(`DELETE FROM adaptive_runs WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
-    database.prepare(`DELETE FROM consents WHERE user_id = ?`).bind(viewer.userId),
-    database.prepare(`DELETE FROM reports WHERE user_id = ?`).bind(viewer.userId),
-    database.prepare(`DELETE FROM assessments WHERE user_id = ?`).bind(viewer.userId),
-    database.prepare(`DELETE FROM entitlements WHERE user_id = ?`).bind(viewer.userId),
-    database.prepare(`DELETE FROM payment_events WHERE order_id IN (SELECT id FROM orders WHERE user_id = ?)`).bind(viewer.userId),
-    database.prepare(`DELETE FROM orders WHERE user_id = ?`).bind(viewer.userId),
-    database.prepare(`DELETE FROM telemetry_events WHERE user_id = ?`).bind(viewer.userId),
-    database.prepare(`DELETE FROM rate_limits WHERE bucket_key LIKE '%:' || ?`).bind(viewer.userId),
-    database.prepare(`UPDATE users SET email = ?, full_name = NULL, deleted_at = ?, updated_at = ? WHERE id = ?`).bind(`${viewer.userId}@deleted.invalid`, timestamp, timestamp, viewer.userId),
-    database.prepare(`UPDATE privacy_requests SET status = 'COMPLETE', completed_at = ? WHERE id = ? AND user_id = ?`).bind(timestamp, requestId, viewer.userId),
-  ]);
+  try {
+    await database.batch([
+      database.prepare(`DELETE FROM assessment_responses WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
+      database.prepare(`DELETE FROM adaptive_runs WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
+      database.prepare(`DELETE FROM consents WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM reports WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM assessments WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM entitlements WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM payment_events WHERE order_id IN (SELECT id FROM orders WHERE user_id = ?)`).bind(viewer.userId),
+      database.prepare(`DELETE FROM orders WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM telemetry_events WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM rate_limits WHERE bucket_key LIKE '%:' || ?`).bind(viewer.userId),
+      database.prepare(`UPDATE users SET email = ?, full_name = NULL, deleted_at = ?, updated_at = ? WHERE id = ?`).bind(`${viewer.userId}@deleted.invalid`, timestamp, timestamp, viewer.userId),
+      database.prepare(`UPDATE privacy_requests SET status = 'COMPLETE', completed_at = ? WHERE id = ? AND user_id = ?`).bind(timestamp, requestId, viewer.userId),
+    ]);
+  } catch {
+    await database
+      .prepare(`UPDATE privacy_requests SET status = 'FAILED_RETRYABLE' WHERE id = ? AND user_id = ? AND status = 'PROCESSING'`)
+      .bind(requestId, viewer.userId)
+      .run()
+      .catch(() => undefined);
+    console.error("account_row_delete_failed", { error_code: "D1_DELETE_FAILED" });
+    throw new StoreError("ACCOUNT_DELETE_FAILED", 503);
+  }
   await audit(null, "ACCOUNT_DELETED", "privacy_request", requestId);
   return { requestId, deleted: true };
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
-import { consumeRateLimit, createAssessmentForUser, getAccountOverview } from "@/lib/durable-store";
+import { consumeRateLimit, createAssessmentForUser, getAccountOverview, nextItemIdForSession } from "@/lib/durable-store";
 import { canPublishLocale, resolveLocaleInput } from "@/lib/i18n";
 
 export async function GET(request: Request) {
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       state: result.session.state,
       versions: result.session.versions,
       locale: result.session.locale,
-      next_item_id: result.session.responses.Q001 === undefined ? "Q001" : null,
+      next_item_id: nextItemIdForSession(result.session),
       reused: result.reused,
     }, { status: result.reused ? 200 : 201 });
   } catch (error) {

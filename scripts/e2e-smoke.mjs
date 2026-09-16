@@ -179,7 +179,7 @@ try {
       assert(replay.response.status === 200 && replay.body?.replay === true, "response idempotency replay");
       server = await restartServer(server);
       const resumed = await request(`/api/assessments/${sessionId}`);
-      assert(resumed.response.status === 200 && resumed.body?.responses?.Q001 === value, "assessment resumes after Worker restart");
+      assert(resumed.response.status === 200 && resumed.body?.responses?.Q001 === value && resumed.body?.next_item_id === "Q002", "assessment resumes after Worker restart with the next item");
     }
     sequence += 1;
   }

@@ -192,6 +192,7 @@ The critical contract checks are:
 - unauthenticated account/API requests return `401`;
 - assessment creation without a paid entitlement returns `402`;
 - answers are server-persisted and replaying the same `Idempotency-Key` is harmless;
+- concurrent answer retries are serialized by an optimistic server sequence and return a retryable conflict without duplicating rows;
 - invalid answers are rejected with `422`;
 - Stripe signatures are required, events are idempotent, and a failure event cannot downgrade a paid order;
 - cross-origin mutation attempts are rejected and high-frequency mutation bursts receive `429` with `Retry-After`;
@@ -214,6 +215,7 @@ npm run test:e2e
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 - `npm run test`: run unit/contract tests
 - `npm run test:e2e`: run the full local Worker/D1/R2 smoke flow
+- `npm run test:load`: concurrent response/replay and completion load smoke with latency/error/rate-limit metrics
 - `npm run test:backup`: local D1 export/restore smoke
 - `npm run security:scan`: tracked-source secret/generated-state scan
 - `npm run ci:verify`: lint, secret scan, TypeScript, tests and build

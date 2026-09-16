@@ -18,7 +18,9 @@ export async function POST(request: Request) {
   const testId = body.test_id ?? "orbita30";
   if (testId !== "orbita30") return NextResponse.json({ error: "TEST_NOT_FOUND" }, { status: 404 });
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() || crypto.randomUUID();
-  if (idempotencyKey.length > 200) return NextResponse.json({ error: "IDEMPOTENCY_KEY_TOO_LONG" }, { status: 422 });
+  if (idempotencyKey.length > 200 || /[\u0000-\u001f\u007f]/.test(idempotencyKey)) {
+    return NextResponse.json({ error: "IDEMPOTENCY_KEY_INVALID" }, { status: 422 });
+  }
   try {
     const rate = await consumeRateLimit({ userId: viewer.userId, scope: "checkout", limit: 5, windowMs: 10 * 60 * 1000 });
     if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);

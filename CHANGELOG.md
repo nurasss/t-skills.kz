@@ -2,6 +2,8 @@
 
 ## 2026-09-16 — Release hardening follow-up
 
+- Made assessment creation safe under concurrent clicks, returned the actual next unanswered item, and serialized concurrent response writes with an optimistic server sequence.
+- Made export/account-deletion privacy jobs durable across D1 failures and served completed export artifacts with `no-store` caching.
 - Forced the current unvalidated norm provider at score-snapshot read boundaries so legacy or malformed persisted data cannot promote itself to `normed`.
 - Required a bounded `Idempotency-Key` for every response submit and persisted server-derived presentation metadata with the response/export record.
 - Removed the PDF signing fallback to `ORBITA_INTERNAL_TOKEN`; PDF links now require the dedicated `PDF_SIGNING_SECRET`.
