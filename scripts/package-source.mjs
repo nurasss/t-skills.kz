@@ -14,7 +14,7 @@ const forbidden = ["node_modules/", "dist/", ".next/", ".wrangler/", ".vinext/",
 // while keeping the archive free of generated release state. The handoff is
 // also delivered alongside the archive because it records the exact source
 // SHA and artifact hash after the source commit is frozen.
-const releaseEvidence = new Set(["FINAL_ACCEPTANCE.md", "CI_EVIDENCE.txt", "RELEASE_MANIFEST.json", "PROJECT_HANDOFF.md"]);
+const releaseEvidence = new Set(["FINAL_ACCEPTANCE.md", "CI_EVIDENCE.txt", "RELEASE_MANIFEST.json", "PROJECT_HANDOFF.md", "DEPLOYMENT_EVIDENCE.md"]);
 const treeEntries = execFileSync("git", ["ls-tree", "-r", "-z", "--full-tree", sourceGitSha], { cwd: root })
   .toString("utf8")
   .split("\0")

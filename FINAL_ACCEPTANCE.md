@@ -6,9 +6,9 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | `8af4c9ef7f25134aae929aece2e8815a0e2a8d16` |
-| Source package SHA-256 | `3882148e4d1a425e5b9399584f7af6b9fd5208ac18ff73da90f55e3cd0e1cf1d` |
-| Source package path | `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-8af4c9e.tar.gz` |
+| Source release Git SHA | `9dbbd7ab6df6e3df25f5b0d180f3a031576e608f` |
+| Source package SHA-256 | `7b0b318ea2a7640666af4357186a05435634b23c76f00b8c2e0f6ab57f2a0699` |
+| Source package path | `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-9dbbd7a.tar.gz` |
 | Evidence-pack commit | `PENDING_EVIDENCE_COMMIT` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
@@ -38,10 +38,10 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | ENG-01 | PASS at release | `scripts/package-source.mjs` | `npm run package:source`, `SOURCE_MANIFEST.txt`, clean Git check | Archive excludes dependencies, build output, state and secrets. | Engineering | 2026-09-16 |
 | ENG-02 | OPEN | `.github/workflows/ci.yml` | GitHub Actions run required | Workflow is defined; GitHub currently returns `startup_failure` with zero jobs for this private Free-plan repository, so no hosted Linux evidence exists. | Engineering | 2026-09-16 |
 | ENG-03 | PASS | `scripts/security-scan.mjs` | `npm run security:scan`, `npm audit --omit=dev --audit-level=high` | No tracked secret findings and no production high/critical audit finding in the recorded run. | Engineering | 2026-09-16 |
-| ENG-04 | PASS | `drizzle/0009_careless_banshee.sql`, `scripts/check-migration-drift.mjs`, `scripts/backup-restore-smoke.mjs` | `npm run db:check`, `npm run test:backup` | Migration chain 0000–0009 is drift-free and local export/restore smoke passes. | Engineering | 2026-09-16 |
+| ENG-04 | PASS | `drizzle/0010_clever_unicorn.sql`, `scripts/check-migration-drift.mjs`, `scripts/backup-restore-smoke.mjs` | `npm run db:check`, `npm run test:backup` | Migration chain 0000–0010 is drift-free and local export/restore smoke passes. | Engineering | 2026-09-16 |
 | ENG-05 | OPEN | `.env.example`, `PROJECT_HANDOFF.md` | Deployment configuration review required | Current Site is owner-private; staging/prod resource separation is an operator gate. | Engineering | 2026-09-16 |
 | ENG-06 | PASS | `app/orbita-app.tsx`, `app/orbita-view-router.tsx`, `hooks/use-orbita-controller.ts`, `app/orbita-views.tsx`, `hooks/use-assessment-queue.ts` | `npm run lint`, `npx tsc --noEmit`, `npm test`; typed controller and DOM-free queue/routing boundaries | Shell, routing, orchestration, presentation, API and queue responsibilities are separated; server business rules remain outside views. | Engineering | 2026-09-16 |
-| TST-01 | PASS | `TEST_MATRIX.md`, `scripts/check-coverage.mjs` | 32 unit/contract tests, fixed-seed property tests, fault tests, load smoke, browser CSP and E2E | Repository test gates are automated; external auth and production-scale capacity remain separate gates. | Engineering | 2026-09-16 |
+| TST-01 | PASS | `TEST_MATRIX.md`, `scripts/check-coverage.mjs` | 34 unit/contract tests, fixed-seed property tests, fault tests, load smoke, browser CSP and E2E | Repository test gates are automated; external auth and production-scale capacity remain separate gates. | Engineering | 2026-09-16 |
 | TST-02 | PASS | `scripts/e2e-smoke.mjs` | E2E ownership checks | User B receives 404/401 for assessment, report, PDF and export objects. | Engineering | 2026-09-16 |
 | TST-03 | PASS | `lib/provider-contract.ts`, `lib/report-safety.ts` | Unit provider failure and injection tests | Empty/malformed/extra text, schema and safety boundaries are covered. | Engineering | 2026-09-16 |
 | TST-04 | PASS | `lib/payment-integrity.ts`, `lib/payment-event-policy.ts` | E2E webhook mismatch/replay/race/refund/dispute | No live Stripe business transaction is claimed. | Engineering | 2026-09-16 |
@@ -79,7 +79,7 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | PSY-08 | OPEN | `PREREGISTRATION.md` | Calibration evidence required | Adaptive information is proxy-based until calibration. | Science / Validation | 2026-09-16 |
 | PSY-09 | OPEN | `NORMING_REPORT.md` | Norm sample/tables required | No percentiles are available. | Science / Validation | 2026-09-16 |
 | PSY-10 | OPEN | `PREREGISTRATION.md` | Independent cross-validation required | No external review is claimed. | Science / Validation | 2026-09-16 |
-| LOC-01 | PASS | `lib/i18n.ts`, `drizzle/0009_careless_banshee.sql` | Unit/E2E canonical `kz → kk` checks | New persisted locale values are canonical. | Product / Localization | 2026-09-16 |
+| LOC-01 | PASS | `lib/i18n.ts`, `drizzle/0010_clever_unicorn.sql` | Unit/E2E canonical `kz → kk` checks | New persisted locale values are canonical. | Product / Localization | 2026-09-16 |
 | LOC-02 | PASS | `PILOT_PROTOCOL.md`, `lib/i18n.ts` | Versioned translation metadata | RU source remains authoritative for pilot. | Product / Localization | 2026-09-16 |
 | LOC-03 | OPEN | `PILOT_PROTOCOL.md` | kk translation/cognitive review required | Locale is intentionally unpublished. | Product / Localization | 2026-09-16 |
 | LOC-04 | OPEN | `PILOT_PROTOCOL.md` | EN translation/cognitive review required | Locale is intentionally unpublished. | Product / Localization | 2026-09-16 |
@@ -105,19 +105,18 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | `npm ci` | PASS in locked local checkout; Node runtime recorded in manifest | `.github/workflows/ci.yml`, `package-lock.json` |
 | `npm run lint` | PASS | CI/local command output |
 | `npx tsc --noEmit` | PASS | CI/local command output |
-| `npm test` | PASS | 32 unit/contract/property/fault/routing/queue tests |
-| `npm run test:coverage` | PASS | total lib branches 88.63%; critical modules meet 90% gate |
+| `npm test` | PASS | 34 unit/contract/property/fault/routing/queue tests |
+| `npm run test:coverage` | PASS | total lib branches 88.65%; critical modules meet 90% gate |
 | `npm run check:gates` | PASS | `READY_FOR_ENGINEERING_100=NO` through `READY_FOR_NORMATIVE_PERCENTILES=NO`; `local_release_checks=PASS`; `hosted_ci=MISSING` |
-| `npm run test:e2e` | PASS — clean-room run `sess_464e25a6ec4745328907ac31` | Full local Worker/D1/R2 smoke, required idempotency key, response metadata export, restart/resume and retention recovery |
+| `npm run test:e2e` | PASS — final-source run `sess_e4192af859d04bafa7728e44` | Full local Worker/D1/R2 smoke, required idempotency key, response metadata export, restart/resume and retention recovery |
 | `npm run test:browser` | PASS | Real browser hydration, strict CSP nonce, navigation and checkout redirect |
 | `npm run test:pdf-visual` | PASS | 4 deterministic 24-page A4 fixtures; visual render QA PASS |
-| `npm run test:load` | PASS | responses=275 p50=111.2ms p95=932.8ms p99=938.8ms; assessment=2 p50=48.7ms p95=88.6ms p99=88.6ms; complete-core=2 p50=112.8ms p95=162.2ms p99=162.2ms; error_rate=0; 429=0; retryable_conflicts=0; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_IN_PROGRESS |
+| `npm run test:load` | PASS | responses=304 p50=279.1ms p95=1543.4ms p99=2437.8ms; assessment=2 p50=153.3ms p95=30399.9ms p99=30399.9ms; complete-core=2 p50=629.8ms p95=642.7ms p99=642.7ms; error_rate=0; 429=0; retryable_conflicts=29; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_IN_PROGRESS |
 | `npm run test:backup` | PASS | `BACKUP_RESTORE_SMOKE=PASS` |
 | `npm run build` | PASS | Vinext production build |
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx` |
-| Docker clean-room release archive | PASS | Exact source archive in Linux Node 22.13.0: locked install, lint, typecheck, 32 tests, coverage, migration check, build, browser CSP, PDF visual QA, E2E, retention plan, load, backup/restore and dependency audit |
-| Docker Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `8af4c9ef7f25134aae929aece2e8815a0e2a8d16`; manifest SHA `3882148e4d1a425e5b9399584f7af6b9fd5208ac18ff73da90f55e3cd0e1cf1d`; flat manifest fields cross-checked |
+| Linux Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `9dbbd7ab6df6e3df25f5b0d180f3a031576e608f`; manifest SHA `7b0b318ea2a7640666af4357186a05435634b23c76f00b8c2e0f6ab57f2a0699`; flat manifest fields cross-checked |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register

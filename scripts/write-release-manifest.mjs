@@ -46,7 +46,7 @@ const manifest = {
   source_package: {
     file: artifactName,
     sha256: artifactSha256,
-    packaging_rule: "tracked blobs from exact source_git_sha; generated release evidence and PROJECT_HANDOFF.md excluded",
+    packaging_rule: "tracked blobs from exact source_git_sha; generated release evidence, DEPLOYMENT_EVIDENCE.md and PROJECT_HANDOFF.md excluded",
   },
   runtime: {
     node: nodeVersion,

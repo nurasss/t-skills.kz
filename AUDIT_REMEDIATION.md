@@ -38,7 +38,7 @@ Decision: the implementation and reproducible clean-room release checks pass loc
 
 | Area | Implementation | Status |
 |---|---|---|
-| Monolith split | `app/orbita-app.tsx` is a thin shell; `app/orbita-view-router.tsx` owns presentation routing; `hooks/use-orbita-controller.ts` owns flow/network/WebMCP orchestration; `app/orbita-views.tsx` remains presentation-only; `app/orbita-api.ts` and `hooks/use-assessment-queue.ts` remain API/queue boundaries | `npm run lint`, `npx tsc --noEmit`, 32 unit/contract/property/fault tests; shell is 20 lines and contains no network/scoring/payment code | CLOSED |
+| Monolith split | `app/orbita-app.tsx` is a thin shell; `app/orbita-view-router.tsx` owns presentation routing; `hooks/use-orbita-controller.ts` owns flow/network/WebMCP orchestration; `app/orbita-views.tsx` remains presentation-only; `app/orbita-api.ts` and `hooks/use-assessment-queue.ts` remain API/queue boundaries | `npm run lint`, `npx tsc --noEmit`, 34 unit/contract/property/fault tests; shell is 20 lines and contains no network/scoring/payment code | CLOSED |
 | Internal navigation lint | Top-level navigation uses an anchor helper with `_top`; no `window.location` internal-navigation warning remains | CLOSED |
 
 The P2 responsibility boundaries are now explicit: presentation views can render with injected props and do not call the API; the retry queue and routing helpers remain DOM-free; the controller is the only client orchestration layer; scoring, payment integrity and state-transition rules remain server/domain-owned rather than duplicated in views.
