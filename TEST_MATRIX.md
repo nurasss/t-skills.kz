@@ -26,6 +26,8 @@ The matrix is intentionally scenario-based. Line coverage is not used as the rel
 | Auth/ownership | Public logout/revocation/cross-device session | External gate; not claimed by private Sites identity | `FINAL_ACCEPTANCE.md` |
 | Lifecycle | Payment/consent gates and invalid state | State machine rejects unsafe transition | `scripts/e2e-smoke.mjs`, `lib/durable-store.ts` |
 | Lifecycle | Same answer idempotency key replay | 200 replay; no duplicate row | `scripts/e2e-smoke.mjs` |
+| Lifecycle | Missing or malformed response idempotency key | 422; no response row is created | `app/api/assessments/[id]/responses/route.ts`, `scripts/e2e-smoke.mjs` |
+| Lifecycle | Response presentation metadata | Server timestamp, sequence, phase/position, locale and version metadata are persisted and exported | `lib/durable-store.ts`, `scripts/e2e-smoke.mjs` |
 | Lifecycle | Worker restart after Q001 | Server state resumes with confirmed answer | `scripts/e2e-smoke.mjs` |
 | PDF | Valid signed link | 200 private PDF | `scripts/e2e-smoke.mjs` |
 | PDF | Missing/tampered/expired/wrong owner token | 401 | `scripts/e2e-smoke.mjs`, `tests/unit.test.ts` |
@@ -40,7 +42,7 @@ The matrix is intentionally scenario-based. Line coverage is not used as the rel
 | Privacy | Real retention purge, crash after artifacts, resume and active exclusion | Persistent purge state machine passes isolated Wrangler E2E; staging drill remains operational | `lib/retention.ts`, `scripts/e2e-smoke.mjs` |
 | Localization | `kz` request | Canonical `kk`, legacy alias, unpublished status | `tests/unit.test.ts`, `scripts/e2e-smoke.mjs` |
 | Localization | `kk`/`en` start | 422 until translations and review are published | `scripts/e2e-smoke.mjs`, `app/api/assessments/route.ts` |
-| Operations | Migration forward path and drift | 0000–0008 apply; generated schema has no drift | `scripts/check-migration-drift.mjs`, `drizzle/` |
+| Operations | Migration forward path and drift | 0000–0009 apply; generated schema has no drift | `scripts/check-migration-drift.mjs`, `drizzle/` |
 | Operations | Backup/restore | Export and restore a seeded row | `scripts/backup-restore-smoke.mjs` |
 | Operations | Rate limit | 429 plus Retry-After at configured boundary | `scripts/e2e-smoke.mjs` |
 | Operations | Request observability | Request ID/security headers and PII-safe structured record | `tests/unit.test.ts`, `lib/observability.ts` |
