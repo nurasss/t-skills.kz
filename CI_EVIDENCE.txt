@@ -2,7 +2,7 @@ ORBITA-30 MASTER release verification record
 Date: 2026-09-16
 Source Git SHA: 09976303f2325fc50526e49123c981bd30f3e6c0
 Source package SHA256: e36dd95cc476e5bc532929ee7158452d1942497764bb5f6892f5faf44b33e2d5
-Evidence commit: da75a4b4aad3faffbbe4b8633fffb3ac306afd0d
+Evidence commit: 1eb55068941638fad0f53ea7b414a19ee774bd2e
 Node: release verification PASS in Linux container v22.13.0; local host v25.9.0 is not used for release manifest generation
 
 Commands and results:
