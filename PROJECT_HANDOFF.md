@@ -18,7 +18,7 @@ The current release keeps the complete Russian Q001–Q300 source bank and taxon
 
 - Source Git SHA: `77555bc5e5aa0f7bd856e90d4d05ad567f273152`
 - Source package SHA-256: `d93f612a1f6d8e7c7a6a8f625f6847d454f61a7b38701a2f286ac683f6259e37`
-- Evidence commit: `PENDING_FINAL_EVIDENCE_COMMIT`
+- Evidence commit: `5480131c9c381508a7c0e5367a76b0ac0380a8e0`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
 - Latest migration: `drizzle/0009_careless_banshee.sql`
