@@ -34,9 +34,9 @@ jobs:
       - name: Validate isolated bindings and beta flags
         run: npm run deploy:config-check
       - name: Apply staging migrations
-        run: npx wrangler d1 migrations apply DB --remote --env staging
+        run: npx wrangler d1 migrations apply DB --config wrangler.jsonc --remote --env staging
       - name: Deploy staging Worker
-        run: npx wrangler deploy --env staging | tee staging-deploy.log
+        run: npx wrangler deploy --config wrangler.jsonc --env staging | tee staging-deploy.log
       - name: Access-protected smoke
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID_STAGING }}
@@ -51,4 +51,3 @@ jobs:
           path: |
             staging-deploy.log
             hosted-smoke-staging.json
-

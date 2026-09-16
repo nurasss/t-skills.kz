@@ -35,9 +35,9 @@ jobs:
       - name: Validate isolated bindings and beta flags
         run: npm run deploy:config-check
       - name: Apply production migrations
-        run: npx wrangler d1 migrations apply DB --remote --env production
+        run: npx wrangler d1 migrations apply DB --config wrangler.jsonc --remote --env production
       - name: Deploy production Worker
-        run: npx wrangler deploy --env production | tee production-deploy.log
+        run: npx wrangler deploy --config wrangler.jsonc --env production | tee production-deploy.log
       - name: Access-protected production smoke
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID_PRODUCTION }}

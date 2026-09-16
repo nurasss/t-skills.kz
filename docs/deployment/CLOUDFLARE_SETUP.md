@@ -13,8 +13,8 @@ Bindings stay `DB` and `BUCKET`; IDs and buckets must differ. R2 public access s
 npm ci
 npm run build
 npm run deploy:config-check
-npx wrangler d1 migrations apply DB --remote --env staging
-npx wrangler deploy --env staging
+npx wrangler d1 migrations apply DB --config wrangler.jsonc --remote --env staging
+npx wrangler deploy --config wrangler.jsonc --env staging
 ```
 
 Production uses the same commands with `--env production`, only from the manual GitHub workflow on `main`. `RETENTION_DRY_RUN=true` remains set until a reviewed staging retention drill passes.
