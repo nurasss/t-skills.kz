@@ -1,0 +1,13 @@
+name: ORBITA-30 Actions probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "actions runner available"
