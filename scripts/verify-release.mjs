@@ -31,6 +31,10 @@ assert(manifest.package_lock_sha256 === manifest.runtime?.package_lock_sha256, "
 assert(manifest.assessment_version === manifest.versions?.assessment, "assessment_version mismatch");
 assert(manifest.item_bank_version === manifest.versions?.item_bank, "item_bank_version mismatch");
 assert(manifest.scoring_version === manifest.versions?.scoring, "scoring_version mismatch");
+assert(manifest.adaptive_version === manifest.versions?.adaptive, "adaptive_version mismatch");
+assert(manifest.adaptive_provider === manifest.versions?.adaptive_provider, "adaptive_provider mismatch");
+assert(manifest.adaptive_model === manifest.versions?.adaptive_model, "adaptive_model mismatch");
+assert(manifest.adaptive_prompt_version === manifest.versions?.adaptive_prompt, "adaptive_prompt_version mismatch");
 assert(manifest.selector_version === manifest.versions?.adaptive_selector, "selector_version mismatch");
 assert(manifest.report_version === manifest.versions?.report, "report_version mismatch");
 assert(manifest.report_prompt_version === manifest.versions?.report_prompt, "report_prompt_version mismatch");

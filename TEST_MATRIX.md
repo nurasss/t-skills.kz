@@ -11,10 +11,11 @@ The matrix is intentionally scenario-based. Line coverage is not used as the rel
 | Scoring | Reverse Likert and forced-choice direction | Direction is preserved | `tests/unit.test.ts` |
 | Scoring | Legacy percentile/CI snapshot | Normalized to profile index/uncertainty range; no percentile | `tests/unit.test.ts` |
 | Quality | Modal straight-line, too-fast, research-only markers | Flags are explicit and do not silently alter score | `tests/unit.test.ts` |
-| Adaptive | 10–15 selection from Q251–Q300 | Exactly bounded pool; no answered/unknown IDs | `tests/unit.test.ts`, `scripts/e2e-smoke.mjs` |
-| Adaptive | Duplicate semantic cluster, per-trait quota, invalid reason | Server validator rejects | `tests/unit.test.ts` |
-| Adaptive | Provider output extra key/wrong type/empty/malformed | Structured failure and deterministic fallback boundary | `lib/adaptive-contract.ts`, `lib/provider-contract.ts` |
-| AI | Timeout, HTTP, unavailable provider | `providerFailureReason` emits namespace-safe code; fallback remains available | `lib/provider-contract.ts`, `lib/adaptive-provider.ts`, `lib/report-provider.ts` |
+| Core60 | Exactly 60 fixed items, 30 traits, 6 domains, 30/30 formats | Unique/versioned IDs, complete coverage and deterministic mapping | `lib/v2-item-bank.ts`, `tests/v2-core60.test.ts` |
+| v2 scoring | Same Core60 + frozen adaptive answers and versions | Byte-equivalent deterministic preliminary/final profile; bounded refinement only | `lib/orbita-v2-engine.ts`, `tests/v2-core60.test.ts` |
+| Adaptive | Mercury generates 10–15 new items | Server count/trait/reason/format/safety/duplicate validation; no score weights | `lib/mercury-adaptive-provider.ts`, `tests/mercury-adaptive.test.ts` |
+| Adaptive fallback | Missing secret, timeout, 429, 5xx, malformed/invalid output | At most two provider attempts, then deterministic approved fallback | `lib/mercury-adaptive-provider.ts`, `tests/mercury-adaptive.test.ts` |
+| Adaptive persistence | Reload during generation or after AI-04 | Immutable item snapshots, response source and generation lock prevent duplicate generation | `lib/durable-store.ts`, `db/schema.ts`, `scripts/e2e-smoke.mjs` |
 | Report safety | Prompt injection, unsupported source key, forbidden score/percentile/clinical language | Validator rejects; approved library remains authority | `tests/unit.test.ts`, `lib/report-safety.ts` |
 | Report safety | Numeric/top-strength mutation | Canonical profile values and source keys are required | `lib/report-provider.ts`, `lib/report-safety.ts` |
 | Payment | Valid signed checkout completion | Exact snapshot match before entitlement | `scripts/e2e-smoke.mjs`, `lib/payment-integrity.ts` |

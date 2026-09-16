@@ -2,24 +2,25 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClientError, apiJson, topLevelNavigate, writePendingResponses } from "@/app/orbita-api";
-import type { AccountOverview, AdminMetrics, PendingResponse, Phase, PublicCatalog, ReportPayload, SessionPayload, View } from "@/app/orbita-view-types";
+import type { AccountOverview, AdminMetrics, AssessmentItem, PendingResponse, Phase, PublicCatalog, ReportPayload, SessionPayload, View } from "@/app/orbita-view-types";
 import {
-  buildDemoResponses,
   buildReport,
   getItemById,
-  scoreAssessment,
-  selectAdaptiveItems,
   type AdaptiveSelection,
   type ReportJSON,
   type ResponseMap,
   type ScoreProfile,
 } from "@/lib/assessment-engine";
+import { buildAdaptiveContext, buildV2DemoResponses, scoreCore60 } from "@/lib/orbita-v2-engine";
 import { ITEM_BANK, type Item } from "@/lib/item-bank";
+import { CORE60_BANK } from "@/lib/v2-item-bank";
+import { fallbackAdaptiveQuestions, type GeneratedAdaptiveQuestion } from "@/lib/mercury-adaptive-provider";
 import { enqueuePending, findPendingItem, pendingForSession } from "@/lib/response-retry-queue";
 import { routeForView } from "@/lib/view-routing";
 import { useAssessmentQueue } from "@/hooks/use-assessment-queue";
 
-const CORE_ITEMS = ITEM_BANK.filter((item) => Number(item.id.slice(1)) <= 250);
+const LEGACY_CORE_ITEMS = ITEM_BANK.filter((item) => Number(item.id.slice(1)) <= 250);
+const itemKey = (item: AssessmentItem) => "questionId" in item ? item.questionId : item.id;
 
 export type OrbitaControllerOptions = {
   initialView?: View;
@@ -32,9 +33,10 @@ export type OrbitaController = {
   phase: Phase;
   reportId?: string;
   questionIndex: number;
+  coreItemCount: number;
   adaptiveIndex: number;
-  adaptiveItems: Item[];
-  activeItem?: Item;
+  adaptiveItems: AssessmentItem[];
+  activeItem?: AssessmentItem;
   activeValue?: number;
   selection?: AdaptiveSelection;
   profile?: ScoreProfile;
@@ -51,7 +53,7 @@ export type OrbitaController = {
   adminMetrics?: AdminMetrics;
   demoMode: boolean;
   elapsedSeconds: number;
-  processingStatus: "SCORING" | "REPORT_GENERATING" | "REPORT_FAILED_RETRYABLE" | "COMPLETE";
+  processingStatus: "ADAPTIVE_GENERATING" | "ADAPTIVE_PROVIDER_FAILED" | "SCORING" | "REPORT_GENERATING" | "REPORT_FAILED_RETRYABLE" | "COMPLETE";
   consents: { terms: boolean; privacy: boolean; research: boolean; marketing: boolean };
   go: (next: View, phaseOverride?: Phase) => void;
   dismissRequestError: () => void;
@@ -85,6 +87,8 @@ export function useOrbitaController({
   };
   const [reportId, setReportId] = useState<string | undefined>(initialReportId);
   const [responses, setResponses] = useState<ResponseMap>({});
+  const [coreItems, setCoreItems] = useState<AssessmentItem[]>([...CORE60_BANK]);
+  const [adaptiveQuestionSnapshots, setAdaptiveQuestionSnapshots] = useState<GeneratedAdaptiveQuestion[]>([]);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [adaptiveIndex, setAdaptiveIndex] = useState(0);
   const [selection, setSelection] = useState<AdaptiveSelection>();
@@ -108,7 +112,7 @@ export function useOrbitaController({
   const webMcpStateRef = useRef({ sessionId: undefined as string | undefined, phase, view, answered: 0, coreAnswered: 0, adaptiveCount: 0, activeItemId: undefined as string | undefined });
   const webMcpActionsRef = useRef<{ start: () => Promise<void>; submit: (value: number) => Promise<void> }>({ start: async () => undefined, submit: async () => undefined });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [processingStatus, setProcessingStatus] = useState<"SCORING" | "REPORT_GENERATING" | "REPORT_FAILED_RETRYABLE" | "COMPLETE">("SCORING");
+  const [processingStatus, setProcessingStatus] = useState<"ADAPTIVE_GENERATING" | "ADAPTIVE_PROVIDER_FAILED" | "SCORING" | "REPORT_GENERATING" | "REPORT_FAILED_RETRYABLE" | "COMPLETE">("SCORING");
   const [consents, setConsents] = useState({ terms: false, privacy: false, research: false, marketing: false });
 
   const activateSession = (id?: string) => {
@@ -126,19 +130,23 @@ export function useOrbitaController({
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const adaptiveItems = useMemo(
-    () => (selection?.selectedItemIds ?? []).map((id) => getItemById(id)).filter((item): item is Item => Boolean(item)),
-    [selection],
+  const adaptiveItems = useMemo<AssessmentItem[]>(
+    () => adaptiveQuestionSnapshots.length
+      ? adaptiveQuestionSnapshots
+      : (selection?.selectedItemIds ?? []).map((id) => getItemById(id)).filter((item): item is Item => Boolean(item)),
+    [selection, adaptiveQuestionSnapshots],
   );
-  const activeItem = phase === "core" ? CORE_ITEMS[questionIndex] : adaptiveItems[adaptiveIndex];
-  const activeValue = activeItem ? responses[activeItem.id] : undefined;
-  const firstUnansweredCore = CORE_ITEMS.findIndex((item) => typeof responses[item.id] !== "number");
+  const activeItem = phase === "core" ? coreItems[questionIndex] : adaptiveItems[adaptiveIndex];
+  const activeValue = activeItem ? responses[itemKey(activeItem)] : undefined;
+  const firstUnansweredCore = coreItems.findIndex((item) => typeof responses[itemKey(item)] !== "number");
 
   const hydrateSession = (payload: SessionPayload) => {
     const pending = pendingForSession(pendingRef.current, payload.id);
     const pendingResponses = Object.fromEntries(pending.map((item) => [item.itemId, item.response])) as ResponseMap;
     serverSavedRef.current = new Set(Object.keys(payload.responses));
     setResponses({ ...payload.responses, ...pendingResponses });
+    setCoreItems(payload.versions.assessment === "orbita30_ru_v2" ? [...CORE60_BANK] : [...LEGACY_CORE_ITEMS]);
+    setAdaptiveQuestionSnapshots(payload.adaptive_items ?? []);
     if (payload.consents?.length) {
       setConsents((current) => payload.consents!.reduce((next, consent) => ({ ...next, [consent.consentType]: consent.granted }), current));
     }
@@ -155,8 +163,16 @@ export function useOrbitaController({
     activateSession(payload.id);
     if (payload.report_id) activateReport(payload.report_id);
     setPhase(payload.state.includes("ADAPTIVE") || payload.state === "REPORT_GENERATING" || payload.state === "REPORT_FAILED_RETRYABLE" || payload.state === "COMPLETE" ? "adaptive" : "core");
-    const coreIndex = CORE_ITEMS.findIndex((item) => typeof payload.responses[item.id] !== "number");
-    setQuestionIndex(coreIndex >= 0 ? coreIndex : CORE_ITEMS.length - 1);
+    if (payload.state === "ADAPTIVE_GENERATING") setProcessingStatus("ADAPTIVE_GENERATING");
+    else if (payload.state === "ADAPTIVE_PROVIDER_FAILED") setProcessingStatus("ADAPTIVE_PROVIDER_FAILED");
+    else if (payload.state === "REPORT_GENERATING") setProcessingStatus("REPORT_GENERATING");
+    else if (payload.state === "REPORT_FAILED_RETRYABLE") setProcessingStatus("REPORT_FAILED_RETRYABLE");
+    else if (payload.state === "COMPLETE") setProcessingStatus("COMPLETE");
+    const currentCoreItems = payload.versions.assessment === "orbita30_ru_v2" ? CORE60_BANK : LEGACY_CORE_ITEMS;
+    const coreIndex = currentCoreItems.findIndex((item) => typeof payload.responses[item.id] !== "number");
+    setQuestionIndex(coreIndex >= 0 ? coreIndex : currentCoreItems.length - 1);
+    const adaptiveIndexFromServer = (payload.adaptive_items ?? []).findIndex((item) => typeof payload.responses[item.questionId] !== "number");
+    setAdaptiveIndex(adaptiveIndexFromServer >= 0 ? adaptiveIndexFromServer : 0);
     void apiJson("/api/telemetry", {
       method: "POST",
       body: JSON.stringify({ name: "resume", assessment_id: payload.id, metadata: { status: payload.state, count: Object.keys(payload.responses).length } }),
@@ -193,7 +209,8 @@ export function useOrbitaController({
       if (payload.report_id) void loadReportData(payload.report_id, initialView === "results");
       if (payload.state === "PAID" || payload.state === "ENTITLED") setView("consent");
       else if (payload.state === "CONSENTED" || payload.state === "CORE_IN_PROGRESS") setView(initialView === "break" ? "break" : "assessment");
-      else if (payload.state === "ADAPTIVE_IN_PROGRESS") setView(initialView === "processing" ? "processing" : "break");
+      else if (["ADAPTIVE_GENERATING", "ADAPTIVE_PROVIDER_FAILED"].includes(payload.state)) setView("processing");
+      else if (["ADAPTIVE_IN_PROGRESS", "ADAPTIVE_FALLBACK"].includes(payload.state)) setView(initialView === "processing" ? "processing" : "break");
       else if (payload.state === "REPORT_GENERATING" || payload.state === "REPORT_FAILED_RETRYABLE") setView("processing");
       else if (payload.state === "COMPLETE") setView(initialView === "results" ? "results" : "processing");
     } catch (error) {
@@ -205,9 +222,10 @@ export function useOrbitaController({
     if (!sessionIdRef.current) return;
     setAutosaveStatus("считаем основной сигнал…");
     try {
-      const result = await apiJson<{ state: string; preliminary_score: ScoreProfile; adaptive: AdaptiveSelection }>(`/api/assessments/${encodeURIComponent(sessionIdRef.current)}/complete-core`, { method: "POST" });
+      const result = await apiJson<{ state: string; preliminary_score: ScoreProfile; adaptive: AdaptiveSelection; adaptive_items?: GeneratedAdaptiveQuestion[] }>(`/api/assessments/${encodeURIComponent(sessionIdRef.current)}/complete-core`, { method: "POST" });
       setProfile(result.preliminary_score);
       setSelection(result.adaptive);
+      setAdaptiveQuestionSnapshots(result.adaptive_items ?? []);
       setPhase("adaptive");
       setRequestError(undefined);
       go("break", "adaptive");
@@ -238,8 +256,9 @@ export function useOrbitaController({
 
   const saveResponse = (value: number, waitForServer = false) => {
     if (!activeItem || !sessionIdRef.current || demoMode) return;
-    if (serverSavedRef.current.has(activeItem.id)) return;
-    const alreadyPending = findPendingItem(pendingRef.current, sessionIdRef.current, activeItem.id);
+    const activeItemId = itemKey(activeItem);
+    if (serverSavedRef.current.has(activeItemId)) return;
+    const alreadyPending = findPendingItem(pendingRef.current, sessionIdRef.current, activeItemId);
     if (alreadyPending) {
       setAutosaveStatus("сохраняем первый выбор…");
       if (waitForServer) return persistPendingResponse(alreadyPending);
@@ -248,15 +267,15 @@ export function useOrbitaController({
     const responseTimeMs = Math.max(0, Date.now() - questionStartedAt.current);
     const pending: PendingResponse = {
       sessionId: sessionIdRef.current,
-      itemId: activeItem.id,
+      itemId: activeItemId,
       response: value,
       responseTimeMs,
       clientSeq: Object.keys(responses).length + 1,
-      idempotencyKey: `${sessionIdRef.current}:${activeItem.id}:${crypto.randomUUID()}`,
+      idempotencyKey: `${sessionIdRef.current}:${activeItemId}:${crypto.randomUUID()}`,
     };
     pendingRef.current = enqueuePending(pendingRef.current, pending);
     writePendingResponses(pendingRef.current);
-    setResponses((current) => ({ ...current, [activeItem.id]: value }));
+    setResponses((current) => ({ ...current, [activeItemId]: value }));
     setAutosaveStatus("сохраняем…");
     const request = persistPendingResponse(pending);
     if (waitForServer) return request;
@@ -288,9 +307,10 @@ export function useOrbitaController({
   };
 
   const nextQuestion = async (responseOverride?: number) => {
-    const currentResponse = typeof responseOverride === "number" ? responseOverride : activeItem ? responses[activeItem.id] : undefined;
-    if (!activeItem || typeof currentResponse !== "number") return;
-    const pending = findPendingItem(pendingRef.current, sessionIdRef.current, activeItem.id);
+    const currentItemId = activeItem ? itemKey(activeItem) : undefined;
+    const currentResponse = typeof responseOverride === "number" ? responseOverride : currentItemId ? responses[currentItemId] : undefined;
+    if (!activeItem || !currentItemId || typeof currentResponse !== "number") return;
+    const pending = findPendingItem(pendingRef.current, sessionIdRef.current, currentItemId);
     if (pending) {
       try {
         await persistPendingResponse(pending);
@@ -299,17 +319,20 @@ export function useOrbitaController({
         return;
       }
     }
-    if (!serverSavedRef.current.has(activeItem.id)) return;
+    if (!currentItemId || !serverSavedRef.current.has(currentItemId)) return;
     if (phase === "core") {
       const nextIndex = questionIndex + 1;
-      if (nextIndex >= CORE_ITEMS.length) {
+      if (nextIndex >= coreItems.length) {
         await finishCore();
       } else {
         questionStartedAt.current = Date.now();
         setElapsedSeconds(0);
         setQuestionIndex(nextIndex);
-        if (nextIndex % 50 === 0) {
-          void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "block_completed", assessment_id: sessionIdRef.current, metadata: { block: nextIndex / 50 } }) }).catch(() => undefined);
+        const legacyBlock = coreItems.length > 60 && nextIndex % 50 === 0;
+        const v2Pause = coreItems.length === 60 && (nextIndex === 20 || nextIndex === 40);
+        if (legacyBlock || v2Pause) {
+          const block = coreItems.length === 60 ? nextIndex / 20 : nextIndex / 50;
+          void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "block_completed", assessment_id: sessionIdRef.current, metadata: { block } }) }).catch(() => undefined);
           go("break");
         }
       }
@@ -394,6 +417,8 @@ export function useOrbitaController({
       setProfile(undefined);
       setReport(undefined);
       setSelection(undefined);
+      setCoreItems([...CORE60_BANK]);
+      setAdaptiveQuestionSnapshots([]);
       setResponses({});
       serverSavedRef.current = new Set();
       await loadSessionData(result.id);
@@ -426,6 +451,14 @@ export function useOrbitaController({
     }
   };
 
+  const retryProcessing = async () => {
+    if (processingStatus === "ADAPTIVE_GENERATING" || processingStatus === "ADAPTIVE_PROVIDER_FAILED") {
+      await finishCore();
+      return;
+    }
+    await retryReport();
+  };
+
   const downloadReport = async () => {
     if (!reportIdRef.current || demoMode) {
       window.print();
@@ -450,13 +483,21 @@ export function useOrbitaController({
   };
 
   const openDemo = () => {
-    const demoResponses = buildDemoResponses();
-    const demoProfile = scoreAssessment(demoResponses);
-    const demoCoreAnswered = Object.keys(demoResponses).filter((id) => Number(id.slice(1)) <= 250);
-    const demoSelection = selectAdaptiveItems(demoProfile, demoCoreAnswered, 12);
+    const demoResponses = buildV2DemoResponses();
+    const demoProfile = scoreCore60(demoResponses);
+    const demoQuestions = fallbackAdaptiveQuestions(buildAdaptiveContext(demoProfile, Object.keys(demoResponses)));
+    const demoSelection: AdaptiveSelection = {
+      selectedItemIds: demoQuestions.map((question) => question.questionId),
+      targetCount: demoQuestions.length,
+      mode: "approved-fallback",
+      validation: "passed",
+      reasonCodes: Object.fromEntries(demoQuestions.map((question) => [question.questionId, [question.reasonCode]])),
+    };
     activateSession(undefined);
     activateReport(undefined);
     setDemoMode(true);
+    setCoreItems([...CORE60_BANK]);
+    setAdaptiveQuestionSnapshots(demoQuestions);
     setResponses(demoResponses);
     setSelection(demoSelection);
     setProfile(demoProfile);
@@ -474,7 +515,7 @@ export function useOrbitaController({
       setQuestionIndex(firstUnansweredCore >= 0 ? firstUnansweredCore : 0);
       go("assessment");
     } else {
-      const nextAdaptive = adaptiveItems.findIndex((item) => typeof responses[item.id] !== "number");
+      const nextAdaptive = adaptiveItems.findIndex((item) => typeof responses[itemKey(item)] !== "number");
       setAdaptiveIndex(nextAdaptive >= 0 ? nextAdaptive : 0);
       go("assessment");
     }
@@ -486,16 +527,16 @@ export function useOrbitaController({
       phase,
       view,
       answered: Object.keys(responses).length,
-      coreAnswered: Object.keys(responses).filter((id) => Number(id.slice(1)) <= 250).length,
+      coreAnswered: Object.keys(responses).filter((id) => coreItems.some((item) => itemKey(item) === id)).length,
       adaptiveCount: adaptiveItems.length,
-      activeItemId: activeItem?.id,
+      activeItemId: activeItem ? itemKey(activeItem) : undefined,
     };
     webMcpActionsRef.current = {
       start: startAssessmentFromAccount,
       submit: async (value: number) => {
         if (!activeItem) throw new Error("There is no active ORBITA question.");
         if (demoMode) throw new Error("The demo profile cannot accept persisted answers.");
-        if (serverSavedRef.current.has(activeItem.id)) throw new Error("The current question is already answered.");
+        if (serverSavedRef.current.has(itemKey(activeItem))) throw new Error("The current question is already answered.");
         await saveResponse(value, true);
         await nextQuestion(value);
       },
@@ -662,6 +703,7 @@ export function useOrbitaController({
     phase,
     reportId,
     questionIndex,
+    coreItemCount: coreItems.length,
     adaptiveIndex,
     adaptiveItems,
     activeItem,
@@ -692,7 +734,7 @@ export function useOrbitaController({
     saveResponse,
     nextQuestion,
     continueFromBreak,
-    retryReport,
+    retryReport: retryProcessing,
     downloadReport,
     openReport,
     startAssessmentFromAccount,

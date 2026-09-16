@@ -16,6 +16,22 @@ export const VERSION_IDS = {
   translation: "ru-source-v1",
 } as const;
 
+/** Immutable version contract for all newly created assessments. Legacy v1
+ * snapshots continue to use VERSION_IDS above and are never rewritten. */
+export const V2_VERSION_IDS = {
+  assessment: "orbita30_ru_v2",
+  itemBank: "core60-v1",
+  scoring: "mvp-0.5-core60",
+  adaptive: "mercury-generated-0.1",
+  norms: "unvalidated-v2",
+  norm: "unvalidated-v2",
+  selector: "mercury-generated-0.1",
+  report: "report-0.4",
+  translation: "ru-source-v1",
+} as const;
+
+export type AssessmentVersionIds = typeof VERSION_IDS | typeof V2_VERSION_IDS;
+
 export type NormStatus = "unvalidated" | "pilot" | "normed";
 
 export interface NormProvider {
@@ -57,7 +73,7 @@ export type ScoreTrait = {
 };
 
 export type ScoreProfile = {
-  versions: typeof VERSION_IDS;
+  versions: AssessmentVersionIds;
   normStatus: NormStatus;
   traits: ScoreTrait[];
   domains: Array<{
@@ -92,7 +108,7 @@ export type AdaptiveSelection = {
   selectedItemIds: string[];
   reasonCodes: Record<string, AdaptiveReasonCode[]>;
   targetCount: number;
-  mode: "deterministic-fallback" | "ai-openai";
+  mode: "deterministic-fallback" | "ai-openai" | "mercury" | "approved-fallback";
   validation: "passed";
 };
 
@@ -109,6 +125,13 @@ export const ADAPTIVE_REASON_CODES = [
 export type AdaptiveReasonCode = (typeof ADAPTIVE_REASON_CODES)[number];
 
 export type ReportJSON = {
+  assessmentVersion: string;
+  coreQuestionCount: number;
+  adaptiveQuestionCount: number;
+  adaptiveProvider?: string;
+  adaptiveFallbackUsed?: boolean;
+  adaptiveVersion?: string;
+  reportVersion: string;
   interpretationLibraryVersion: string;
   executiveSummary: string;
   topStrengths: Array<{
@@ -395,6 +418,8 @@ export function normalizeScoreProfile(value: unknown): ScoreProfile {
   if (!value || typeof value !== "object") return fallback;
   const raw = value as Record<string, unknown>;
   const rawVersions = raw.versions && typeof raw.versions === "object" ? raw.versions as Record<string, unknown> : {};
+  const isV2 = rawVersions.assessment === V2_VERSION_IDS.assessment;
+  const versionDefaults = isV2 ? V2_VERSION_IDS : VERSION_IDS;
   const traits = Array.isArray(raw.traits) ? raw.traits.map((candidate) => {
     if (!candidate || typeof candidate !== "object") return null;
     const trait = candidate as Record<string, unknown>;
@@ -431,14 +456,18 @@ export function normalizeScoreProfile(value: unknown): ScoreProfile {
     ...fallback,
     ...raw,
     versions: {
-      ...VERSION_IDS,
-      assessment: typeof rawVersions.assessment === "string" ? rawVersions.assessment : VERSION_IDS.assessment,
-      itemBank: typeof rawVersions.itemBank === "string" ? rawVersions.itemBank : VERSION_IDS.itemBank,
-      scoring: typeof rawVersions.scoring === "string" ? rawVersions.scoring : VERSION_IDS.scoring,
-      norms: typeof rawVersions.norms === "string" ? rawVersions.norms : VERSION_IDS.norms,
-      selector: VERSION_IDS.selector,
-      report: VERSION_IDS.report,
-      translation: VERSION_IDS.translation,
+      ...versionDefaults,
+      assessment: typeof rawVersions.assessment === "string" ? rawVersions.assessment : versionDefaults.assessment,
+      itemBank: typeof rawVersions.itemBank === "string" ? rawVersions.itemBank : versionDefaults.itemBank,
+      scoring: typeof rawVersions.scoring === "string" ? rawVersions.scoring : versionDefaults.scoring,
+      norms: typeof rawVersions.norms === "string" ? rawVersions.norms : versionDefaults.norms,
+      ...(isV2 ? {
+        adaptive: typeof rawVersions.adaptive === "string" ? rawVersions.adaptive : V2_VERSION_IDS.adaptive,
+        norm: typeof rawVersions.norm === "string" ? rawVersions.norm : V2_VERSION_IDS.norm,
+      } : {}),
+      selector: versionDefaults.selector,
+      report: versionDefaults.report,
+      translation: versionDefaults.translation,
     },
     // The current release has no validated norm table. Never trust a persisted
     // or provider-supplied status to promote this release into a normed state.
@@ -645,7 +674,12 @@ export function buildReport(profile: ScoreProfile): ReportJSON {
       ? `Пилотный индикатор качества ответа ${Math.round(profile.responseQuality.rqi * 100)}%. Внутренние флаги: ${profile.responseQuality.flags.join(", ")}. Они не обнуляют профиль, но требуют осторожной интерпретации.`
       : "Диапазоны неопределённости показывают текущую точность измерения, а не неизменную характеристику личности. Пилотный индекс профиля не является процентом людей и не является диагностикой.";
 
-  const report: ReportJSON = {
+const report: ReportJSON = {
+    assessmentVersion: profile.versions.assessment,
+    coreQuestionCount: profile.versions.assessment === V2_VERSION_IDS.assessment ? 60 : profile.coreAnswered,
+    adaptiveQuestionCount: profile.adaptiveAnswered,
+    adaptiveVersion: "adaptive" in profile.versions ? profile.versions.adaptive : profile.versions.selector,
+    reportVersion: profile.versions.report,
     interpretationLibraryVersion: INTERPRETATION_LIBRARY_VERSION,
     executiveSummary: `Ваш текущий профиль выделяет ${top
       .slice(0, 3)

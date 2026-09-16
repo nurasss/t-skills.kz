@@ -8,8 +8,10 @@ Norming is a separate phase after validation. The future report must document sa
 
 ```text
 normStatus = unvalidated
-normVersion = pilot-index-unvalidated-v1
+normVersion = unvalidated-v2
 percentile claims = disabled
 ```
+
+This applies to the v2 Core60 + adaptive instrument. Historical v1 snapshots retain their own `pilot-index-unvalidated-v1` version and are never silently relabeled.
 
 Until this file is replaced by genuine approved evidence and the version is installed immutably, `READY_FOR_NORMATIVE_PERCENTILES=NO`.

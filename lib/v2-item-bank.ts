@@ -1,0 +1,238 @@
+import { TRAITS, type TraitCode } from "@/lib/item-bank";
+
+/**
+ * ORBITA-30 v2 standardized item bank.
+ *
+ * This is intentionally a separate immutable bank. The legacy Q001-Q300 bank
+ * remains available for v1 snapshots and is never truncated or rewritten.
+ */
+
+export const V2_ASSESSMENT_VERSION = "orbita30_ru_v2" as const;
+export const V2_ITEM_BANK_VERSION = "core60-v1" as const;
+export const V2_SCORING_VERSION = "mvp-0.5-core60" as const;
+export const V2_ADAPTIVE_VERSION = "mercury-generated-0.1" as const;
+export const V2_REPORT_VERSION = "report-0.4" as const;
+export const V2_NORM_VERSION = "unvalidated-v2" as const;
+export const V2_PROMPT_VERSION = "mercury-adaptive-v1" as const;
+
+export const V2_DOMAINS = [
+  { code: "D1", name: "Осмысление и анализ", traits: ["T01", "T02", "T03", "T04", "T05"] as TraitCode[] },
+  { code: "D2", name: "Создание и адаптация", traits: ["T06", "T07", "T08", "T09", "T10"] as TraitCode[] },
+  { code: "D3", name: "Исполнение и качество", traits: ["T11", "T12", "T13", "T14", "T15"] as TraitCode[] },
+  { code: "D4", name: "Влияние и движение", traits: ["T16", "T17", "T18", "T19", "T20"] as TraitCode[] },
+  { code: "D5", name: "Связи и сотрудничество", traits: ["T21", "T22", "T23", "T24", "T25"] as TraitCode[] },
+  { code: "D6", name: "Самоуправление и устойчивость", traits: ["T26", "T27", "T28", "T29", "T30"] as TraitCode[] },
+] as const;
+
+export type Core60LikertItem = {
+  id: `Q${string}`;
+  version: typeof V2_ITEM_BANK_VERSION;
+  format: "likert";
+  type: "likert";
+  prompt: string;
+  targetTraits: [TraitCode];
+  trait: TraitCode;
+  domain: string;
+  reverse: boolean;
+  scoring: { min: 1; max: 7; midpoint: 4; weight: 1 };
+  semanticCluster: string;
+};
+
+export type Core60ForcedItem = {
+  id: `Q${string}`;
+  version: typeof V2_ITEM_BANK_VERSION;
+  format: "forced_choice";
+  type: "forced_choice";
+  prompt: string;
+  optionA: string;
+  optionB: string;
+  targetTraits: [TraitCode, TraitCode];
+  domain: string;
+  reverse: false;
+  scoring: { min: -2; max: 2; midpoint: 0; weight: 1 };
+  semanticCluster: string;
+};
+
+export type Core60Item = Core60LikertItem | Core60ForcedItem;
+
+const traitName = new Map(TRAITS.map((trait) => [trait.code, trait.name]));
+
+const primaryPrompts: Record<TraitCode, string> = {
+  T01: "Я стараюсь понять, как отдельные части задачи влияют друг на друга.",
+  T02: "Перед важным выводом я проверяю, на каких фактах и источниках он основан.",
+  T03: "До начала действия я мысленно рассматриваю несколько возможных вариантов развития ситуации.",
+  T04: "В большом объёме информации я быстро замечаю повторяющиеся закономерности.",
+  T05: "Я быстро осваиваю незнакомую тему до уровня, на котором можно начать действовать.",
+  T06: "Я легко придумываю несколько разных подходов к одной и той же задаче.",
+  T07: "Чтобы проверить идею, я предпочитаю провести небольшой практический эксперимент.",
+  T08: "Если обстоятельства меняются, я могу перестроить способ действий и сохранить цель.",
+  T09: "В ограничении я часто замечаю возможность создать дополнительную ценность.",
+  T10: "При нехватке ресурсов я нахожу рабочее решение из того, что уже доступно.",
+  T11: "Я беру ответственность за конечный результат, если согласился его обеспечить.",
+  T12: "При большом количестве задач я ясно выделяю то, что сейчас действительно важно.",
+  T13: "Я поддерживаю усилие до завершения начатой работы, если цель остаётся актуальной.",
+  T14: "Перед передачей результата я проверяю детали, которые могут повлиять на его качество.",
+  T15: "Сложную работу я превращаю в понятную последовательность шагов и контрольных точек.",
+  T16: "Когда обсуждение застревает, я помогаю перевести его в конкретное действие.",
+  T17: "Я могу объяснить сложную идею так, чтобы её логика и ценность стали понятными другим.",
+  T18: "Я принимаю своевременное решение, когда информации достаточно для разумного выбора.",
+  T19: "Я умею объединять людей вокруг конкретной общей цели.",
+  T20: "Я поднимаю слабое место в решении, даже если это может вызвать неудобный разговор.",
+  T21: "В разговоре я замечаю изменения в эмоциональном состоянии другого человека.",
+  T22: "Мои действия обычно создают ощущение предсказуемости и надёжности в отношениях.",
+  T23: "Я заранее договариваюсь с другими о способе обмена информацией и совместной работе.",
+  T24: "Я учитываю индивидуальный стиль человека, когда выбираю способ взаимодействия с ним.",
+  T25: "В разногласии я помогаю отделить предмет вопроса от лишнего личного напряжения.",
+  T26: "Я замечаю собственные реакции и то, как они влияют на мои решения.",
+  T27: "В эмоционально напряжённой ситуации я могу вернуть себе ясность действий.",
+  T28: "После неудачи я восстанавливаю рабочий ритм и использую опыт для следующей попытки.",
+  T29: "Важные решения я соотношу с тем, что считаю действительно значимым.",
+  T30: "Я могу самостоятельно определить направление и способ работы без постоянного внешнего контроля.",
+};
+
+const forcedPairs: Array<[TraitCode, TraitCode, string, string]> = [
+  ["T01", "T02", "Сначала собрать целостную картину взаимосвязей", "Сначала проверить основания вывода фактами"],
+  ["T03", "T04", "Сначала представить несколько сценариев будущего", "Сначала найти повторяющийся паттерн в данных"],
+  ["T05", "T06", "Сначала быстро освоить ключевую модель", "Сначала расширить поле возможных идей"],
+  ["T07", "T08", "Сначала сделать малый тест на практике", "Сначала изменить способ действий под контекст"],
+  ["T09", "T10", "Сначала увидеть новую возможность в ограничении", "Сначала собрать практичное решение из доступного"],
+  ["T11", "T12", "Сначала взять ответственность за общий результат", "Сначала выделить самый важный приоритет"],
+  ["T13", "T14", "Сначала довести начатое до закрытия", "Сначала поднять планку качества результата"],
+  ["T15", "T16", "Сначала выстроить порядок и последовательность", "Сначала запустить конкретное движение"],
+  ["T17", "T18", "Сначала сделать логику выбора понятной другим", "Сначала зафиксировать своевременное решение"],
+  ["T19", "T20", "Сначала объединить людей вокруг общей цели", "Сначала проверить слабое место решения"],
+  ["T21", "T22", "Сначала учесть эмоциональное состояние человека", "Сначала создать предсказуемость и надёжность"],
+  ["T23", "T24", "Сначала настроить удобный командный ритм", "Сначала подобрать подход под конкретного человека"],
+  ["T25", "T26", "Сначала вернуть разногласие к предмету", "Сначала понять собственную реакцию"],
+  ["T27", "T28", "Сначала восстановить спокойствие и ясность", "Сначала быстро вернуться к следующей попытке"],
+  ["T29", "T30", "Сначала проверить соответствие выбора смыслу", "Сначала опереться на собственное суждение"],
+  ["T01", "T04", "Увидеть модель связей между частями", "Увидеть повторяющийся сигнал в информации"],
+  ["T02", "T05", "Проверить качество доказательств", "Быстро освоить достаточно знаний для действия"],
+  ["T03", "T06", "Продумать развилки и последствия", "Добавить неожиданные альтернативы"],
+  ["T07", "T10", "Проверить гипотезу маленьким действием", "Собрать решение из имеющихся ресурсов"],
+  ["T08", "T09", "Перестроиться вслед за изменением условий", "Найти новое применение ситуации"],
+  ["T11", "T14", "Лично отвечать за итог", "Добиться соответствия важным стандартам"],
+  ["T12", "T15", "Отсечь второстепенное ради главного", "Выстроить устойчивый процесс работы"],
+  ["T13", "T16", "Поддержать темп до финальной точки", "Создать первый шаг и движение"],
+  ["T17", "T20", "Сделать идею ясной и убедительной", "Задать неудобный вопрос к решению"],
+  ["T18", "T19", "Принять окончательный выбор", "Создать общее движение команды"],
+  ["T21", "T24", "Замечать текущее чувство собеседника", "Замечать устойчивый индивидуальный стиль"],
+  ["T22", "T23", "Создать надёжность во взаимодействии", "Настроить рабочий обмен и координацию"],
+  ["T25", "T27", "Снизить лишнее напряжение в разногласии", "Сохранить внутреннюю ясность под давлением"],
+  ["T26", "T29", "Понять собственные мотивы реакции", "Сверить выбор с долгосрочным смыслом"],
+  ["T28", "T30", "Восстановить ритм после неудачи", "Самостоятельно выбрать следующий курс"],
+];
+
+function domainFor(code: TraitCode) {
+  return V2_DOMAINS.find((domain) => domain.traits.includes(code))?.code ?? "D1";
+}
+
+export const CORE60_BANK: readonly Core60Item[] = [
+  ...Object.entries(primaryPrompts).map(([code, prompt], index) => {
+    const trait = code as TraitCode;
+    return {
+      id: `Q${String(index + 1).padStart(3, "0")}` as `Q${string}`,
+      version: V2_ITEM_BANK_VERSION,
+      format: "likert" as const,
+      type: "likert" as const,
+      prompt,
+      targetTraits: [trait] as [TraitCode],
+      trait,
+      domain: domainFor(trait),
+      reverse: false,
+      scoring: { min: 1 as const, max: 7 as const, midpoint: 4 as const, weight: 1 as const },
+      semanticCluster: `primary-${trait}`,
+    } satisfies Core60LikertItem;
+  }),
+  ...forcedPairs.map(([leftTrait, rightTrait, optionA, optionB], index) => ({
+    id: `Q${String(index + 31).padStart(3, "0")}` as `Q${string}`,
+    version: V2_ITEM_BANK_VERSION,
+    format: "forced_choice" as const,
+    type: "forced_choice" as const,
+    prompt: "Когда вы сталкиваетесь с новой задачей, что вам ближе?",
+    optionA,
+    optionB,
+    targetTraits: [leftTrait, rightTrait] as [TraitCode, TraitCode],
+    domain: domainFor(leftTrait),
+    reverse: false as const,
+    scoring: { min: -2 as const, max: 2 as const, midpoint: 0 as const, weight: 1 as const },
+    semanticCluster: `cross-${leftTrait}-${rightTrait}-${index + 1}`,
+  } satisfies Core60ForcedItem)),
+] as const;
+
+export type FallbackAdaptiveQuestion = {
+  questionId: `FB-${string}`;
+  format: "forced_choice";
+  targetTraits: [TraitCode, TraitCode];
+  reasonCode: "HIGH_INFORMATION" | "PAIR_DISCRIMINATION";
+  prompt: string;
+  options: [{ id: "A"; text: string }, { id: "B"; text: string }];
+  semanticIntent: string;
+  semanticCluster: string;
+  confidence: 1;
+  provider: "approved-fallback";
+  model: null;
+  promptVersion: typeof V2_PROMPT_VERSION;
+  adaptiveVersion: typeof V2_ADAPTIVE_VERSION;
+  validationStatus: "accepted";
+};
+
+const fallbackPairs: Array<[TraitCode, TraitCode, string, string]> = [
+  ["T01", "T05", "Собрать общую модель задачи", "Быстро освоить нужное для первого действия"],
+  ["T02", "T04", "Проверить надёжность данных", "Увидеть устойчивую закономерность"],
+  ["T03", "T09", "Продумать несколько исходов", "Найти возможность в текущем положении"],
+  ["T06", "T08", "Расширить число вариантов", "Перестроить выбранный способ"],
+  ["T07", "T10", "Сделать малый эксперимент", "Найти обходное решение из доступного"],
+  ["T11", "T13", "Взять личное обязательство за итог", "Закрыть начатую работу"],
+  ["T12", "T14", "Выделить главное", "Довести важные детали до стандарта"],
+  ["T15", "T16", "Выстроить последовательность", "Запустить первый шаг"],
+  ["T17", "T19", "Объяснить ценность идеи", "Создать общее движение"],
+  ["T18", "T20", "Принять решение вовремя", "Проверить слабое место выбора"],
+  ["T21", "T22", "Учесть состояние человека", "Создать надёжность в отношениях"],
+  ["T23", "T25", "Настроить совместную работу", "Снизить лишнее напряжение"],
+  ["T24", "T26", "Подстроить взаимодействие под человека", "Понять собственную реакцию"],
+  ["T27", "T28", "Сохранить ясность под давлением", "Восстановить рабочий ритм"],
+  ["T29", "T30", "Сверить выбор со смыслом", "Самостоятельно определить курс"],
+  ["T01", "T06", "Увидеть связи между частями", "Добавить необычные варианты"],
+  ["T02", "T18", "Ещё раз проверить основания", "Зафиксировать разумный выбор"],
+  ["T03", "T08", "Рассмотреть развилки", "Изменить план вслед за условиями"],
+  ["T04", "T07", "Найти повторяющийся сигнал", "Проверить его практикой"],
+  ["T09", "T10", "Увидеть ценность ограничения", "Собрать работоспособный минимум"],
+  ["T11", "T12", "Ответить за результат", "Защитить главный приоритет"],
+  ["T13", "T15", "Довести до завершения", "Настроить процесс"],
+  ["T17", "T20", "Сделать позицию понятной", "Оспорить слабую логику"],
+  ["T22", "T23", "Создать доверие", "Синхронизировать действия"],
+];
+
+export const APPROVED_FALLBACK_BANK: readonly FallbackAdaptiveQuestion[] = fallbackPairs.map(([leftTrait, rightTrait, a, b], index) => ({
+  questionId: `FB-${String(index + 1).padStart(2, "0")}` as `FB-${string}`,
+  format: "forced_choice" as const,
+  targetTraits: [leftTrait, rightTrait] as [TraitCode, TraitCode],
+  reasonCode: index % 2 ? "PAIR_DISCRIMINATION" as const : "HIGH_INFORMATION" as const,
+  prompt: "В этой рабочей ситуации что вам обычно ближе?",
+  options: [{ id: "A" as const, text: a }, { id: "B" as const, text: b }],
+  semanticIntent: `discriminate ${leftTrait} vs ${rightTrait}`,
+  semanticCluster: `fallback-${leftTrait}-${rightTrait}-${index + 1}`,
+  confidence: 1 as const,
+  provider: "approved-fallback" as const,
+  model: null,
+  promptVersion: V2_PROMPT_VERSION,
+  adaptiveVersion: V2_ADAPTIVE_VERSION,
+  validationStatus: "accepted" as const,
+}));
+
+export const CORE60_TRAIT_CODES = TRAITS.map((trait) => trait.code) as TraitCode[];
+
+export function getCore60ItemById(id: string) {
+  return CORE60_BANK.find((item) => item.id === id);
+}
+
+export function getFallbackQuestionById(id: string) {
+  return APPROVED_FALLBACK_BANK.find((item) => item.questionId === id);
+}
+
+export function itemText(question: { prompt: string; optionA?: string; optionB?: string }) {
+  return [question.prompt, question.optionA, question.optionB].filter(Boolean).join(" ");
+}
+
+export { traitName };

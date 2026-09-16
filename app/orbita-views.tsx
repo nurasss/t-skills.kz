@@ -26,9 +26,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
-import type { AccountOverview, AdminMetrics, Phase, PublicCatalog, View } from "@/app/orbita-view-types";
-import { itemCountSummary, traitName, VERSION_IDS, type AdaptiveSelection, type ReportJSON, type ScoreProfile } from "@/lib/assessment-engine";
-import { TRAITS, type Item } from "@/lib/item-bank";
+import type { AccountOverview, AdminMetrics, AssessmentItem, Phase, PublicCatalog, View } from "@/app/orbita-view-types";
+import { traitName, V2_VERSION_IDS, type AdaptiveSelection, type ReportJSON, type ScoreProfile } from "@/lib/assessment-engine";
+import { TRAITS } from "@/lib/item-bank";
+import { APPROVED_FALLBACK_BANK, CORE60_BANK } from "@/lib/v2-item-bank";
 
 const DOMAIN_COLORS = ["coral", "cyan", "lime", "violet", "amber", "blue"];
 const RESPONSE_LABELS = [
@@ -39,9 +40,11 @@ const RESPONSE_LABELS = [
   "Сильно правое",
 ];
 const LIKERT_LABELS = ["1", "2", "3", "4", "5", "6", "7"];
+const CORE60_LIKERT_COUNT = CORE60_BANK.filter((item) => item.format === "likert").length;
+const CORE60_FORCED_COUNT = CORE60_BANK.filter((item) => item.format === "forced_choice").length;
 
-function isForced(item: Item) {
-  return item.type === "forced" || item.type === "adaptive_forced";
+function isForced(item: AssessmentItem) {
+  return ("type" in item && (item.type === "forced" || item.type === "adaptive_forced")) || ("format" in item && item.format === "forced_choice");
 }
 
 function scoreBand(score: number) {
@@ -201,7 +204,7 @@ export function HomeView({ onNavigate, onDemo }: { onNavigate: (view: View) => v
       <section className="signal-strip">
         <div><strong>30</strong><span>оригинальных<br />шкал</span></div>
         <div><strong>6</strong><span>доменов<br />действия</span></div>
-        <div><strong>250<span className="plus">+</span></strong><span>базовых<br />вопросов</span></div>
+        <div><strong>60</strong><span>основных<br />вопросов</span></div>
         <div><strong>10–15</strong><span>уточняющих<br />вопросов</span></div>
         <div className="strip-note"><Fingerprint size={18} /><span>Ваш результат — не ярлык.<br />Это карта для разговора.</span></div>
       </section>
@@ -214,7 +217,7 @@ export function HomeView({ onNavigate, onDemo }: { onNavigate: (view: View) => v
         />
         <div className="step-grid">
           {[
-            ["01", "Ответить честно", "250 вопросов о типичном поведении. По одному на экран, с паузами между блоками."],
+            ["01", "Ответить честно", "60 основных вопросов о типичном поведении. По одному на экран, с паузами между блоками."],
             ["02", "Уточнить профиль", "Ещё 10–15 вопросов выбираются по неопределённости и близким границам рангов."],
             ["03", "Получить карту", "Top 5, полный профиль 30, условия для работы и план развития на 30 дней."],
           ].map(([number, title, body]) => (
@@ -262,7 +265,7 @@ export function CatalogView({ onNavigate }: { onNavigate: (view: View) => void }
       <div className="catalog-grid">
         <Card className="test-card featured-card">
           <CardHeader>
-            <div className="card-topline"><Badge className="lime-badge">Основной тест</Badge><span className="card-id">orbita30_ru_v1</span></div>
+            <div className="card-topline"><Badge className="lime-badge">Основной тест</Badge><span className="card-id">orbita30_ru_v2</span></div>
             <CardTitle>ORBITA—30</CardTitle>
             <CardDescription>Профиль сильных сторон и рабочих предпочтений</CardDescription>
           </CardHeader>
@@ -316,7 +319,7 @@ export function DetailView({ onNavigate, onDemo }: { onNavigate: (view: View) =>
           <div className="detail-feature-grid">
             {[
               ["01", "6 доменов", "Осмысление, создание, исполнение, влияние, связи и самоуправление."],
-              ["02", "250 + 10–15", "Фиксированная база и адаптивное уточнение по uncertainty."],
+              ["02", "60 + 10–15", "Стандартизированный baseline и адаптивное уточнение по uncertainty."],
               ["03", "Top 5 и профиль 30", "Сначала естественный вклад, затем полный контекст и интервалы."],
               ["04", "Отчёт на языке фактов", "Без диагнозов и карьерных предсказаний; числа берутся из score JSON."],
             ].map(([number, title, body]) => (
@@ -382,7 +385,7 @@ export function CheckoutView({
       <SectionHeading eyebrow={betaFree ? "ЗАКРЫТАЯ BETA" : "CHECKOUT"} title={betaFree ? "Бесплатное пилотное тестирование" : "Оформление теста"} body={betaFree ? "Доступ предоставляется участникам закрытой beta без оплаты. Результаты не являются нормативной или диагностической оценкой." : "После подтверждения оплаты создаётся одноразовый доступ к конкретной версии оценки."} />
       <div className="checkout-grid">
         <Card className="checkout-card">
-          <CardHeader><CardTitle>ORBITA—30</CardTitle><CardDescription>{test?.assessmentVersion ?? "orbita30_ru_v1"} · draft for pilot</CardDescription></CardHeader>
+          <CardHeader><CardTitle>ORBITA—30</CardTitle><CardDescription>{test?.assessmentVersion ?? "orbita30_ru_v2"} · pilot / unvalidated</CardDescription></CardHeader>
           <CardContent>
             <div className="order-line"><span>Оценка</span><strong>1 доступ</strong></div>
             <div className="order-line"><span>Результат</span><strong>Dashboard + PDF</strong></div>
@@ -470,13 +473,13 @@ function QuestionScale({
   value,
   onChange,
 }: {
-  item: Item;
+  item: AssessmentItem;
   value?: number;
   onChange: (value: number) => void;
 }) {
   if (isForced(item)) {
-    const left = item.left;
-    const right = item.right;
+    const left = "options" in item ? item.options[0]?.text ?? "" : "left" in item ? item.left : "";
+    const right = "options" in item ? item.options[1]?.text ?? "" : "right" in item ? item.right : "";
     return (
       <div className="forced-answer">
         <div className="statement-grid">
@@ -543,7 +546,7 @@ export function AssessmentView({
   elapsedSeconds,
 }: {
   phase: Phase;
-  item?: Item;
+  item?: AssessmentItem;
   currentIndex: number;
   total: number;
   blockNumber: number;
@@ -556,22 +559,23 @@ export function AssessmentView({
 }) {
   if (!item) return null;
   const localQuestion = phase === "core" ? (currentIndex % 50) + 1 : currentIndex + 1;
-  const blockLabel = phase === "core" ? "Блок " + blockNumber + " из 5" : "Уточняющий блок";
+  const localCoreQuestion = phase === "core" ? currentIndex + 1 : localQuestion;
+  const blockLabel = phase === "core" ? total === 60 ? "Основная часть" : "Блок " + blockNumber + " из 5" : "Уточняющая часть";
   const softCue = elapsedSeconds >= 30;
   return (
     <div className="assessment-shell">
       <div className="assessment-topbar">
         <div className="assessment-progress-copy">
           <span className="assessment-kicker">{blockLabel}</span>
-          <strong>{phase === "core" ? "Вопрос " + localQuestion + " из 50" : "Вопрос " + localQuestion + " из " + total}</strong>
+          <strong>{phase === "core" ? "Вопрос " + localCoreQuestion + " из " + total : "Вопрос " + localQuestion + " из " + total}</strong>
         </div>
         <div className="assessment-progress-meter"><Progress value={((currentIndex + 1) / total) * 100} /><span>{Math.round(((currentIndex + 1) / total) * 100)}%</span></div>
         <div className="assessment-actions"><span className="autosave-status"><span className="status-dot" />{autosaveStatus}</span><button className="pause-button" onClick={onPause} type="button"><Pause size={15} /> Пауза</button></div>
       </div>
 
       <main className="question-area">
-        <div className="question-meta"><span>{phase === "core" ? "ТИПИЧНОЕ ПОВЕДЕНИЕ" : "УТОЧНЯЮЩИЙ ВОПРОС"}</span><span className="question-id" aria-hidden="true">{item.id}</span></div>
-        <h1>{isForced(item) ? item.type === "adaptive_forced" ? item.prompt : "Что чаще описывает вас в сложной ситуации?" : "Насколько это обычно про вас?"}</h1>
+        <div className="question-meta"><span>{phase === "core" ? "ТИПИЧНОЕ ПОВЕДЕНИЕ" : "УТОЧНЯЮЩИЙ ВОПРОС"}</span><span className="question-id" aria-hidden="true">{"questionId" in item ? item.questionId : item.id}</span></div>
+        <h1>{isForced(item) ? ("format" in item && item.format === "forced_choice" ? item.prompt : "Что чаще описывает вас в сложной ситуации?") : "questionId" in item ? item.prompt : "Насколько это обычно про вас?"}</h1>
         <p className="question-instruction">{isForced(item) ? "Выберите сторону, которая чаще описывает вас. Если обе подходят одинаково — выберите середину." : "Оценивайте типичное поведение за последние 1–2 года, а не идеальный образ себя."}</p>
         <QuestionScale item={item} value={selectedValue} onChange={onAnswer} />
         <div className="question-footer">
@@ -603,9 +607,9 @@ export function BreakView({
         <h1>{adaptiveReady ? "Основной сигнал собран." : "Пауза — часть процесса."}</h1>
         <p>{adaptiveReady ? "Осталось несколько уточняющих вопросов, подобранных по вашим предыдущим ответам." : "Ваши ответы сохранены. Можно сделать паузу и вернуться к следующему блоку, когда будет удобно."}</p>
         <div className="break-status">
-          <div><Check size={16} /><span>{adaptiveReady ? "250 базовых вопросов сохранены" : "50 вопросов сохранены"}</span></div>
+          <div><Check size={16} /><span>{adaptiveReady ? "60 основных вопросов сохранены" : "Промежуточный блок сохранён"}</span></div>
           <div><Check size={16} /><span>{adaptiveReady ? "Профиль неопределённости рассчитан" : "Можно закрыть браузер и продолжить"}</span></div>
-          {adaptiveReady && selection ? <div><Sparkles size={16} /><span>{selection.selectedItemIds.length} вопросов выбраны {selection.mode === "ai-openai" ? "AI selector" : "deterministic fallback"}</span></div> : null}
+          {adaptiveReady && selection ? <div><Sparkles size={16} /><span>{selection.selectedItemIds.length} вопросов готовы · {selection.mode === "mercury" ? "Mercury 2.5" : selection.mode === "approved-fallback" ? "approved fallback" : selection.mode === "ai-openai" ? "AI selector" : "deterministic fallback"}</span></div> : null}
         </div>
         <div className="break-actions">
           <Button className="orbita-button primary-button" size="lg" onClick={onContinue}>{adaptiveReady ? "Ответить на уточнения" : "Продолжить" } <ArrowRight size={16} /></Button>
@@ -623,18 +627,20 @@ export function ProcessingView({
   onRetry,
   profile,
 }: {
-  status: "SCORING" | "REPORT_GENERATING" | "REPORT_FAILED_RETRYABLE" | "COMPLETE";
+  status: "ADAPTIVE_GENERATING" | "ADAPTIVE_PROVIDER_FAILED" | "SCORING" | "REPORT_GENERATING" | "REPORT_FAILED_RETRYABLE" | "COMPLETE";
   onOpenResults: () => void;
   onRetry: () => void;
   profile?: ScoreProfile;
 }) {
   const stages = [
-    ["CORE_COMPLETE", "250 ответов зафиксированы"],
+    ["CORE_COMPLETE", "60 основных ответов зафиксированы"],
+    ["ADAPTIVE_GENERATING", "Готовим персональные уточнения"],
+    ["ADAPTIVE_PROVIDER_FAILED", "Провайдер временно недоступен — доступен повтор"],
     ["SCORING", "Детерминированный score engine"],
     ["REPORT_GENERATING", "Структурированный отчёт"],
     ["COMPLETE", "Результат готов"],
   ];
-  const activeIndex = status === "SCORING" ? 1 : status === "REPORT_GENERATING" ? 2 : 3;
+  const activeIndex = status === "ADAPTIVE_GENERATING" ? 1 : status === "ADAPTIVE_PROVIDER_FAILED" ? 2 : status === "SCORING" ? 3 : status === "REPORT_GENERATING" ? 4 : 5;
   return (
     <div className="processing-page">
       <div className="processing-visual"><OrbitGraphic compact /><span className="processing-pulse" /></div>
@@ -650,7 +656,7 @@ export function ProcessingView({
             </div>
           ))}
         </div>
-        {status === "COMPLETE" ? <Button className="orbita-button primary-button" size="lg" onClick={onOpenResults}>Открыть результат <ArrowRight size={16} /></Button> : status === "REPORT_FAILED_RETRYABLE" ? <Button className="orbita-button primary-button" size="lg" onClick={onRetry}>Повторить генерацию отчёта <RefreshCw size={16} /></Button> : <span className="processing-wait">Статус обновляется автоматически</span>}
+        {status === "COMPLETE" ? <Button className="orbita-button primary-button" size="lg" onClick={onOpenResults}>Открыть результат <ArrowRight size={16} /></Button> : status === "REPORT_FAILED_RETRYABLE" ? <Button className="orbita-button primary-button" size="lg" onClick={onRetry}>Повторить генерацию отчёта <RefreshCw size={16} /></Button> : status === "ADAPTIVE_PROVIDER_FAILED" ? <Button className="orbita-button primary-button" size="lg" onClick={onRetry}>Повторить adaptive generation <RefreshCw size={16} /></Button> : <span className="processing-wait">Статус обновляется автоматически</span>}
         {profile ? <div className="processing-signature">score version · {profile.versions.scoring} · norm · {profile.versions.norms}</div> : null}
       </div>
     </div>
@@ -768,7 +774,6 @@ export function AccountView({
   onDelete: () => void;
   onDeleteAssessment: (assessmentId: string) => void;
 }) {
-  const counts = itemCountSummary();
   const latestAssessment = overview?.assessments[0];
   const paidOrder = overview?.orders.find((order) => order.status === "PAID");
   const hasWork = Boolean(latestAssessment);
@@ -792,19 +797,18 @@ export function AccountView({
       <SectionHeading eyebrow="ЛИЧНЫЙ КАБИНЕТ" title="Ваши сессии и результаты." body="Здесь хранятся доступы, прогресс и уже готовые версии отчётов." />
       <div className="account-grid">
         <Card className="account-card profile-account-card"><CardHeader><div className="account-profile-head"><span className="large-avatar">{displayName.slice(0, 1).toUpperCase()}</span><div><CardTitle>{displayName}</CardTitle><CardDescription>RU · данные под вашим контролем</CardDescription></div></div></CardHeader><CardContent><div className="account-setting"><span>Согласия</span><strong>управляются перед началом</strong><ChevronDown size={15} /></div><div className="account-setting"><span>Хранение</span><strong>экспорт и удаление доступны</strong><ChevronDown size={15} /></div><Button className="orbita-button secondary-button full-button" onClick={() => onNavigate("privacy")}>Управлять данными <LockKeyhole size={15} /></Button></CardContent></Card>
-        <Card className="account-card"><CardHeader><div className="card-topline"><Badge className={latestAssessment?.state === "COMPLETE" ? "lime-badge" : "outline-badge"}>{loading ? "Загрузка…" : latestAssessment?.state ?? (paidOrder || betaFree ? "Доступ активен" : "Нет доступа")}</Badge><span className="card-id">orbita30_ru_v1</span></div><CardTitle>ORBITA—30</CardTitle><CardDescription>{demoMode ? "Демо-профиль · не сохранён на сервере" : latestAssessment ? "Сессия сохранена на сервере" : betaFree ? "Закрытая бесплатная beta · пилотная версия" : paidOrder ? "Оплата подтверждена · можно начать" : "Оформите доступ, чтобы начать"}</CardDescription></CardHeader><CardContent>
+        <Card className="account-card"><CardHeader><div className="card-topline"><Badge className={latestAssessment?.state === "COMPLETE" ? "lime-badge" : "outline-badge"}>{loading ? "Загрузка…" : latestAssessment?.state ?? (paidOrder || betaFree ? "Доступ активен" : "Нет доступа")}</Badge><span className="card-id">orbita30_ru_v2</span></div><CardTitle>ORBITA—30</CardTitle><CardDescription>{demoMode ? "Демо-профиль · не сохранён на сервере" : latestAssessment ? "Сессия сохранена на сервере" : betaFree ? "Закрытая бесплатная beta · пилотная версия" : paidOrder ? "Оплата подтверждена · можно начать" : "Оформите доступ, чтобы начать"}</CardDescription></CardHeader><CardContent>
           {profile ? <><div className="account-result-mini"><OrbitGraphic compact /><div><span>{demoMode ? "Демо Top 5" : latestAssessment?.state === "COMPLETE" ? "Top 5" : "Предварительный Top 5"}</span><strong>{profile.traits.slice(0, 3).map((trait) => trait.name).join(" · ")}</strong><small>RQI {Math.round(profile.responseQuality.rqi * 100)}%</small></div></div><Button className="orbita-button primary-button full-button" onClick={profileAction}>{demoMode ? "Открыть демо-результат" : assessmentAction} <ArrowRight size={16} /></Button></> : <><div className="account-empty"><span>{loading ? <RefreshCw size={17} /> : <Play size={17} />}</span><p>{loading ? "Загружаем ваши данные…" : hasWork ? "Сессия готова к продолжению." : betaFree ? "Закрытый beta-доступ активен. Начните с обязательных согласий." : paidOrder ? "Оплата подтверждена. Создайте сессию и начните с согласий." : "Пройдите тест или откройте демо, чтобы увидеть, как выглядит результат."}</p></div><Button className="orbita-button primary-button full-button" disabled={loading || (!betaFree && !paidOrder && !latestAssessment)} onClick={latestAssessment?.reportId ? () => onOpenReport(latestAssessment.reportId as string) : onStartAssessment}>{loading ? "Загрузка…" : latestAssessment ? assessmentAction : betaFree || paidOrder ? "Начать оценку" : "Открыть каталог"} <ArrowRight size={16} /></Button>{!betaFree && !paidOrder && !latestAssessment ? <Button className="orbita-button ghost-button full-button" onClick={() => onNavigate("catalog")}>Посмотреть доступные оценки</Button> : null}</>}
         </CardContent></Card>
       </div>
       <div className="account-history-grid"><Card className="account-card"><CardHeader><CardTitle>Заказы</CardTitle><CardDescription>Цена и валюта зафиксированы в каждом order.</CardDescription></CardHeader><CardContent>{overview?.orders.length ? <div className="account-history-list">{overview.orders.map((order) => <div className="account-history-row" key={order.id}><span><strong>{order.testId}</strong><small>{new Date(order.createdAt).toLocaleString("ru-RU")}</small></span><span><strong>{(order.amountMinor / 100).toLocaleString("ru-RU")} {order.currency}</strong><small>{order.status}</small></span></div>)}</div> : <p className="account-muted">Заказов пока нет.</p>}</CardContent></Card><Card className="account-card"><CardHeader><CardTitle>Сессии</CardTitle><CardDescription>Последнее подтверждённое состояние хранится на сервере.</CardDescription></CardHeader><CardContent>{overview?.assessments.length ? <div className="account-history-list">{overview.assessments.map((assessment) => <div className="account-history-row" key={assessment.id}><span><strong>{assessment.state}</strong><small>{assessment.clientSeq} ответов · {new Date(assessment.updatedAt).toLocaleString("ru-RU")}</small></span><span className="account-row-actions">{assessment.reportId ? <Button className="orbita-button ghost-button" size="sm" onClick={() => onOpenReport(assessment.reportId as string)}>Отчёт</Button> : null}<Button className="orbita-button ghost-button" size="sm" aria-label="Удалить оценку" onClick={() => onDeleteAssessment(assessment.id)}><Trash2 size={14} /></Button></span></div>)}</div> : <p className="account-muted">Сессий пока нет.</p>}</CardContent></Card></div>
-      <div className="account-footer-grid"><div className="account-stat"><span>Банк items</span><strong>{counts.total}</strong><small>{counts.forced} FC · {counts.likert} Likert · {counts.adaptiveDirect + counts.adaptiveForced} adaptive</small></div><div className="account-stat"><span>Версия scoring</span><strong>{VERSION_IDS.scoring}</strong><small>deterministic · reproducible</small></div><div className="account-stat"><span>Права данных</span><strong>готовы</strong><small>export · delete</small></div></div>
+      <div className="account-footer-grid"><div className="account-stat"><span>Core item bank</span><strong>{CORE60_BANK.length}</strong><small>{CORE60_LIKERT_COUNT} Likert · {CORE60_FORCED_COUNT} discrimination</small></div><div className="account-stat"><span>Версия scoring</span><strong>{V2_VERSION_IDS.scoring}</strong><small>deterministic · reproducible</small></div><div className="account-stat"><span>Права данных</span><strong>готовы</strong><small>export · delete</small></div></div>
       <div className="account-data-actions"><Button className="orbita-button secondary-button" onClick={onExport}><Download size={15} /> Запросить экспорт данных</Button><Button className="orbita-button ghost-button" onClick={onDelete}><LockKeyhole size={15} /> Удалить аккаунт</Button>{actionStatus ? <span className="autosave-status"><span className="status-dot" />{actionStatus}</span> : null}</div>
     </div>
   );
 }
 
 export function MethodologyView({ onNavigate }: { onNavigate: (view: View) => void }) {
-  const counts = itemCountSummary();
   return (
     <div className="page-wrap methodology-page">
       <SectionHeading eyebrow="METHODOLOGY" title="Прозрачно — значит проверяемо." body="ORBITA—30 отделяет конструкт, raw responses, scoring, adaptive selection и report layer. Эта версия предназначена для пилота, а не для доказанных межличностных норм." />
@@ -812,11 +816,11 @@ export function MethodologyView({ onNavigate }: { onNavigate: (view: View) => vo
         <aside className="method-index"><span>СОДЕРЖАНИЕ</span><a href="#model">Модель</a><a href="#scoring">Scoring</a><a href="#adaptive">Adaptive</a><a href="#quality">Quality</a><a href="#validation">Валидация</a><a href="#limits">Ограничения</a></aside>
         <div className="method-content">
           <section className="method-block" id="model"><span className="section-index">01</span><h2>Модель конструкта</h2><p>Шесть доменов, по пять оригинальных шкал в каждом. Шкалы описывают предпочтительный способ действия; низкое значение не является дефектом.</p><div className="method-domain-grid">{TRAITS.map((trait, index) => <div key={trait.code}><span className={"domain-code " + DOMAIN_COLORS[Math.floor(index / 5)]}>{trait.code}</span><strong>{trait.name}</strong><p>{trait.definition}</p></div>)}</div></section>
-          <section className="method-block" id="scoring"><span className="section-index">02</span><h2>Детерминированный scoring</h2><p>Одинаковый набор raw responses при одинаковых версиях даёт одинаковый score JSON. LLM не имеет права менять баллы.</p><div className="formula"><span>FC evidence</span><strong>−x / 2&nbsp;&nbsp; +x / 2</strong><span>для левой и правой шкалы</span><span>Base θ</span><strong>0.70 × FC_z + 0.30 × LK_z</strong><span>гибрид MVP до пилотных норм</span><span>Final θ</span><strong>weighted update</strong><span>adaptive evidence снижает SE</span></div><div className="version-row"><Badge variant="outline">assessment { VERSION_IDS.assessment }</Badge><Badge variant="outline">items { VERSION_IDS.itemBank }</Badge><Badge variant="outline">scoring { VERSION_IDS.scoring }</Badge><Badge variant="outline">norm { VERSION_IDS.norms }</Badge></div><p>Статус normStatus: unvalidated. Пилотный индекс профиля не является долей людей и не используется для межличностного сравнения.</p></section>
-          <section className="method-block" id="adaptive"><span className="section-index">03</span><h2>Adaptive без выхода за банк</h2><p>Selector получает минимальный структурированный payload и может вернуть только ID из Q251–Q300. Backend валидирует диапазон 10–15, отсутствие дублей и quota per trait. При timeout работает deterministic fallback.</p><div className="adaptive-table"><div><span>Банк</span><strong>Q251–Q300</strong><small>{counts.adaptiveDirect} direct · {counts.adaptiveForced} discriminator</small></div><div><span>Цель</span><strong>10–15</strong><small>12 по умолчанию</small></div><div><span>Quota</span><strong>≤ 3</strong><small>на одну шкалу</small></div><div><span>Mode</span><strong>fallback</strong><small>validation passed</small></div></div></section>
-          <section className="method-block" id="quality"><span className="section-index">04</span><h2>Response quality</h2><p>Флаги качества не обнуляют результат. Они формируют RQI и при необходимости предупреждение для внутренней аналитики и отчёта.</p><div className="quality-list"><div><Check size={15} /><span><strong>Attention check</strong><small>2 из 3 instructed-response не выполнены</small></span></div><div><Check size={15} /><span><strong>Too fast</strong><small>Исследовательский threshold до пилотной калибровки</small></span></div><div><Check size={15} /><span><strong>Straight-lining</strong><small>Модальная частота одинаковых Likert ответов, а не только первый ответ</small></span></div><div><Check size={15} /><span><strong>Contradiction</strong><small>Дополнительный приоритет адаптивным уточнениям</small></span></div><div><Check size={15} /><span><strong>Q243/Q246/Q249/Q250</strong><small>Контекстные consistency markers: учитываются в quality telemetry, не входят в trait score и помечены research-only.</small></span></div></div></section>
+          <section className="method-block" id="scoring"><span className="section-index">02</span><h2>Детерминированный scoring</h2><p>Одинаковый набор raw responses при одинаковых версиях даёт одинаковый score JSON. Mercury не имеет права менять баллы, веса, ранги или Top 5.</p><div className="formula"><span>Primary evidence</span><strong>1 Likert / trait</strong><span>базовое измерение</span><span>Discrimination</span><strong>30 forced-choice</strong><span>по два cross-trait сигнала</span><span>Adaptive</span><strong>bounded correction</strong><span>только refinement и снижение uncertainty</span></div><div className="version-row"><Badge variant="outline">assessment { V2_VERSION_IDS.assessment }</Badge><Badge variant="outline">items { V2_VERSION_IDS.itemBank }</Badge><Badge variant="outline">scoring { V2_VERSION_IDS.scoring }</Badge><Badge variant="outline">norm { V2_VERSION_IDS.norm }</Badge></div><p>Статус normStatus: unvalidated. Пилотный индекс профиля не является долей людей и не используется для межличностного сравнения.</p></section>
+          <section className="method-block" id="adaptive"><span className="section-index">03</span><h2>Mercury 2.5 adaptive</h2><p>После Core60 backend отправляет Mercury только обезличенный AdaptiveContext. Mercury создаёт новые вопросы, а server-side validator проверяет traits, reason codes, формат, safety, дубли и лимит 10–15. При timeout работает approved fallback bank.</p><div className="adaptive-table"><div><span>Core</span><strong>60</strong><small>30 primary · 30 discrimination</small></div><div><span>Цель</span><strong>10–15</strong><small>по uncertainty</small></div><div><span>Quota</span><strong>≤ 3</strong><small>на trait</small></div><div><span>Provider</span><strong>Mercury 2.5</strong><small>server-only / validated</small></div></div></section>
+          <section className="method-block" id="quality"><span className="section-index">04</span><h2>Response quality</h2><p>Флаги качества не обнуляют результат. Они формируют RQI и при необходимости предупреждение для внутренней аналитики и отчёта.</p><div className="quality-list"><div><Check size={15} /><span><strong>Attention check</strong><small>В v2 используются только проверки, совместимые с Core60 scoring.</small></span></div><div><Check size={15} /><span><strong>Too fast</strong><small>Исследовательский threshold до пилотной калибровки</small></span></div><div><Check size={15} /><span><strong>Straight-lining</strong><small>Модальная частота одинаковых Likert ответов, а не только первый ответ</small></span></div><div><Check size={15} /><span><strong>Contradiction</strong><small>Дополнительный приоритет адаптивным уточнениям</small></span></div><div><Check size={15} /><span><strong>Legacy v1 markers</strong><small>Q243/Q246/Q249/Q250 сохранены только для исторических v1 snapshots и не входят в v2 trait score.</small></span></div></div></section>
           <section className="method-block" id="validation"><span className="section-index">05</span><h2>Что должно быть проверено до launch</h2><div className="validation-grid">{["Экспертный review и cognitive interviews", "Pilot ≈500+ и item analysis", "EFA/CFA и reliability / SE", "Measurement invariance и DIF", "Нормы 1500–3000+ и cross-validation", "Visual regression PDF и accessibility e2e"].map((item, index) => <div key={item}><span>{String(index + 1).padStart(2, "0")}</span><p>{item}</p></div>)}</div></section>
-          <section className="method-block limit-block" id="limits"><span className="section-index">06</span><h2>Ограничения</h2><p>Это не лицензированная реализация CliftonStrengths®, StrengthsFinder® или другого продукта Gallup. ORBITA—30 использует собственную модель, названия, вопросы, scoring и визуальный язык. Все 300 items имеют статус draft for pilot; перед production нужен независимый similarity review и юридическая проверка.</p><button className="text-link" onClick={() => onNavigate("privacy")} type="button">Privacy & data rights <ArrowRight size={15} /></button></section>
+          <section className="method-block limit-block" id="limits"><span className="section-index">06</span><h2>Ограничения</h2><p>Это не лицензированная реализация CliftonStrengths®, StrengthsFinder® или другого продукта Gallup. ORBITA—30 использует собственную модель, названия, вопросы, scoring и визуальный язык. Вся v2 версия — pilot / unvalidated, не clinical и не hiring decision tool; перед production нужен независимый review и юридическое подтверждение.</p><button className="text-link" onClick={() => onNavigate("privacy")} type="button">Privacy & data rights <ArrowRight size={15} /></button></section>
         </div>
       </div>
     </div>
@@ -824,15 +828,14 @@ export function MethodologyView({ onNavigate }: { onNavigate: (view: View) => vo
 }
 
 export function AdminView({ profile, onNavigate, metrics }: { profile?: ScoreProfile; onNavigate: (view: View) => void; metrics?: AdminMetrics }) {
-  const counts = itemCountSummary();
   const paidOrders = metrics?.orders.find((item) => item.status === "PAID")?.count ?? 0;
   const completedReports = metrics?.reports.find((item) => item.status === "COMPLETE")?.count ?? 0;
   const failedReports = metrics?.reports.find((item) => item.status === "REPORT_FAILED_RETRYABLE")?.count ?? 0;
   return (
     <div className="page-wrap admin-page">
       <div className="admin-heading"><div><div className="eyebrow">INTERNAL / ADMIN PREVIEW</div><h1>Контроль версии и качества.</h1><p>Лёгкий интерфейс для проверки item bank, scoring configs и telemetry без доступа к ответам по умолчанию.</p></div><Badge className="outline-badge">read-only demo</Badge></div>
-      <div className="admin-metrics"><div><span>Item bank</span><strong>{counts.total}</strong><small>Q001–Q300 · draft for pilot</small></div><div><span>Users</span><strong>{metrics?.users ?? "—"}</strong><small>server-side aggregate</small></div><div><span>Paid orders</span><strong>{metrics ? paidOrders : "—"}</strong><small>signed webhook events</small></div><div><span>Reports</span><strong>{metrics ? completedReports : "—"}</strong><small>{metrics ? failedReports + " retryable" : "admin allowlist required"}</small></div><div><span>Pilot sample</span><strong>{metrics?.pilotAnalytics.sampleSize ?? "—"}</strong><small>{metrics?.pilotAnalytics.insufficientData ? `нужно ≥${metrics.pilotAnalytics.minimumSampleForPsychometrics}, stats скрыты` : "descriptive pilot only"}</small></div></div>
-      <div className="admin-grid"><Card className="admin-panel"><CardHeader><CardTitle>Item Bank</CardTitle><CardDescription>Структура, необходимая для локального review</CardDescription></CardHeader><CardContent><div className="admin-table"><div className="admin-table-head"><span>ID range</span><span>Тип</span><span>Кол-во</span><span>Статус</span></div>{[["Q001–Q150", "forced-choice", counts.forced, "draft"], ["Q151–Q240", "Likert core", counts.likert, "draft"], ["Q241–Q250", "quality", counts.quality, "research-only"], ["Q251–Q280", "adaptive direct", counts.adaptiveDirect, "pilot pool"], ["Q281–Q300", "discriminator", counts.adaptiveForced, "pilot pool"]].map(([range, type, count, status]) => <div className="admin-table-row" key={range}><span>{range}</span><span>{type}</span><strong>{count}</strong><Badge variant={status === "pilot pool" ? "secondary" : "outline"}>{status}</Badge></div>)}</div></CardContent></Card><Card className="admin-panel"><CardHeader><CardTitle>Последний run</CardTitle><CardDescription>{metrics ? "Сводка доступна только allowlisted admin" : "Для сводки нужен admin allowlist"}</CardDescription></CardHeader><CardContent><div className="audit-list"><div><span className="audit-icon"><Check size={14} /></span><span><strong>Score JSON</strong><small>{profile ? "готов · " + profile.versions.scoring : "ожидает сессию"}</small></span></div><div><span className="audit-icon"><ShieldCheck size={14} /></span><span><strong>Quality flags</strong><small>{profile ? profile.responseQuality.flags.length + " flags" : "не запускался"}</small></span></div><div><span className="audit-icon"><FileText size={14} /></span><span><strong>Report JSON</strong><small>{metrics ? completedReports + " complete" : "protected metrics"}</small></span></div><div><span className="audit-icon"><LockKeyhole size={14} /></span><span><strong>PII boundary</strong><small>{metrics ? "aggregate only" : "payload minimized"}</small></span></div></div><Button className="orbita-button secondary-button full-button" onClick={() => onNavigate("methodology")}>Открыть методологию <ArrowRight size={15} /></Button></CardContent></Card></div>
+      <div className="admin-metrics"><div><span>Core item bank</span><strong>{CORE60_BANK.length}</strong><small>Core60 v1 · pilot / unvalidated</small></div><div><span>Users</span><strong>{metrics?.users ?? "—"}</strong><small>server-side aggregate</small></div><div><span>Paid orders</span><strong>{metrics ? paidOrders : "—"}</strong><small>signed webhook events</small></div><div><span>Reports</span><strong>{metrics ? completedReports : "—"}</strong><small>{metrics ? failedReports + " retryable" : "admin allowlist required"}</small></div><div><span>Pilot sample</span><strong>{metrics?.pilotAnalytics.sampleSize ?? "—"}</strong><small>{metrics?.pilotAnalytics.insufficientData ? `нужно ≥${metrics.pilotAnalytics.minimumSampleForPsychometrics}, stats скрыты` : "descriptive pilot only"}</small></div></div>
+      <div className="admin-grid"><Card className="admin-panel"><CardHeader><CardTitle>Core60 Item Bank</CardTitle><CardDescription>Новая стандартизированная версия; v1 Q001–Q300 сохранён как legacy.</CardDescription></CardHeader><CardContent><div className="admin-table"><div className="admin-table-head"><span>Диапазон</span><span>Тип</span><span>Кол-во</span><span>Статус</span></div>{[["Q001–Q030", "primary Likert", CORE60_LIKERT_COUNT, "core60-v1"], ["Q031–Q060", "discrimination FC", CORE60_FORCED_COUNT, "core60-v1"], ["FB-01–FB-24", "approved fallback", APPROVED_FALLBACK_BANK.length, "fallback"]].map(([range, type, count, status]) => <div className="admin-table-row" key={String(range)}><span>{range}</span><span>{type}</span><strong>{count}</strong><Badge variant={status === "fallback" ? "secondary" : "outline"}>{status}</Badge></div>)}</div></CardContent></Card><Card className="admin-panel"><CardHeader><CardTitle>Последний run</CardTitle><CardDescription>{metrics ? "Сводка доступна только allowlisted admin" : "Для сводки нужен admin allowlist"}</CardDescription></CardHeader><CardContent><div className="audit-list"><div><span className="audit-icon"><Check size={14} /></span><span><strong>Score JSON</strong><small>{profile ? "готов · " + profile.versions.scoring : "ожидает сессию"}</small></span></div><div><span className="audit-icon"><ShieldCheck size={14} /></span><span><strong>Quality flags</strong><small>{profile ? profile.responseQuality.flags.length + " flags" : "не запускался"}</small></span></div><div><span className="audit-icon"><FileText size={14} /></span><span><strong>Report JSON</strong><small>{metrics ? completedReports + " complete" : "protected metrics"}</small></span></div><div><span className="audit-icon"><LockKeyhole size={14} /></span><span><strong>PII boundary</strong><small>{metrics ? "aggregate only" : "payload minimized"}</small></span></div></div><Button className="orbita-button secondary-button full-button" onClick={() => onNavigate("methodology")}>Открыть методологию <ArrowRight size={15} /></Button></CardContent></Card></div>
     </div>
   );
 }

@@ -83,6 +83,13 @@ const reportSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
+    assessmentVersion: { type: "string" },
+    coreQuestionCount: { type: "integer", minimum: 0 },
+    adaptiveQuestionCount: { type: "integer", minimum: 0, maximum: 15 },
+    adaptiveProvider: { type: "string" },
+    adaptiveFallbackUsed: { type: "boolean" },
+    adaptiveVersion: { type: "string" },
+    reportVersion: { type: "string" },
     interpretationLibraryVersion: { type: "string", enum: [INTERPRETATION_LIBRARY_VERSION] },
     executiveSummary: { type: "string" },
     topStrengths: {
@@ -208,6 +215,13 @@ function isSourceKeysShape(value: unknown) {
 function isReportJSON(value: unknown): value is ReportJSON {
   if (!value || typeof value !== "object") return false;
   const report = value as Record<string, unknown>;
+  if (report.assessmentVersion !== undefined && typeof report.assessmentVersion !== "string") return false;
+  if (report.coreQuestionCount !== undefined && (typeof report.coreQuestionCount !== "number" || !Number.isInteger(report.coreQuestionCount) || report.coreQuestionCount < 0)) return false;
+  if (report.adaptiveQuestionCount !== undefined && (typeof report.adaptiveQuestionCount !== "number" || !Number.isInteger(report.adaptiveQuestionCount) || report.adaptiveQuestionCount < 0 || report.adaptiveQuestionCount > 15)) return false;
+  if (report.reportVersion !== undefined && typeof report.reportVersion !== "string") return false;
+  if (report.adaptiveProvider !== undefined && typeof report.adaptiveProvider !== "string") return false;
+  if (report.adaptiveFallbackUsed !== undefined && typeof report.adaptiveFallbackUsed !== "boolean") return false;
+  if (report.adaptiveVersion !== undefined && typeof report.adaptiveVersion !== "string") return false;
   if (report.interpretationLibraryVersion !== INTERPRETATION_LIBRARY_VERSION) return false;
   if (typeof report.executiveSummary !== "string" || report.executiveSummary.length > 2400) return false;
   if (!Array.isArray(report.topStrengths) || report.topStrengths.length !== 5) return false;
@@ -254,6 +268,11 @@ function canonicalizeApprovedSemantics(report: ReportJSON, profile: ScoreProfile
   const canonical = buildReport(profile);
   return {
     ...report,
+    assessmentVersion: canonical.assessmentVersion,
+    coreQuestionCount: canonical.coreQuestionCount,
+    adaptiveQuestionCount: canonical.adaptiveQuestionCount,
+    adaptiveVersion: canonical.adaptiveVersion,
+    reportVersion: canonical.reportVersion,
     interpretationLibraryVersion: INTERPRETATION_LIBRARY_VERSION,
     topStrengths: canonical.topStrengths,
     combinations: canonical.combinations,

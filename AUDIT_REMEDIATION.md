@@ -4,6 +4,8 @@ Date: 2026-09-16
 Scope: attached ORBITA-30 remediation audit and production/pilot readiness review  
 Decision: the implementation and reproducible clean-room release checks pass locally; the master engineering gate remains NO only until the external GitHub Actions clean Linux CI run is recorded. Closed-pilot, public-paid and validated-claims gates remain blocked by explicit external gates.
 
+This remediation record predates the v2 migration in the implementation rows below. Current v2 evidence is tracked in `FINAL_ACCEPTANCE.md`, `TEST_MATRIX.md` and the v2 release manifest; legacy Q001–Q300 references in this historical audit are not the current assessment flow.
+
 ## Invariants preserved
 
 - `lib/item-bank.ts` was not rewritten. The source still contains exactly Q001–Q300, unique IDs and the original taxonomy/text.
@@ -16,7 +18,7 @@ Decision: the implementation and reproducible clean-room release checks pass loc
 |---|---|---|---|
 | Norm/scoring safety | `NormProvider`, `ScoringProvider`, forced `normStatus=unvalidated` at snapshot boundaries, bounded pilot profile index, uncertainty range, new version IDs | unit contract; methodology UI; report/PDF wording scan; malicious legacy `normed` snapshot regression | CLOSED |
 | AI report safety | versioned `lib/interpretation-library.ts`; minimized payload; strict schema; canonical approved semantics; deterministic fallback | unit report contract; provider code path | CLOSED |
-| Adaptive safety | selector `0.3`; priority/expected-information payload; boundary signals; exact reason-code enum; server whitelist; no duplicates/answered/max 3 | adaptive unit contract; backend validation | CLOSED |
+| Adaptive safety | v2 Mercury provider; minimized context; exact reason-code enum; schema/trait/semantic/safety validator; no score weights; max two attempts then approved fallback | `lib/mercury-adaptive-provider.ts`, `tests/mercury-adaptive.test.ts` | CLOSED locally; staging key/E2E OPEN |
 | Response quality | modal-frequency straight-line check; exploratory too-fast threshold; pilot RQI; Q243/Q246/Q249/Q250 research-only markers | quality unit contract; methodology text | CLOSED |
 | Payment integrity | hosted Stripe Checkout; backend catalog amount/currency; signed webhook; exact event/order/session/metadata/payment-status checks; replay hash/idempotency; paid non-downgrade | payment/signature unit contracts; D1 migration 0006 | CLOSED |
 | Retention | `worker/index.ts` scheduled handler and `0 2 * * *`; no active states; bounded dry-run; R2-first deletion; D1 cleanup; transaction records retained; pseudonymous audit; idempotent rerun | retention policy unit contract; built worker marker; internal endpoint | CLOSED |
@@ -58,7 +60,7 @@ npm run package:source
 npm audit --omit=dev --audit-level=high
 ```
 
-The E2E script applies every checked-in migration to an isolated local D1 state, seeds only a local test entitlement, starts the built custom Worker, verifies catalog/auth/consent, saves Q001–Q250, exercises response replay, completes adaptive questions, validates norm-safe score and approved report, obtains/downloads a signed PDF, checks allowlisted telemetry and exports the account artifact.
+The current v2 E2E script applies every checked-in migration to an isolated local D1 state, seeds only a local test entitlement, starts the built custom Worker, verifies catalog/auth/consent, saves 60 Core items, completes adaptive fallback snapshots, validates norm-safe scoring and approved report, obtains/downloads a signed PDF, checks allowlisted telemetry and exports the account artifact. The historical v1 E2E fixture remains separately documented where it explicitly saves Q001–Q250.
 
 ## External blockers and launch decisions
 

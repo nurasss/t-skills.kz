@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
 import { consumeRateLimit, consentSessionForUser, deleteAssessmentForUser, getConsentsForUser, getSessionForUser, nextItemIdForSession, type ConsentChoices } from "@/lib/durable-store";
+import { CORE60_BANK } from "@/lib/v2-item-bank";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const viewer = viewerOrResponse(request);
@@ -18,8 +19,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       locale: session.locale,
       versions: session.versions,
       next_item_id: nextItemIdForSession(session),
-      core_answered: Object.keys(session.responses).filter((itemId) => Number(itemId.slice(1)) <= 250).length,
+      core_answered: Object.keys(session.responses).filter((itemId) => session.versions.assessment === "orbita30_ru_v2" ? CORE60_BANK.some((item) => item.id === itemId) : Number(itemId.slice(1)) <= 250).length,
       adaptive_item_ids: session.adaptiveItemIds,
+      adaptive_items: session.adaptiveItems,
+      adaptive_generation_status: session.adaptiveGenerationStatus ?? null,
+      adaptive_fallback_used: session.adaptiveFallbackUsed ?? false,
       response_count: Object.keys(session.responses).length,
       responses: session.responses,
       response_times: session.responseTimes,

@@ -97,9 +97,9 @@ async function waitForServer() {
   throw new Error("E2E_SERVER_START_TIMEOUT");
 }
 
-if (!existsSync(configPath)) {
-  execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
-}
+// Always rebuild so this command verifies the current working tree rather than
+// silently exercising a stale dist/ artifact from a previous release.
+execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
 
 const workerBundle = readFileSync(workerArtifact, "utf8");
 const wranglerConfig = JSON.parse(readFileSync(configPath, "utf8"));
@@ -158,16 +158,16 @@ try {
   const session = await request("/api/assessments", { method: "POST", body: JSON.stringify({ test_id: "orbita30" }) });
   assert(session.response.status === 201 && typeof session.body?.id === "string", "assessment creation after seeded entitlement");
   const sessionId = session.body.id;
-  assert(session.body.locale === "ru" && session.body.versions.translation === "ru-source-v1", "assessment captures canonical locale and translation version");
+  assert(session.body.locale === "ru" && session.body.versions.assessment === "orbita30_ru_v2" && session.body.versions.itemBank === "core60-v1" && session.body.versions.translation === "ru-source-v1", "assessment captures v2 versions and canonical locale");
   const otherUser = await request(`/api/assessments/${sessionId}`, { headers: { "x-orbita-preview-user": `${userId}_other` } });
   assert(otherUser.response.status === 404, "user B cannot read user A assessment by direct ID");
   const consent = await request(`/api/assessments/${sessionId}`, { method: "PATCH", body: JSON.stringify({ consents: { terms: true, privacy: true, research: false, marketing: false } }) });
   assert(consent.response.status === 200, "versioned consent");
 
   let sequence = 1;
-  for (let number = 1; number <= 250; number += 1) {
+  for (let number = 1; number <= 60; number += 1) {
     const itemId = `Q${String(number).padStart(3, "0")}`;
-    const value = number === 241 ? 5 : number === 244 ? 2 : number === 247 ? 6 : number >= 241 ? 2 : number <= 150 ? 0 : 4;
+    const value = number <= 30 ? 4 : 0;
     if (number === 1) {
       const missingIdempotencyKey = await request(`/api/assessments/${sessionId}/responses`, { method: "POST", body: JSON.stringify({ item_id: itemId, response: value }) });
       assert(missingIdempotencyKey.response.status === 422 && missingIdempotencyKey.body?.error === "IDEMPOTENCY_KEY_REQUIRED", "response submit requires an idempotency key");
@@ -179,22 +179,24 @@ try {
       assert(replay.response.status === 200 && replay.body?.replay === true, "response idempotency replay");
       server = await restartServer(server);
       const resumed = await request(`/api/assessments/${sessionId}`);
-      assert(resumed.response.status === 200 && resumed.body?.responses?.Q001 === value && resumed.body?.next_item_id === "Q002", "assessment resumes after Worker restart with the next item");
+      assert(resumed.response.status === 200 && resumed.body?.responses?.Q001 === value && resumed.body?.next_item_id === "Q002" && resumed.body?.core_answered === 1, "assessment resumes after Worker restart with the next item");
     }
     sequence += 1;
   }
   const adaptive = await request(`/api/assessments/${sessionId}/complete-core`, { method: "POST", body: "{}" });
-  assert(adaptive.response.status === 200 && adaptive.body?.adaptive?.selectedItemIds?.length === 12, "adaptive selection");
-  for (const itemId of adaptive.body.adaptive.selectedItemIds) {
-    const number = Number(itemId.slice(1));
-    const value = number >= 281 ? 0 : 4;
+  assert(adaptive.response.status === 200 && adaptive.body?.adaptive?.selectedItemIds?.length >= 10 && adaptive.body?.adaptive?.selectedItemIds?.length <= 15 && adaptive.body?.adaptive_items?.length === adaptive.body?.adaptive?.selectedItemIds?.length, "v2 adaptive generation/fallback selection");
+  assert(adaptive.body?.state === "ADAPTIVE_FALLBACK" && adaptive.body?.adaptive?.mode === "approved-fallback", "local E2E uses approved adaptive fallback");
+  for (const question of adaptive.body.adaptive_items) {
+    const itemId = question.questionId;
+    const value = question.format === "forced_choice" ? 0 : 4;
     const response = await request(`/api/assessments/${sessionId}/responses`, { method: "POST", headers: { "Idempotency-Key": `${sessionId}:${itemId}` }, body: JSON.stringify({ item_id: itemId, response: value, response_time_ms: 1000, client_seq: sequence }) });
     assert(response.response.status === 200, `save ${itemId} (${response.response.status}): ${JSON.stringify(response.body)}`);
     sequence += 1;
   }
   const completed = await request(`/api/assessments/${sessionId}/complete`, { method: "POST", body: "{}" });
   assert([200, 202].includes(completed.response.status), "complete assessment");
-  assert(completed.body?.score?.normStatus === "unvalidated", "norm-safe score persisted");
+  assert(completed.body?.score?.normStatus === "unvalidated" && completed.body?.score?.versions?.assessment === "orbita30_ru_v2", "norm-safe v2 score persisted");
+  assert(completed.body?.report?.assessmentVersion === "orbita30_ru_v2" && completed.body?.report?.coreQuestionCount === 60 && completed.body?.report?.adaptiveQuestionCount >= 10 && completed.body?.report?.adaptiveQuestionCount <= 15 && completed.body?.report?.adaptiveFallbackUsed === true, "v2 report metadata");
   assert(completed.body?.report?.interpretationLibraryVersion === "approved-interpretation-v1", "approved report library version");
   const reportId = completed.body.report_id;
   const reportBeforeRegeneration = await request(`/api/reports/${reportId}`);
@@ -238,7 +240,7 @@ try {
   const exported = await request("/api/account/export", { method: "POST", body: "{}" });
   assert(exported.response.status === 201 && typeof exported.body?.downloadPath === "string", "data export");
   const exportedFile = await request(exported.body.downloadPath);
-  assert(exportedFile.response.status === 200 && exportedFile.buffer.includes(Buffer.from("responses")) && exportedFile.buffer.includes(Buffer.from("presentation_metadata_json")) && exportedFile.buffer.includes(Buffer.from("itemBankVersion")), "export artifact includes response presentation metadata");
+  assert(exportedFile.response.status === 200 && exportedFile.buffer.includes(Buffer.from("responses")) && exportedFile.buffer.includes(Buffer.from("response_source")) && exportedFile.buffer.includes(Buffer.from("adaptiveQuestions")) && exportedFile.buffer.includes(Buffer.from("presentation_metadata_json")) && exportedFile.buffer.includes(Buffer.from("itemBankVersion")), "export artifact includes v2 response source and adaptive snapshots");
   const otherExportFile = await request(exported.body.downloadPath, { headers: { "x-orbita-preview-user": `${userId}_other` } });
   assert(otherExportFile.response.status === 404, "user B cannot read user A export");
 
@@ -283,7 +285,7 @@ try {
   const deleteSessionId = deletable.body.id;
   const deleteConsent = await request(`/api/assessments/${deleteSessionId}`, { method: "PATCH", headers: deleteHeaders, body: JSON.stringify({ consents: { terms: true, privacy: true, research: false, marketing: false } }) });
   assert(deleteConsent.response.status === 200, "deletion fixture consent");
-  const deleteAnswer = await request(`/api/assessments/${deleteSessionId}/responses`, { method: "POST", headers: { ...deleteHeaders, "Idempotency-Key": `${deleteSessionId}:Q001` }, body: JSON.stringify({ item_id: "Q001", response: 0, response_time_ms: 1000, client_seq: 1 }) });
+  const deleteAnswer = await request(`/api/assessments/${deleteSessionId}/responses`, { method: "POST", headers: { ...deleteHeaders, "Idempotency-Key": `${deleteSessionId}:Q001` }, body: JSON.stringify({ item_id: "Q001", response: 4, response_time_ms: 1000, client_seq: 1 }) });
   assert(deleteAnswer.response.status === 200, "deletion fixture response persisted");
   const deleteAssessment = await request(`/api/assessments/${deleteSessionId}`, { method: "DELETE", headers: deleteHeaders, body: JSON.stringify({ confirm: "DELETE_ASSESSMENT" }) });
   assert(deleteAssessment.response.status === 200 && deleteAssessment.body?.deleted === true, "assessment deletion endpoint purges owned assessment");

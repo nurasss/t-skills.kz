@@ -1,0 +1,1 @@
+ALTER TABLE `assessments` ADD `adaptive_generation_attempts` integer DEFAULT 0 NOT NULL;

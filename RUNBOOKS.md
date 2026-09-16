@@ -30,7 +30,14 @@ RPO: NOT APPROVED BY BUSINESS
 2. Inspect assessment state, `updated_at`, `report_id`, `error_code`, `adaptive_runs` and `reports` metadata.
 3. For a report in `REPORT_FAILED_RETRYABLE`, call the owner-scoped regenerate route once, respecting its rate limit.
 4. Regeneration must reuse the frozen `score_json`; compare the score snapshot before/after.
-5. If the PDF is missing in R2, recreate only the report/PDF layer. Do not recalculate scoring or alter Q001–Q300.
+5. If the PDF is missing in R2, recreate only the report/PDF layer. Do not recalculate a frozen score, regenerate an accepted adaptive set, or alter historical v1 Q001–Q300 snapshots.
+
+## v2 Mercury generation recovery
+
+1. Inspect `adaptive_generation_status`, `adaptive_generation_attempts`, `adaptive_generation_lock`, `adaptive_runs` and `adaptive_questions` for the owner-scoped assessment.
+2. `ADAPTIVE_GENERATING` older than the lock timeout is recoverable by the owner-scoped complete-core retry; an accepted `adaptive_questions` snapshot must always be reused.
+3. `ADAPTIVE_PROVIDER_FAILED` may be retried within the bounded generation-attempt limit. Missing key, timeout, 429, 5xx or invalid output must end in `ADAPTIVE_FALLBACK`, never in random questions.
+4. Never copy raw AdaptiveContext, answers, PII, API keys or provider output into a ticket. Record only provider, model, latency, attempt count, token counts, validation/fallback reason and question count.
 
 ## Suspected ownership takeover or data incident
 

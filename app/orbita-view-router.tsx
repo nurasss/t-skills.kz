@@ -24,6 +24,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
     activeItem,
     activeValue,
     questionIndex,
+    coreItemCount,
     adaptiveIndex,
     adaptiveItems,
     selection,
@@ -63,7 +64,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
   if (view === "detail") return <DetailView onNavigate={go} onDemo={openDemo} />;
   if (view === "checkout") return <CheckoutView onNavigate={go} onCheckout={startCheckout} busy={checkoutBusy} error={checkoutError} catalog={publicCatalog} />;
   if (view === "consent") return <ConsentView consents={consents} onConsentChange={setConsent} onBegin={beginAssessment} onBack={() => go("account")} onPrivacy={() => go("privacy")} />;
-  if (view === "assessment") return <AssessmentView phase={phase} item={activeItem} currentIndex={phase === "core" ? questionIndex % 50 : adaptiveIndex} total={phase === "core" ? 50 : adaptiveItems.length} blockNumber={Math.floor(questionIndex / 50) + 1} selectedValue={activeValue} onAnswer={saveResponse} onNext={nextQuestion} onPause={() => go("break")} autosaveStatus={autosaveStatus} elapsedSeconds={elapsedSeconds} />;
+  if (view === "assessment") return <AssessmentView phase={phase} item={activeItem} currentIndex={phase === "core" ? questionIndex : adaptiveIndex} total={phase === "core" ? coreItemCount : adaptiveItems.length} blockNumber={Math.floor(questionIndex / (coreItemCount === 60 ? 20 : 50)) + 1} selectedValue={activeValue} onAnswer={saveResponse} onNext={nextQuestion} onPause={() => go("break")} autosaveStatus={autosaveStatus} elapsedSeconds={elapsedSeconds} />;
   if (view === "break") return <BreakView adaptiveReady={phase === "adaptive"} selection={selection} onContinue={continueFromBreak} onExit={() => go("account")} />;
   if (view === "processing") return <ProcessingView status={processingStatus} onOpenResults={() => go("results")} onRetry={retryReport} profile={profile} />;
   if (view === "results" && profile && report) return <ResultsView profile={profile} report={report} provider={reportProvider} onNavigate={go} onPrint={downloadReport} />;

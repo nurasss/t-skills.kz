@@ -78,6 +78,20 @@
       "when": 1789540954754,
       "tag": "0010_clever_unicorn",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789560751967,
+      "tag": "0011_hard_lifeguard",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789561935526,
+      "tag": "0012_adaptive_generation_attempts",
+      "breakpoints": true
     }
   ]
 }

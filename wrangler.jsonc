@@ -6,7 +6,7 @@
   "preview_urls": false,
   "compatibility_date": "2026-05-15",
   "compatibility_flags": ["nodejs_compat"],
-  "assets": { "directory": "dist/client", "binding": "ASSETS", "run_worker_first": true },
+  "assets": { "directory": "dist/client", "binding": "ASSETS", "run_worker_first": false },
   "observability": { "enabled": true },
   "env": {
     "staging": {
@@ -19,11 +19,15 @@
         "CF_ACCESS_AUDIENCE": "99610357344699a1880b9e98bd30922074c9f9b0c4f001a329848d79ab1a21bc",
         "PAYMENTS_ENABLED": "false",
         "ENTITLEMENT_MODE": "beta-free",
-        "AI_ENABLED": "false",
-        "ADAPTIVE_PROVIDER": "deterministic",
+        "AI_ENABLED": "true",
+        "ADAPTIVE_PROVIDER": "mercury",
+        "MERCURY_MODEL": "mercury-2.5",
+        "MERCURY_TIMEOUT_MS": "12000",
+        "MERCURY_MAX_RETRIES": "2",
         "REPORT_PROVIDER": "approved-library",
         "RETENTION_DRY_RUN": "true"
       },
+      "secrets": { "required": ["INCEPTION_API_KEY"] },
       "d1_databases": [{
         "binding": "DB",
         "database_name": "orbita30-staging",
@@ -45,9 +49,13 @@
         "ENTITLEMENT_MODE": "beta-free",
         "AI_ENABLED": "false",
         "ADAPTIVE_PROVIDER": "deterministic",
+        "MERCURY_MODEL": "mercury-2.5",
+        "MERCURY_TIMEOUT_MS": "12000",
+        "MERCURY_MAX_RETRIES": "2",
         "REPORT_PROVIDER": "approved-library",
         "RETENTION_DRY_RUN": "true"
       },
+      "secrets": { "required": ["INCEPTION_API_KEY"] },
       "d1_databases": [{
         "binding": "DB",
         "database_name": "orbita30-production",

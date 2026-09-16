@@ -29,7 +29,7 @@ const child = spawn(process.execPath, [
   "--ip", "127.0.0.1", "--inspector-port", "0", "--port", String(port),
   "--var", "ORBITA_ENV:development", "--var", "PAYMENTS_ENABLED:false",
   "--var", "ENTITLEMENT_MODE:beta-free", "--var", "AI_ENABLED:false",
-  "--var", "ADAPTIVE_PROVIDER:deterministic", "--var", "REPORT_PROVIDER:approved-library",
+  "--var", "ADAPTIVE_PROVIDER:fallback", "--var", "MERCURY_MODEL:mercury-2.5", "--var", "REPORT_PROVIDER:approved-library",
   "--var", "PDF_SIGNING_SECRET:beta-smoke-signing",
 ], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
 child.stdout.on("data", (chunk) => { output += chunk.toString(); });
@@ -52,7 +52,7 @@ try {
 
   const catalog = await fetch(`${baseUrl}/api/catalog`, { headers });
   const catalogBody = await catalog.json();
-  assert(catalog.ok && catalogBody.test?.accessMode === "beta-free" && catalogBody.test?.availableForCheckout === false, "beta catalog access mode");
+  assert(catalog.ok && catalogBody.test?.assessmentVersion === "orbita30_ru_v2" && catalogBody.test?.accessMode === "beta-free" && catalogBody.test?.availableForCheckout === false, "beta catalog access mode and v2 version");
 
   const checkout = await fetch(`${baseUrl}/api/checkout`, { method: "POST", headers, body: JSON.stringify({ test_id: "orbita30" }) });
   assert(checkout.status === 503, "checkout is disabled");

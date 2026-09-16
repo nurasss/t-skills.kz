@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { readdirSync, rmSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = process.cwd();
@@ -79,7 +79,9 @@ async function waitForServer() {
   throw new Error(`LOAD_SERVER_START_TIMEOUT\n${serverOutput.slice(-3000)}`);
 }
 
-if (!existsSync(config)) execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
+// Always rebuild so this gate verifies the current working tree rather than a
+// stale dist/ artifact left by an earlier release.
+execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
 rmSync(state, { recursive: true, force: true });
 for (const migration of readdirSync("drizzle").filter((entry) => /^\d+_.*\.sql$/.test(entry)).sort()) {
   wrangler(["d1", "execute", "DB", "--local", "--config", config, "--persist-to", state, "--file", `drizzle/${migration}`]);
@@ -92,7 +94,7 @@ wrangler([
     `INSERT INTO users (id,email,full_name,locale,created_at,updated_at,deleted_at) VALUES (${sql(userId)},${sql(`${userId}@local.invalid`)},'Load fixture','ru',${now},${now},NULL)`,
     `INSERT INTO orders (id,user_id,test_id,amount_minor,currency,status,provider,provider_checkout_id,provider_checkout_url,provider_payment_id,provider_event_id,idempotency_key,created_at,updated_at) VALUES (${sql(`${userId}_order`)},${sql(userId)},'orbita30',150000,'KZT','PAID','load-fixture',NULL,NULL,NULL,NULL,${sql(`${userId}_idem`)},${now},${now})`,
     `INSERT INTO entitlements (id,order_id,user_id,test_id,status,created_at,revoked_at) VALUES (${sql(`${userId}_entitlement`)},${sql(`${userId}_order`)},${sql(userId)},'orbita30','ACTIVE',${now},NULL)`,
-    `INSERT INTO assessments (id,user_id,entitlement_id,test_id,locale,state,versions_json,adaptive_item_ids_json,selection_mode,preliminary_score_json,final_score_json,report_id,client_seq,created_at,consented_at,completed_at,purge_state,purge_after,updated_at) VALUES (${sql(sessionId)},${sql(userId)},${sql(`${userId}_entitlement`)},'orbita30','ru','CONSENTED','{}','[]',NULL,NULL,NULL,NULL,0,${now},${now},NULL,'ACTIVE',NULL,${now})`,
+    `INSERT INTO assessments (id,user_id,entitlement_id,test_id,locale,state,versions_json,adaptive_item_ids_json,selection_mode,preliminary_score_json,final_score_json,report_id,client_seq,created_at,consented_at,completed_at,purge_state,purge_after,updated_at) VALUES (${sql(sessionId)},${sql(userId)},${sql(`${userId}_entitlement`)},'orbita30','ru','CONSENTED','{"assessment":"orbita30_ru_v2","itemBank":"core60-v1","scoring":"mvp-0.5-core60","adaptive":"mercury-generated-0.1","norms":"unvalidated-v2","norm":"unvalidated-v2","selector":"mercury-generated-0.1","report":"report-0.4","translation":"ru-source-v1"}','[]',NULL,NULL,NULL,NULL,0,${now},${now},NULL,'ACTIVE',NULL,${now})`,
   ].join(";"),
 ]);
 
@@ -107,7 +109,7 @@ child.stderr.on("data", (chunk) => { serverOutput += chunk; });
 try {
   await waitForServer();
   const started = performance.now();
-  const queue = Array.from({ length: 250 }, (_, index) => index + 1);
+  const queue = Array.from({ length: 60 }, (_, index) => index + 1);
   // Production clients submit one answer at a time, but this load gate also
   // exercises optimistic server sequencing under concurrent retries.
   const workers = Array.from({ length: 2 }, async () => {
@@ -115,7 +117,7 @@ try {
       const number = queue.shift();
       if (!number) return;
       const itemId = `Q${String(number).padStart(3, "0")}`;
-      const responseValue = number === 241 ? 5 : number === 244 ? 2 : number === 247 ? 6 : number >= 241 ? 2 : number <= 150 ? 0 : 1;
+      const responseValue = number <= 30 ? 4 : 0;
       let result;
       for (let attempt = 0; attempt < 4; attempt += 1) {
         result = await timed("responses", `/api/assessments/${sessionId}/responses`, {
@@ -136,20 +138,20 @@ try {
     return timed("responses", `/api/assessments/${sessionId}/responses`, {
       method: "POST",
       headers: { "Idempotency-Key": `${sessionId}:${itemId}` },
-      body: JSON.stringify({ item_id: itemId, response: 0, response_time_ms: 800, client_seq: index + 1 }),
+      body: JSON.stringify({ item_id: itemId, response: index < 30 ? 4 : 0, response_time_ms: 800, client_seq: index + 1 }),
     });
   }));
   assert(replayResults.every(({ response, body }) => response.status === 200 && body?.replay === true), "idempotent replay under concurrency");
 
   const before = await timed("assessment", `/api/assessments/${sessionId}`);
-  assert(before.response.status === 200 && Object.keys(before.body?.responses ?? {}).length === 250, "zero lost or duplicated core responses");
+  assert(before.response.status === 200 && Object.keys(before.body?.responses ?? {}).length === 60 && before.body?.core_answered === 60, "zero lost or duplicated Core60 responses");
   const completions = await Promise.all([
     timed("complete-core", `/api/assessments/${sessionId}/complete-core`, { method: "POST", body: "{}" }),
     timed("complete-core", `/api/assessments/${sessionId}/complete-core`, { method: "POST", body: "{}" }),
   ]);
   assert(completions.every(({ response }) => response.status === 200), "concurrent complete-core is idempotent");
   const after = await timed("assessment", `/api/assessments/${sessionId}`);
-  assert(after.body?.state === "ADAPTIVE_IN_PROGRESS", `valid state after completion: ${after.body?.state}`);
+  assert(after.body?.state === "ADAPTIVE_FALLBACK" && after.body?.adaptive_items?.length >= 10 && after.body?.adaptive_items?.length <= 15, `valid state after v2 adaptive completion: ${after.body?.state}`);
 
   const elapsedSeconds = (performance.now() - started) / 1000;
   for (const [name, entries] of samples) {
@@ -169,7 +171,7 @@ try {
       retryable_conflicts: retryableConflicts,
     }));
   }
-  console.log("LOAD_GATE=PASS lost=0 duplicated=0 idempotency=PASS state=ADAPTIVE_IN_PROGRESS");
+  console.log("LOAD_GATE=PASS lost=0 duplicated=0 idempotency=PASS state=ADAPTIVE_FALLBACK");
 } finally {
   child.kill("SIGTERM");
   rmSync(state, { recursive: true, force: true });

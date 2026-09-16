@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-16 — ORBITA-30 v2 Core60 + Mercury adaptive migration
+
+- Added immutable `orbita30_ru_v2` Core60 (`core60-v1`): 30 primary Likert items plus 30 discrimination forced-choice items covering all 30 traits and 6 domains; legacy Q001–Q300 remains available for v1 snapshots.
+- Added deterministic v2 scoring (`mvp-0.5-core60`) with bounded adaptive refinement, explicit uncertainty/boundary/contradiction context and `normStatus=unvalidated`.
+- Added `MercuryAdaptiveProvider` for Inception Labs `mercury-2.5`, versioned Russian prompt, strict JSON schema, safety/semantic validation, two-attempt retry policy and a 24-item approved deterministic fallback bank.
+- Added immutable generated-question snapshots, response-source metadata, adaptive-generation lock/attempt state, resume-safe state transitions and aggregate Mercury analytics.
+- Updated report/PDF/UI/API/export/smoke/load/docs and kept production Mercury disabled until staging secret provisioning and E2E acceptance.
+
 ## 2026-09-16 — Release hardening follow-up
 
 - Made assessment creation safe under concurrent clicks, returned the actual next unanswered item, and serialized concurrent response writes with an optimistic server sequence.

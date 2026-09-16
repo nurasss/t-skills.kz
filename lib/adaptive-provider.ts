@@ -13,13 +13,20 @@ import { parseStrictJsonProviderOutput, providerFailureReason } from "@/lib/prov
 
 export type AdaptiveRunRecord = {
   selectorVersion: string;
-  provider: "openai" | "approved-library";
+  provider: "openai" | "approved-library" | "inception-labs" | "approved-fallback";
   modelId: string | null;
   inputHash: string;
   outputHash: string;
   latencyMs: number;
   validationResult: "passed" | "fallback";
   fallbackReason: string | null;
+  promptVersion?: string;
+  adaptiveVersion?: string;
+  providerRequestId?: string | null;
+  attemptCount?: number;
+  promptTokens?: number | null;
+  outputTokens?: number | null;
+  generatedCount?: number;
 };
 
 export type AdaptiveDecision = {

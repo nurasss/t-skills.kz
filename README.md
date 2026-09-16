@@ -1,12 +1,12 @@
 # ORBITA—30
 
-Production-oriented foundation for the ORBITA—30 strengths assessment: a 300-item Russian item bank, deterministic scoring, backend-validated adaptive selection, protected ChatGPT identity, durable Cloudflare D1 state, private R2 report artifacts, short-lived signed PDF links, Stripe Checkout/webhooks, exports and deletion workflows, privacy-safe telemetry, scheduled retention, and a private Sites deployment.
+Production-oriented ORBITA—30 v2 assessment: 60 fixed Russian Core items, deterministic 30-trait scoring, 10–15 server-validated Mercury 2.5 follow-up items (with an approved deterministic fallback), protected identity, durable Cloudflare D1 state, private R2 report artifacts, short-lived signed PDF links, preserved Stripe Checkout/webhooks, exports/deletion workflows, privacy-safe telemetry, scheduled retention, and a private closed-beta deployment. The legacy Q001–Q300 bank remains available only for historical v1 snapshots.
 
 The assessment is an original developmental product. It is not a Gallup/CliftonStrengths® implementation, a diagnosis, or a high-stakes decision tool. Items are marked `draft for pilot` until independent psychometric validation is completed.
 
 ## Closed beta deployment
 
-The Cloudflare beta profile is intentionally free and closed: `PAYMENTS_ENABLED=false`, `ENTITLEMENT_MODE=beta-free`, `AI_ENABLED=false`, deterministic adaptive selection and the approved interpretation library. Staging and production use separate Workers, D1 databases, R2 buckets, credentials and Cloudflare Access applications. See `docs/deployment/` and `BETA_TESTER_GUIDE.md`. The legacy owner-private Site remains available as a reference and is not deleted by this deployment.
+The beta profile is intentionally free and closed: `PAYMENTS_ENABLED=false`, `ENTITLEMENT_MODE=beta-free`, and the approved interpretation library. Production beta remains `AI_ENABLED=false` until staging E2E passes; staging is configured for `AI_ENABLED=true`, `ADAPTIVE_PROVIDER=mercury`, and managed `INCEPTION_API_KEY`, with deterministic approved fallback on provider failure. Staging and production use separate Workers, D1 databases, R2 buckets, credentials and Cloudflare Access applications. See `wrangler.jsonc`, `docs/deployment/` and `BETA_TESTER_GUIDE.md`. The legacy owner-private Site remains available as a reference and is not deleted by this deployment.
 
 ## Prerequisites
 
@@ -35,7 +35,7 @@ The Sites initializer copies the shared starter with the explicit `--execution-p
 
 Whenever reopening or moving a checkout, follow the plugin's instructions to run `configure-execution-profile.mjs --execution-profile <portable|managed-linux>` before project commands. Profile changes do not alter tracked source or require reinstalling otherwise-valid dependencies; restart an existing preview to use the new selection. Do not commit or upload `.sites-runtime/`.
 
-This starter does not use `wrangler.jsonc`.
+The current closed-beta deployment uses `wrangler.jsonc` named `staging` and `production` environments. Secrets are managed outside Git with Wrangler/Cloudflare; only secret names and safe defaults belong in tracked configuration.
 
 `install:ci` runs `npm ci` once against the shared lockfile, disables parent-workspace discovery, and includes required dev/optional dependencies despite production/omit settings. Sharp defaults to prebuilt binaries unless explicitly configured otherwise. Do not overlap installers.
 
@@ -62,7 +62,9 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `app/orbita-view-router.tsx` — presentation routing for landing, catalog, checkout, consent, assessment, break, results, account, methodology and legal/support views.
 - `hooks/use-orbita-controller.ts` — assessment-flow orchestration, network state, WebMCP registration and account/checkout/report actions; it owns no JSX.
 - `app/orbita-views.tsx` — presentation-only views; `app/orbita-api.ts`, `hooks/use-assessment-queue.ts`, `lib/view-routing.ts` and `lib/response-retry-queue.ts` are API/queue/routing boundaries, with the queue and routing logic remaining DOM-free.
-- `lib/assessment-engine.ts` and `lib/item-bank.ts` — scoring, quality flags, report inputs and the preserved 300-item bank.
+- `lib/v2-item-bank.ts` and `lib/orbita-v2-engine.ts` — immutable Core60 bank and deterministic v2 preliminary/final scoring.
+- `lib/mercury-adaptive-provider.ts` and `lib/prompts/mercury-adaptive-v1.ts` — abstract adaptive provider, Inception Labs Mercury integration, strict validator and approved fallback; Mercury never scores.
+- `lib/assessment-engine.ts` and `lib/item-bank.ts` — shared report/scoring contracts plus the preserved legacy 300-item bank for v1 snapshots.
 - `lib/interpretation-library.ts` — versioned approved trait/pair semantics; AI output cannot add unsupported claims.
 - `lib/durable-store.ts` — all user-owned state transitions and ownership checks.
 - `lib/payment-provider.ts` and `lib/payment-integrity.ts` — signed Stripe Checkout creation and exact, idempotent webhook verification.
@@ -72,7 +74,7 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `docs/adr/ADR-001-runtime-and-cloudflare.md` — accepted pilot runtime decision and Vinext migration triggers.
 - `scripts/load-smoke.mjs`, `scripts/pdf-visual-qa.mjs`, `scripts/verify-release.mjs` — load, visual PDF, and exact-Git release gates.
 - `lib/security-headers.ts`, `lib/observability.ts` and `lib/ops-monitoring.ts` — request IDs, security headers, PII-safe logs and explicit alert thresholds.
-- `lib/provider-contract.ts`, `lib/adaptive-contract.ts` and `lib/report-safety.ts` — strict provider output, source-key grounding and deterministic safety boundaries.
+- `lib/provider-contract.ts`, `lib/adaptive-contract.ts`, `lib/report-safety.ts` and `lib/mercury-adaptive-provider.ts` — strict provider output, source-key grounding and deterministic safety boundaries.
 - `lib/pilot-analytics.ts` and `app/api/admin/overview/route.ts` — aggregate-only pilot analytics with a minimum-sample guard.
 - `app/orbita-api.ts` and `app/orbita-view-types.ts` — client API/retry persistence and shared view contracts.
 - `db/schema.ts` and `drizzle/` — D1 schema and append-only migrations.
@@ -83,7 +85,7 @@ The production site is owner-private. User identity comes from the Sites/ChatGPT
 
 ## Production configuration
 
-Set runtime values in Sites, never in `.openai/hosting.json` or source control. Non-secret baseline:
+Set non-secret runtime values in the matching Cloudflare Worker environment; never store secrets in `wrangler.jsonc`, `.openai/hosting.json` or source control. Non-secret baseline:
 
 ```text
 ORBITA_ENV=production
@@ -91,9 +93,26 @@ PAYMENT_PROVIDER=stripe
 ASSESSMENT_CURRENCY=KZT
 APP_BASE_URL=https://orbita-30.yzh905284.chatgpt.site
 REPORT_PROVIDER=approved-library
-ADAPTIVE_PROVIDER=approved-library
+AI_ENABLED=false                 # production beta; staging is true
+ADAPTIVE_PROVIDER=deterministic  # production beta; staging is mercury
+MERCURY_MODEL=mercury-2.5
+MERCURY_TIMEOUT_MS=12000
+MERCURY_MAX_RETRIES=2
 RETENTION_DAYS=365
 ```
+
+Staging overrides are explicit:
+
+```text
+AI_ENABLED=true
+ADAPTIVE_PROVIDER=mercury
+INCEPTION_API_KEY=<managed secret, never committed>
+MERCURY_MODEL=mercury-2.5
+MERCURY_TIMEOUT_MS=12000
+MERCURY_MAX_RETRIES=2
+```
+
+Set the staging secret only after the Worker exists, for example with `npx wrangler secret put INCEPTION_API_KEY --env staging --config wrangler.jsonc`. Production keeps its own separate secret binding and remains Mercury-off until staging acceptance is recorded.
 
 Required before accepting real payments:
 
@@ -110,10 +129,11 @@ Optional AI narrative provider (managed secret only; approved-library fallback i
 - Optional `REPORT_MODEL` (defaults to `gpt-5`) and `OPENAI_BASE_URL`.
 - Store `OPENAI_API_KEY` in the Sites/Cloudflare managed secret store. Never put it in `.env.example`, Git, the browser bundle, telemetry, or a report payload. A timeout, schema violation, unavailable key, or provider error records a fallback and returns the deterministic approved-library report.
 
-Optional AI adaptive selector:
+Adaptive generation:
 
-- `ADAPTIVE_PROVIDER=openai` and the same secret `OPENAI_API_KEY`.
-- Optional `ADAPTIVE_MODEL` and `ADAPTIVE_TIMEOUT_MS`; invalid, unavailable, or timed-out selection is recorded and falls back to the deterministic selector.
+- Current v2 staging uses `ADAPTIVE_PROVIDER=mercury`, `MERCURY_MODEL=mercury-2.5` and the server-only `INCEPTION_API_KEY`.
+- The provider calls the official Inception Labs OpenAI-compatible endpoint, requests strict JSON schema output, validates every item server-side, retries at most twice, and then selects 10–15 items from the approved fallback bank.
+- Production beta remains `ADAPTIVE_PROVIDER=deterministic`/`AI_ENABLED=false` until staging Mercury smoke and full E2E are both PASS. The historical v1 OpenAI selector is not used by new v2 assessments.
 
 Scheduled retention and manual recovery:
 
@@ -206,7 +226,7 @@ The critical contract checks are:
 - reports freeze the score JSON, retry only the report layer, and produce a 24-page PDF;
 - export is owner-scoped and deletion removes R2 artifacts before soft-deleting the identity.
 
-The repeatable smoke gate covers the public catalog, auth boundary, entitlement, versioned consent, all Q001–Q250 responses, response idempotency, adaptive selection, frozen norm-safe score, approved report, signed PDF, privacy-safe telemetry and export:
+The repeatable smoke gate covers the public catalog, auth boundary, beta entitlement, versioned consent, all 60 Core responses, preliminary scoring, adaptive generation/fallback, frozen adaptive snapshots, final norm-safe score, approved report, signed PDF, privacy-safe telemetry and export. Historical v1 E2E fixtures may still exercise Q001–Q250 explicitly as legacy coverage:
 
 ```sh
 npm run test:e2e

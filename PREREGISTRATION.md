@@ -15,7 +15,7 @@ Status: not registered with an external repository. This document records the in
 - Exclude only pre-specified technical invalids, duplicate participation and explicit consent failures; record counts and reasons before outcome analysis.
 - Do not use synthetic E2E rows as pilot evidence.
 - No population percentile, diagnosis, intelligence, employability or deterministic career claim is an outcome of this registration.
-- Analyses are performed on frozen versions `orbita30_ru_v1`, `draft-pilot-v1`, `mvp-0.4-norm-safe` and `selector-0.3`; any model/version change is exploratory until re-registered.
+- Current v2 analyses are performed on frozen versions `orbita30_ru_v2`, `core60-v1`, `mvp-0.5-core60`, `mercury-generated-0.1` and `unvalidated-v2`; any model/version change is exploratory until re-registered. Historical v1 analyses retain their original version tuple and are not pooled with v2.
 
 ## Planned reporting
 

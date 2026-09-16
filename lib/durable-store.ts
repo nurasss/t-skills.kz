@@ -3,13 +3,27 @@ import {
   normalizeScoreProfile,
   scoreAssessment,
   VERSION_IDS,
+  V2_VERSION_IDS,
   type AdaptiveSelection,
+  type AssessmentVersionIds,
   type ReportJSON,
   type ResponseMap,
   type ScoreProfile,
 } from "@/lib/assessment-engine";
 import { selectAdaptiveForProfile, type AdaptiveRunRecord } from "@/lib/adaptive-provider";
+import {
+  buildAdaptiveContext,
+  scoreCore60,
+  type AdaptiveContext,
+} from "@/lib/orbita-v2-engine";
+import {
+  createAdaptiveQuestionProvider,
+  generatedQuestionToResponseItem,
+  type AdaptiveProviderRun,
+  type GeneratedAdaptiveQuestion,
+} from "@/lib/mercury-adaptive-provider";
 import { ITEM_BANK, type Item } from "@/lib/item-bank";
+import { CORE60_BANK } from "@/lib/v2-item-bank";
 import { buildReportPdf } from "@/lib/pdf-generator";
 import { generateReportContent } from "@/lib/report-provider";
 import { validatePaymentSnapshot } from "@/lib/payment-integrity";
@@ -30,12 +44,16 @@ export type DurableSession = {
   locale: Locale;
   entitlementId: string;
   state: SessionState;
-  versions: typeof VERSION_IDS;
+  versions: AssessmentVersionIds;
   responses: ResponseMap;
   responseTimes: Record<string, number>;
   clientSeq: number;
   adaptiveItemIds: string[];
-  selectionMode?: "deterministic-fallback" | "ai-openai";
+  adaptiveItems: GeneratedAdaptiveQuestion[];
+  selectionMode?: "deterministic-fallback" | "ai-openai" | "mercury" | "approved-fallback";
+  adaptiveGenerationStatus?: string;
+  adaptiveFallbackUsed?: boolean;
+  adaptiveGenerationAttempts: number;
   profile?: ScoreProfile;
   reportId?: string;
   updatedAt: string;
@@ -108,7 +126,15 @@ type AssessmentRow = {
   state: SessionState;
   versions_json: string;
   adaptive_item_ids_json: string;
-  selection_mode: "deterministic-fallback" | "ai-openai" | null;
+  selection_mode: "deterministic-fallback" | "ai-openai" | "mercury" | "approved-fallback" | null;
+  adaptive_generation_status: string;
+  adaptive_provider: string | null;
+  adaptive_model: string | null;
+  adaptive_prompt_version: string | null;
+  adaptive_generated_at: number | null;
+  adaptive_fallback_used: number;
+  adaptive_generation_lock: number;
+  adaptive_generation_attempts: number;
   preliminary_score_json: string | null;
   final_score_json: string | null;
   report_id: string | null;
@@ -123,6 +149,7 @@ type ResponseRow = {
   item_id: string;
   response: number;
   response_time_ms: number;
+  response_source?: string;
   presentation_metadata_json?: string;
 };
 
@@ -175,9 +202,17 @@ type AdaptiveRunRow = {
   latency_ms: number;
   validation_result: AdaptiveRunRecord["validationResult"];
   fallback_reason: string | null;
+  prompt_version: string | null;
+  adaptive_version: string | null;
+  provider_request_id: string | null;
+  attempt_count: number | null;
+  prompt_tokens: number | null;
+  output_tokens: number | null;
+  generated_count: number | null;
 };
 
 const itemById = new Map<string, Item>(ITEM_BANK.map((item) => [item.id, item]));
+const MAX_ADAPTIVE_GENERATION_ATTEMPTS = 3;
 
 function now() {
   return Date.now();
@@ -205,6 +240,16 @@ function isCoreItem(itemId: string) {
   return Boolean(item && Number(item.id.slice(1)) <= 250);
 }
 
+function isV2Session(session: Pick<DurableSession, "versions">) {
+  return session.versions.assessment === V2_VERSION_IDS.assessment;
+}
+
+function isSessionCoreItem(session: Pick<DurableSession, "versions">, itemId: string) {
+  return isV2Session(session)
+    ? CORE60_BANK.some((item) => item.id === itemId)
+    : isCoreItem(itemId);
+}
+
 function isAdaptiveItem(itemId: string) {
   const item = itemById.get(itemId);
   return Boolean(
@@ -223,6 +268,13 @@ function validResponse(itemId: string, value: number) {
   }
   return value >= 1 && value <= 7;
 }
+
+function validV2Response(item: Core60ItemOrAdaptive, value: number) {
+  if (!Number.isFinite(value) || !Number.isInteger(value)) return false;
+  return item.format === "forced_choice" ? value >= -2 && value <= 2 : value >= 1 && value <= 7;
+}
+
+type Core60ItemOrAdaptive = (typeof CORE60_BANK)[number] | GeneratedAdaptiveQuestion;
 
 function responseMap(rows: ResponseRow[]) {
   return Object.fromEntries(rows.map((row) => [row.item_id, row.response])) as ResponseMap;
@@ -324,7 +376,11 @@ async function loadSession(sessionId: string, userId: string): Promise<DurableSe
   const row = await database
     .prepare(
       `SELECT id, user_id, entitlement_id, test_id, locale, state, versions_json,
-              adaptive_item_ids_json, selection_mode, preliminary_score_json,
+              adaptive_item_ids_json, selection_mode, adaptive_generation_status,
+              adaptive_provider, adaptive_model, adaptive_prompt_version,
+              adaptive_generated_at, adaptive_fallback_used, adaptive_generation_lock,
+              adaptive_generation_attempts,
+              preliminary_score_json,
               final_score_json, report_id, client_seq, created_at,
               consented_at, completed_at, updated_at
        FROM assessments
@@ -345,6 +401,50 @@ async function loadSession(sessionId: string, userId: string): Promise<DurableSe
     .bind(sessionId)
     .all<ResponseRow>();
   const rows = responseResult.results ?? [];
+  const questionResult = await database
+    .prepare(
+      `SELECT question_id, format, prompt, options_json, target_traits_json,
+              reason_code, semantic_intent, semantic_cluster, confidence,
+              provider, model_id, provider_request_id, prompt_version,
+              adaptive_version, validation_status
+       FROM adaptive_questions
+       WHERE assessment_id = ? ORDER BY question_id ASC`,
+    )
+    .bind(sessionId)
+    .all<{
+      question_id: string;
+      format: "forced_choice" | "likert";
+      prompt: string;
+      options_json: string;
+      target_traits_json: string;
+      reason_code: GeneratedAdaptiveQuestion["reasonCode"];
+      semantic_intent: string;
+      semantic_cluster: string;
+      confidence: number | null;
+      provider: GeneratedAdaptiveQuestion["provider"];
+      model_id: string | null;
+      provider_request_id: string | null;
+      prompt_version: GeneratedAdaptiveQuestion["promptVersion"];
+      adaptive_version: GeneratedAdaptiveQuestion["adaptiveVersion"];
+      validation_status: "accepted";
+    }>();
+  const adaptiveItems = (questionResult.results ?? []).map((question) => ({
+    questionId: question.question_id as `AI-${string}` | `FB-${string}`,
+    format: question.format,
+    targetTraits: parseJson(question.target_traits_json, []) as GeneratedAdaptiveQuestion["targetTraits"],
+    reasonCode: question.reason_code,
+    prompt: question.prompt,
+    options: parseJson(question.options_json, []) as GeneratedAdaptiveQuestion["options"],
+    semanticIntent: question.semantic_intent,
+    semanticCluster: question.semantic_cluster,
+    confidence: question.confidence ?? 0,
+    provider: question.provider,
+    model: question.model_id,
+    providerRequestId: question.provider_request_id,
+    promptVersion: question.prompt_version,
+    adaptiveVersion: question.adaptive_version,
+    validationStatus: question.validation_status,
+  })) satisfies GeneratedAdaptiveQuestion[];
   return {
     id: row.id,
     userId: row.user_id,
@@ -357,7 +457,11 @@ async function loadSession(sessionId: string, userId: string): Promise<DurableSe
     responseTimes: responseTimes(rows),
     clientSeq: row.client_seq,
     adaptiveItemIds: parseJson<string[]>(row.adaptive_item_ids_json, []),
+    adaptiveItems,
     selectionMode: row.selection_mode ?? undefined,
+    adaptiveGenerationStatus: row.adaptive_generation_status,
+    adaptiveFallbackUsed: row.adaptive_fallback_used === 1,
+    adaptiveGenerationAttempts: row.adaptive_generation_attempts ?? 0,
     profile: row.final_score_json ?? row.preliminary_score_json
       ? normalizeScoreProfile(parseJson<ScoreProfile | undefined>(row.final_score_json ?? row.preliminary_score_json, undefined))
       : undefined,
@@ -370,7 +474,9 @@ async function loadAdaptiveRun(assessmentId: string): Promise<AdaptiveRunRecord 
   const row = await ensureDatabase()
     .prepare(
       `SELECT selector_version, provider, model_id, input_hash, output_hash,
-              latency_ms, validation_result, fallback_reason
+              latency_ms, validation_result, fallback_reason, prompt_version,
+              adaptive_version, provider_request_id, attempt_count, prompt_tokens,
+              output_tokens, generated_count
        FROM adaptive_runs WHERE assessment_id = ? ORDER BY created_at DESC LIMIT 1`,
     )
     .bind(assessmentId)
@@ -385,11 +491,18 @@ async function loadAdaptiveRun(assessmentId: string): Promise<AdaptiveRunRecord 
     latencyMs: row.latency_ms,
     validationResult: row.validation_result,
     fallbackReason: row.fallback_reason,
+    promptVersion: row.prompt_version ?? undefined,
+    adaptiveVersion: row.adaptive_version ?? undefined,
+    providerRequestId: row.provider_request_id,
+    attemptCount: row.attempt_count ?? undefined,
+    promptTokens: row.prompt_tokens,
+    outputTokens: row.output_tokens,
+    generatedCount: row.generated_count ?? undefined,
   };
 }
 
 function nextItemId(session: DurableSession) {
-  const core = ITEM_BANK.filter((item) => isCoreItem(item.id));
+  const core = isV2Session(session) ? CORE60_BANK : ITEM_BANK.filter((item) => isCoreItem(item.id));
   const nextCore = core.find((item) => typeof session.responses[item.id] !== "number");
   if (nextCore) return nextCore.id;
   const nextAdaptive = session.adaptiveItemIds.find((itemId) => typeof session.responses[itemId] !== "number");
@@ -706,7 +819,7 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
 
   const timestamp = now();
   const sessionId = newId("sess");
-  const versions = VERSION_IDS;
+  const versions = V2_VERSION_IDS;
   const initialState: SessionState = entitlement.grant_source === "beta_free" ? "ENTITLED" : "PAID";
   try {
     await database
@@ -798,6 +911,7 @@ export async function deleteAssessmentForUser(sessionId: string, viewer: Viewer)
   try {
     await database.batch([
       database.prepare(`DELETE FROM assessment_responses WHERE assessment_id = ?`).bind(sessionId),
+      database.prepare(`DELETE FROM adaptive_questions WHERE assessment_id = ?`).bind(sessionId),
       database.prepare(`DELETE FROM adaptive_runs WHERE assessment_id = ?`).bind(sessionId),
       database.prepare(`DELETE FROM consents WHERE assessment_id = ? AND user_id = ?`).bind(sessionId, viewer.userId),
       database.prepare(`DELETE FROM reports WHERE assessment_id = ? AND user_id = ?`).bind(sessionId, viewer.userId),
@@ -966,11 +1080,18 @@ export async function saveResponse(input: {
   if (idempotencyKey.length > 200 || /[\u0000-\u001f\u007f]/.test(idempotencyKey)) {
     throw new StoreError("IDEMPOTENCY_KEY_INVALID", 422);
   }
-  if (!["CONSENTED", "CORE_IN_PROGRESS", "ADAPTIVE_IN_PROGRESS"].includes(session.state)) {
+  if (!["CONSENTED", "CORE_IN_PROGRESS", "ADAPTIVE_IN_PROGRESS", "ADAPTIVE_FALLBACK"].includes(session.state)) {
     throw new StoreError("SESSION_NOT_ACCEPTING_RESPONSES", 409);
   }
-  if (!validResponse(input.itemId, input.response)) throw new StoreError("INVALID_RESPONSE", 422);
-  const allowed = isCoreItem(input.itemId) || session.adaptiveItemIds.includes(input.itemId) && isAdaptiveItem(input.itemId);
+  const v2CoreItem = isV2Session(session) ? CORE60_BANK.find((item) => item.id === input.itemId) : undefined;
+  const v2AdaptiveItem = isV2Session(session) ? session.adaptiveItems.find((item) => item.questionId === input.itemId) : undefined;
+  const coreResponseItem = v2CoreItem ?? v2AdaptiveItem;
+  if (isV2Session(session) ? !coreResponseItem || !validV2Response(coreResponseItem, input.response) : !validResponse(input.itemId, input.response)) {
+    throw new StoreError("INVALID_RESPONSE", 422);
+  }
+  const allowed = isV2Session(session)
+    ? Boolean(v2CoreItem || v2AdaptiveItem)
+    : isCoreItem(input.itemId) || session.adaptiveItemIds.includes(input.itemId) && isAdaptiveItem(input.itemId);
   if (!allowed) throw new StoreError("ITEM_NOT_ALLOWED", 422);
 
   const database = ensureDatabase();
@@ -993,18 +1114,25 @@ export async function saveResponse(input: {
 
   const timestamp = now();
   const serverSeq = session.clientSeq + 1;
-  const nextState = isCoreItem(input.itemId) ? "CORE_IN_PROGRESS" : "ADAPTIVE_IN_PROGRESS";
+  const itemIsCore = isSessionCoreItem(session, input.itemId);
+  const nextState: SessionState = itemIsCore ? "CORE_IN_PROGRESS" : "ADAPTIVE_IN_PROGRESS";
   if (!canSessionTransition(session.state, nextState)) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
-  const itemNumber = Number(input.itemId.slice(1));
-  const phase = isCoreItem(input.itemId) ? "core" : "adaptive";
+  const itemNumber = Number(input.itemId.replace(/[^0-9]/g, ""));
+  const phase = itemIsCore ? "core" : "adaptive";
   const position = phase === "core" ? itemNumber : session.adaptiveItemIds.indexOf(input.itemId) + 1;
+  const responseSource = phase === "core"
+    ? "core"
+    : isV2Session(session)
+      ? v2AdaptiveItem?.provider === "approved-fallback" ? "adaptive_fallback" : "adaptive_ai"
+      : "adaptive_legacy";
   const presentationMetadata = JSON.stringify({
     phase,
     position,
-    block: phase === "core" ? Math.ceil(position / 50) : null,
+    block: phase === "core" && !isV2Session(session) ? Math.ceil(position / 50) : null,
     locale: session.locale,
     itemBankVersion: session.versions.itemBank,
     translationVersion: session.versions.translation,
+    responseSource,
   });
   try {
     const writeResults = await database.batch([
@@ -1012,11 +1140,11 @@ export async function saveResponse(input: {
         .prepare(
           `INSERT INTO assessment_responses
             (id, assessment_id, item_id, response, response_time_ms,
-            client_seq, idempotency_key, presentation_metadata_json, created_at)
-           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+            client_seq, idempotency_key, response_source, presentation_metadata_json, created_at)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
            FROM assessments
            WHERE id = ? AND user_id = ? AND client_seq = ?
-             AND state IN ('CONSENTED', 'CORE_IN_PROGRESS', 'ADAPTIVE_IN_PROGRESS')`,
+             AND state IN ('CONSENTED', 'CORE_IN_PROGRESS', 'ADAPTIVE_IN_PROGRESS', 'ADAPTIVE_FALLBACK')`,
         )
         .bind(
           `${input.sessionId}:${input.itemId}`,
@@ -1026,6 +1154,7 @@ export async function saveResponse(input: {
           Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number.isFinite(input.responseTimeMs ?? 0) ? input.responseTimeMs ?? 0 : 0))),
           serverSeq,
           idempotencyKey,
+          responseSource,
           presentationMetadata,
           timestamp,
           input.sessionId,
@@ -1071,9 +1200,211 @@ export async function saveResponse(input: {
   return { saved: true, replay: false, serverSeq, nextItemId: nextItemId({ ...session, responses: { ...session.responses, [input.itemId]: input.response } }) };
 }
 
+async function hashText(value: string) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function v2Selection(session: DurableSession, fallbackMode?: boolean): AdaptiveSelection {
+  return {
+    selectedItemIds: session.adaptiveItems.map((question) => question.questionId),
+    targetCount: session.adaptiveItems.length,
+    mode: fallbackMode || session.adaptiveFallbackUsed ? "approved-fallback" : "mercury",
+    validation: "passed",
+    reasonCodes: Object.fromEntries(session.adaptiveItems.map((question) => [question.questionId, [question.reasonCode]])),
+  };
+}
+
+function v2RunToPublic(run: AdaptiveProviderRun) {
+  return {
+    selectorVersion: run.adaptiveVersion,
+    provider: run.provider,
+    modelId: run.modelId,
+    inputHash: run.inputHash,
+    outputHash: run.outputHash,
+    latencyMs: run.latencyMs,
+    validationResult: run.validationResult,
+    fallbackReason: run.fallbackReason,
+    promptVersion: run.promptVersion,
+    adaptiveVersion: run.adaptiveVersion,
+    providerRequestId: run.providerRequestId,
+    attemptCount: run.attemptCount,
+    promptTokens: run.promptTokens,
+    outputTokens: run.outputTokens,
+  };
+}
+
+async function completeCoreV2ForUser(session: DurableSession, viewer: Viewer) {
+  const coreAnswered = Object.keys(session.responses).filter((itemId) => CORE60_BANK.some((item) => item.id === itemId)).length;
+  if (session.adaptiveItems.length && session.profile && [
+    "ADAPTIVE_IN_PROGRESS",
+    "ADAPTIVE_FALLBACK",
+    "REPORT_GENERATING",
+    "REPORT_FAILED_RETRYABLE",
+    "COMPLETE",
+  ].includes(session.state)) {
+    return {
+      session,
+      selection: v2Selection(session),
+      run: await loadAdaptiveRun(session.id),
+      reused: true,
+    };
+  }
+  if (coreAnswered < CORE60_BANK.length) throw new StoreError("CORE_INCOMPLETE", 422);
+  if (!session.adaptiveItems.length && session.adaptiveGenerationAttempts >= MAX_ADAPTIVE_GENERATION_ATTEMPTS) {
+    throw new StoreError("ADAPTIVE_RETRY_LIMIT", 429);
+  }
+  const preliminary = scoreCore60(session.responses, session.responseTimes);
+  const database = ensureDatabase();
+  const timestamp = now();
+  const lock = await database
+    .prepare(
+      `UPDATE assessments
+       SET state = 'ADAPTIVE_GENERATING', adaptive_generation_status = 'GENERATING',
+           adaptive_generation_lock = 1, adaptive_generation_attempts = adaptive_generation_attempts + 1,
+           preliminary_score_json = ?, updated_at = ?
+       WHERE id = ? AND user_id = ? AND adaptive_generation_lock = 0
+         AND adaptive_generation_attempts < ?
+         AND state IN ('CORE_IN_PROGRESS', 'CORE_COMPLETE', 'ADAPTIVE_PROVIDER_FAILED', 'ADAPTIVE_FALLBACK')`,
+    )
+    .bind(JSON.stringify(preliminary), timestamp, session.id, viewer.userId, MAX_ADAPTIVE_GENERATION_ATTEMPTS)
+    .run();
+  if ((lock.meta?.changes ?? 0) !== 1) {
+    const concurrent = await loadSession(session.id, viewer.userId);
+    if (concurrent?.adaptiveItems.length) {
+      return { session: concurrent, selection: v2Selection(concurrent), run: await loadAdaptiveRun(session.id), reused: true };
+    }
+    if (concurrent?.state === "ADAPTIVE_GENERATING" && concurrent.adaptiveGenerationAttempts < MAX_ADAPTIVE_GENERATION_ATTEMPTS && Date.parse(concurrent.updatedAt) < timestamp - 120_000) {
+      await database
+        .prepare(`UPDATE assessments SET state = 'CORE_IN_PROGRESS', adaptive_generation_status = 'NOT_STARTED', adaptive_generation_lock = 0, updated_at = ? WHERE id = ? AND user_id = ? AND adaptive_generation_lock = 1`)
+        .bind(timestamp, session.id, viewer.userId)
+        .run();
+      const refreshed = await loadSession(session.id, viewer.userId);
+      if (refreshed) return completeCoreV2ForUser(refreshed, viewer);
+    }
+    throw new StoreError("ADAPTIVE_GENERATION_IN_PROGRESS", 409);
+  }
+
+  const context: AdaptiveContext = buildAdaptiveContext(
+    preliminary,
+    Object.keys(session.responses).filter((itemId) => CORE60_BANK.some((item) => item.id === itemId)),
+  );
+  const provider = createAdaptiveQuestionProvider(getRuntimeEnv());
+  let generated;
+  try {
+    generated = await provider.generateQuestions(context);
+  } catch (error) {
+    console.error("adaptive_generation_failed", { error_code: "ADAPTIVE_PROVIDER_FAILED" });
+    await database
+      .prepare(`UPDATE assessments SET state = 'ADAPTIVE_PROVIDER_FAILED', adaptive_generation_status = 'FAILED', adaptive_generation_lock = 0, updated_at = ? WHERE id = ? AND user_id = ?`)
+      .bind(now(), session.id, viewer.userId)
+      .run();
+    throw new StoreError("ADAPTIVE_PROVIDER_FAILED", 503, error instanceof Error ? error.message : "Adaptive provider failed");
+  }
+
+  const questions = generated.questions;
+  const run = generated.run;
+  const fallbackUsed = generated.fallbackUsed;
+  const selectionMode = fallbackUsed ? "approved-fallback" : "mercury";
+  const nextState: SessionState = fallbackUsed ? "ADAPTIVE_FALLBACK" : "ADAPTIVE_IN_PROGRESS";
+  try {
+    const questionStatements = await Promise.all(questions.map(async (question) => database.prepare(
+      `INSERT INTO adaptive_questions
+        (id, assessment_id, question_id, format, prompt, options_json,
+         target_traits_json, reason_code, semantic_intent, semantic_cluster,
+         confidence, provider, model_id, provider_request_id, prompt_version,
+         adaptive_version, validation_status, question_hash, generated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      newId("aq"),
+      session.id,
+      question.questionId,
+      question.format,
+      question.prompt,
+      JSON.stringify(question.options),
+      JSON.stringify(question.targetTraits),
+      question.reasonCode,
+      question.semanticIntent,
+      question.semanticCluster,
+      question.confidence,
+      question.provider,
+      question.model,
+      question.providerRequestId ?? run.providerRequestId,
+      question.promptVersion,
+      question.adaptiveVersion,
+      question.validationStatus,
+      await hashText(JSON.stringify({ questionId: question.questionId, prompt: question.prompt, options: question.options, targetTraits: question.targetTraits, semanticIntent: question.semanticIntent })),
+      timestamp,
+    )));
+    await database.batch([
+      ...questionStatements,
+      database
+        .prepare(
+          `INSERT INTO adaptive_runs
+            (id, assessment_id, selector_version, provider, model_id, input_hash,
+             output_hash, chosen_ids_json, latency_ms, validation_result,
+             fallback_reason, prompt_version, adaptive_version, provider_request_id,
+             attempt_count, prompt_tokens, output_tokens, generated_count, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          newId("adaptive"), session.id, run.adaptiveVersion, run.provider, run.modelId,
+          run.inputHash, run.outputHash, JSON.stringify(questions.map((question) => question.questionId)),
+          run.latencyMs, run.validationResult, run.fallbackReason, run.promptVersion,
+          run.adaptiveVersion, run.providerRequestId, run.attemptCount, run.promptTokens,
+          run.outputTokens, questions.length, timestamp,
+        ),
+      database
+        .prepare(
+          `UPDATE assessments SET state = ?, adaptive_item_ids_json = ?, selection_mode = ?,
+             adaptive_generation_status = ?, adaptive_provider = ?, adaptive_model = ?,
+             adaptive_prompt_version = ?, adaptive_generated_at = ?, adaptive_fallback_used = ?,
+             adaptive_generation_lock = 0, updated_at = ?
+           WHERE id = ? AND user_id = ?`,
+        )
+        .bind(
+          nextState,
+          JSON.stringify(questions.map((question) => question.questionId)),
+          selectionMode,
+          fallbackUsed ? "FALLBACK" : "COMPLETE",
+          run.provider,
+          run.modelId,
+          run.promptVersion,
+          timestamp,
+          fallbackUsed ? 1 : 0,
+          timestamp,
+          session.id,
+          viewer.userId,
+        ),
+    ]);
+  } catch {
+    await database
+      .prepare(`UPDATE assessments SET state = 'ADAPTIVE_PROVIDER_FAILED', adaptive_generation_status = 'FAILED', adaptive_generation_lock = 0, updated_at = ? WHERE id = ? AND user_id = ?`)
+      .bind(now(), session.id, viewer.userId)
+      .run();
+    console.error("adaptive_generation_persistence_failed", { error_code: "ADAPTIVE_GENERATION_SAVE_FAILED" });
+    throw new StoreError("ADAPTIVE_GENERATION_SAVE_FAILED", 500);
+  }
+  await audit(viewer.userId, "ADAPTIVE_GENERATED", "assessment", session.id, {
+    count: questions.length,
+    provider: run.provider,
+    fallback: fallbackUsed,
+    latencyMs: run.latencyMs,
+  });
+  await serverTelemetry({ name: "core_completed", userId: viewer.userId, assessmentId: session.id, metadata: { count: coreAnswered, status: "CORE_COMPLETE" } });
+  await serverTelemetry({ name: "adaptive_started", userId: viewer.userId, assessmentId: session.id, metadata: { provider: run.provider, fallback: fallbackUsed, mode: selectionMode, latency_ms: run.latencyMs, count: questions.length } });
+  if (run.attemptCount > 1) await serverTelemetry({ name: "adaptive_retry", userId: viewer.userId, assessmentId: session.id, metadata: { provider: run.provider, attempt_count: run.attemptCount, latency_ms: run.latencyMs } });
+  if (fallbackUsed && run.fallbackReason?.startsWith("ADAPTIVE_GENERATED_")) await serverTelemetry({ name: "adaptive_validation_rejected", userId: viewer.userId, assessmentId: session.id, metadata: { provider: run.provider, reason: run.fallbackReason, count: questions.length } });
+  if (fallbackUsed) await serverTelemetry({ name: "adaptive_fallback", userId: viewer.userId, assessmentId: session.id, metadata: { provider: run.provider, reason: run.fallbackReason, latency_ms: run.latencyMs } });
+  const updated = await loadSession(session.id, viewer.userId);
+  if (!updated) throw new StoreError("SESSION_NOT_FOUND", 404);
+  return { session: updated, selection: v2Selection(updated, fallbackUsed), run: v2RunToPublic(run), reused: false };
+}
+
 export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
   const session = await getSessionForUser(sessionId, viewer);
   if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
+  if (isV2Session(session)) return completeCoreV2ForUser(session, viewer);
   if (
     session.adaptiveItemIds.length &&
     session.profile &&
@@ -1198,7 +1529,9 @@ export async function completeAssessmentForUser(sessionId: string, viewer: Viewe
   if (missing.length) throw new StoreError("ADAPTIVE_INCOMPLETE", 422);
   if (!canSessionTransition(session.state, "REPORT_GENERATING")) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
 
-  const profile = scoreAssessment(session.responses, session.responseTimes);
+  const profile = isV2Session(session)
+    ? scoreCore60(session.responses, session.responseTimes, session.adaptiveItems.map(generatedQuestionToResponseItem))
+    : scoreAssessment(session.responses, session.responseTimes);
   const reportId = newId("rep");
   const database = ensureDatabase();
   const timestamp = now();
@@ -1255,8 +1588,23 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
   if (!score) throw new StoreError("SCORE_NOT_FOUND", 500);
   try {
     const generated = await generateReportContent(score);
+    const assessmentMeta = await database
+      .prepare(`SELECT versions_json, adaptive_provider, adaptive_fallback_used, adaptive_item_ids_json FROM assessments WHERE id = ? AND user_id = ? LIMIT 1`)
+      .bind(row.assessment_id, viewer.userId)
+      .first<{ versions_json: string; adaptive_provider: string | null; adaptive_fallback_used: number; adaptive_item_ids_json: string }>();
+    const versionSnapshot = parseJson<Record<string, string>>(assessmentMeta?.versions_json, score.versions);
+    const report = {
+      ...generated.report,
+      assessmentVersion: versionSnapshot.assessment ?? score.versions.assessment,
+      coreQuestionCount: versionSnapshot.assessment === V2_VERSION_IDS.assessment ? 60 : score.coreAnswered,
+      adaptiveQuestionCount: parseJson<string[]>(assessmentMeta?.adaptive_item_ids_json, []).length || score.adaptiveAnswered,
+      adaptiveProvider: assessmentMeta?.adaptive_provider ?? (versionSnapshot.assessment === V2_VERSION_IDS.assessment ? "approved-fallback" : "legacy-selector"),
+      adaptiveFallbackUsed: assessmentMeta?.adaptive_fallback_used === 1,
+      adaptiveVersion: versionSnapshot.adaptive ?? versionSnapshot.selector ?? generated.report.adaptiveVersion,
+      reportVersion: versionSnapshot.report ?? score.versions.report,
+    } satisfies ReportJSON;
     const pdfKey = `reports/${viewer.userId}/${reportId}.pdf`;
-    const pdf = await buildReportPdf(score, generated.report);
+    const pdf = await buildReportPdf(score, report);
     const bucket = getR2();
     await bucket.put(pdfKey, pdf, {
       httpMetadata: {
@@ -1277,7 +1625,7 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
       )
       .bind(
         generated.provider,
-        JSON.stringify(generated.report),
+        JSON.stringify(report),
         pdfKey,
         generated.promptVersion,
         generated.modelId,
@@ -1490,7 +1838,7 @@ export async function requestDataExport(viewer: Viewer) {
   const responseResult = await database
     .prepare(
       `SELECT r.assessment_id, r.item_id, r.response, r.response_time_ms, r.client_seq,
-              r.presentation_metadata_json, r.created_at
+              r.response_source, r.presentation_metadata_json, r.created_at
        FROM assessment_responses r
        JOIN assessments a ON a.id = r.assessment_id
        WHERE a.user_id = ? ORDER BY r.created_at ASC`,
@@ -1510,10 +1858,25 @@ export async function requestDataExport(viewer: Viewer) {
     .prepare(
       `SELECT ar.assessment_id, ar.selector_version, ar.provider, ar.model_id,
               ar.input_hash, ar.output_hash, ar.chosen_ids_json, ar.latency_ms,
-              ar.validation_result, ar.fallback_reason, ar.created_at
+              ar.validation_result, ar.fallback_reason, ar.prompt_version,
+              ar.adaptive_version, ar.provider_request_id, ar.attempt_count,
+              ar.prompt_tokens, ar.output_tokens, ar.generated_count, ar.created_at
        FROM adaptive_runs ar
        JOIN assessments a ON a.id = ar.assessment_id
        WHERE a.user_id = ? ORDER BY ar.created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>();
+  const adaptiveQuestionResult = await database
+    .prepare(
+      `SELECT aq.assessment_id, aq.question_id, aq.format, aq.prompt, aq.options_json,
+              aq.target_traits_json, aq.reason_code, aq.semantic_intent, aq.semantic_cluster,
+              aq.confidence, aq.provider, aq.model_id, aq.provider_request_id,
+              aq.prompt_version, aq.adaptive_version, aq.validation_status,
+              aq.question_hash, aq.generated_at
+       FROM adaptive_questions aq
+       JOIN assessments a ON a.id = aq.assessment_id
+       WHERE a.user_id = ? ORDER BY aq.generated_at ASC, aq.question_id ASC`,
     )
     .bind(viewer.userId)
     .all<Record<string, unknown>>();
@@ -1535,6 +1898,7 @@ export async function requestDataExport(viewer: Viewer) {
     responses: responseResult.results ?? [],
     reports: reportResult.results ?? [],
     adaptiveRuns: adaptiveRunResult.results ?? [],
+    adaptiveQuestions: adaptiveQuestionResult.results ?? [],
     consents: consentResult.results ?? [],
   };
   const bucket = getR2();
@@ -1620,6 +1984,7 @@ export async function deleteAccount(viewer: Viewer) {
   try {
     await database.batch([
       database.prepare(`DELETE FROM assessment_responses WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
+      database.prepare(`DELETE FROM adaptive_questions WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
       database.prepare(`DELETE FROM adaptive_runs WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
       database.prepare(`DELETE FROM consents WHERE user_id = ?`).bind(viewer.userId),
       database.prepare(`DELETE FROM reports WHERE user_id = ?`).bind(viewer.userId),

@@ -26,6 +26,10 @@ export type OrbitaRuntimeEnv = {
   ADAPTIVE_PROVIDER?: string;
   ADAPTIVE_MODEL?: string;
   ADAPTIVE_TIMEOUT_MS?: string;
+  INCEPTION_API_KEY?: string;
+  MERCURY_MODEL?: string;
+  MERCURY_TIMEOUT_MS?: string;
+  MERCURY_MAX_RETRIES?: string;
   RETENTION_DAYS?: string;
   ORBITA_ENV?: string;
   ORBITA_ADMIN_USER_IDS?: string;

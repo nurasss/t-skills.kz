@@ -23,7 +23,7 @@ test("strict CSP permits hydration and checkout redirect without application scr
         test: {
           id: "orbita30",
           name: "ORBITA—30",
-          assessmentVersion: "orbita30_ru_v1",
+          assessmentVersion: "orbita30_ru_v2",
           amountMinor: 150000,
           currency: "KZT",
           availableForCheckout: true,

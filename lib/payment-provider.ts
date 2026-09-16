@@ -1,7 +1,7 @@
 import { getRuntimeEnv } from "@/db";
 import { attachCheckoutSession, createPendingOrder, findOrderIdByPaymentId, markOrderPaymentFailed, handlePaymentEvent } from "@/lib/durable-store";
 import type { PaymentEventStatus } from "@/lib/payment-event-policy";
-import { VERSION_IDS } from "@/lib/assessment-engine";
+import { V2_VERSION_IDS } from "@/lib/assessment-engine";
 import { verifyStripeSignature } from "@/lib/stripe-signature";
 import type { Viewer } from "@/lib/server-auth";
 import { paymentsEnabled } from "@/lib/runtime-config";
@@ -49,7 +49,7 @@ export function getPublicTestConfig(): PublicTestConfig {
   return {
     id: "orbita30",
     name: "ORBITA—30",
-    assessmentVersion: VERSION_IDS.assessment,
+    assessmentVersion: V2_VERSION_IDS.assessment,
     amountMinor,
     currency: validCurrency ? configuredCurrency : "KZT",
     availableForCheckout: paymentFlowEnabled && amountMinor !== null && validCurrency && provider === "stripe" && Boolean(runtimeEnv.STRIPE_SECRET_KEY && runtimeEnv.STRIPE_WEBHOOK_SECRET && runtimeEnv.PDF_SIGNING_SECRET),

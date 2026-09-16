@@ -13,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const rate = await consumeRateLimit({ userId: viewer.userId, scope: "complete-core", limit: 5, windowMs: 10 * 60 * 1000 });
     if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     const result = await completeCoreForUser(id, viewer);
-    return NextResponse.json({ state: result.session.state, preliminary_score: result.session.profile, adaptive: result.selection, adaptive_run: result.run ?? null, reused: result.reused });
+    return NextResponse.json({ state: result.session.state, preliminary_score: result.session.profile, adaptive: result.selection, adaptive_items: result.session.adaptiveItems, adaptive_run: result.run ?? null, reused: result.reused });
   } catch (error) {
     return errorResponse(error);
   }

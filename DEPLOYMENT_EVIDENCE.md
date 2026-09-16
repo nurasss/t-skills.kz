@@ -1,5 +1,21 @@
 # ORBITA-30 deployment evidence
 
+## Current v2 deployment gate
+
+```text
+Branch: feature/orbita-v2-core60-mercury
+Assessment: orbita30_ru_v2
+Core: 60 fixed items
+Adaptive: Mercury 2.5 on staging only; approved fallback on failure
+Production Mercury: OFF
+V2_STAGING_READY=NO
+Blocker: INCEPTION_API_KEY must be provisioned as a managed staging secret, then the v2 branch must be deployed and its authenticated full E2E/smoke/failure simulation recorded.
+```
+
+The blocker is external and intentional: no API key is stored in the repository or printed in evidence. The exact operator action is `npx wrangler secret put INCEPTION_API_KEY --env staging --config wrangler.jsonc`, followed by staging deployment and the v2 smoke gates. Production must not be switched to Mercury before those gates pass.
+
+The deployment block below is retained as historical pre-v2 Cloudflare evidence; its `AI_ENABLED=false` state is not evidence that the v2 Mercury staging gate has passed.
+
 ```text
 GitHub URL: https://github.com/nurasss/orbita-30
 Visibility: PRIVATE
@@ -39,7 +55,7 @@ Provisioning and deployment checks completed 2026-09-16:
 - Cloudflare R2 account activation completed in the Dashboard; private buckets `orbita30-staging` and `orbita30-production` were created and verified with Wrangler.
 - Staging and production Workers are published on the account `workers.dev` subdomain and both anonymous probes return the expected `401 Access required` response from the configured `AUTH_PROVIDER=cloudflare-access` boundary.
 - Cloudflare Access application `ORBITA-30 Closed Beta` protects both Worker destinations with an owner-only email Allow policy and a Service Auth policy covering the two smoke tokens; no additional beta tester emails are configured.
-- Worker Access integration is compatible with the Static Assets router: `assets.binding=ASSETS`, `assets.run_worker_first=true`, and the Worker verifies the Access JWT fallback with the configured team issuer and audience when `ctx.access` is unavailable.
+- Worker Access integration is compatible with the Static Assets router: `assets.binding=ASSETS`, static assets use asset-first routing (`assets.run_worker_first=false`), and dynamic requests verify the Access JWT fallback with the configured team issuer and audience when `ctx.access` is unavailable.
 - Hosted smoke checks passed in both environments using the Access service tokens; the health contract confirms `paymentsEnabled=false`, `aiEnabled=false`, `entitlementMode=beta-free`, and `normStatus=unvalidated`.
 - `PDF_SIGNING_SECRET` was generated independently and uploaded as a managed secret to both Worker environments; no secret value is recorded here.
 - GitHub environments `staging` and `production` exist. Repository secret `CLOUDFLARE_ACCOUNT_ID` is configured without recording its value here.
@@ -52,7 +68,7 @@ ACCESS_ALLOWLIST_READY=YES
 BETA_FREE_FLOW_READY=YES (local automated evidence only)
 AI_OFF_FLOW_READY=YES (local automated evidence only)
 BETA_SMOKE_READY=YES
-FINAL_LOCAL_QA=PASS (34/34 tests; lint; TypeScript; build; security scan; deployment config; release verification)
+FINAL_LOCAL_QA=PASS (40/40 tests; coverage; lint; TypeScript; build; security scan; deployment config; load; beta; browser CSP; PDF visual; backup/restore)
 
 External blockers recorded 2026-09-16:
 

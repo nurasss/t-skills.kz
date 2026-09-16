@@ -28,7 +28,7 @@ export const ITEM_TRANSLATION_POLICY: Record<Locale, TranslationMetadata> = {
   ru: {
     locale: "ru",
     status: "published",
-    sourceVersion: "draft-pilot-v1",
+    sourceVersion: "core60-v1",
     translationVersion: "ru-source-v1",
     reviewer: "source-authored",
     requirements: ["content review before closed pilot"],
@@ -36,7 +36,7 @@ export const ITEM_TRANSLATION_POLICY: Record<Locale, TranslationMetadata> = {
   kk: {
     locale: "kk",
     status: "unpublished",
-    sourceVersion: "draft-pilot-v1",
+    sourceVersion: "core60-v1",
     translationVersion: null,
     reviewer: null,
     requirements: ["independent translation", "back-translation", "cognitive interviews", "measurement-invariance review"],
@@ -44,7 +44,7 @@ export const ITEM_TRANSLATION_POLICY: Record<Locale, TranslationMetadata> = {
   en: {
     locale: "en",
     status: "unpublished",
-    sourceVersion: "draft-pilot-v1",
+    sourceVersion: "core60-v1",
     translationVersion: null,
     reviewer: null,
     requirements: ["independent translation", "back-translation", "cognitive interviews", "measurement-invariance review"],

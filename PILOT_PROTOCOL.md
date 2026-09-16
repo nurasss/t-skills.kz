@@ -1,10 +1,10 @@
-# ORBITA-30 Closed Pilot Protocol (Draft for approval)
+# ORBITA-30 v2 Closed Pilot Protocol (Draft for approval)
 
 Status: protocol shell only. It is not evidence that a pilot has run. A psychometric lead and legal/content owner must approve the final protocol before recruitment or analysis.
 
 ## Purpose and scope
 
-The pilot evaluates the frozen `orbita30_ru_v1` item bank and deterministic `mvp-0.4-norm-safe` scoring as an original developmental instrument. The pilot does not authorize hiring, diagnosis, intelligence, career-determinism or population-percentile claims.
+The pilot evaluates the frozen v2 Core60 bank and deterministic `mvp-0.5-core60` scoring as an original developmental instrument. Historical v1 records remain readable but are not mixed into the v2 item analysis. The pilot does not authorize hiring, diagnosis, intelligence, career-determinism or population-percentile claims.
 
 ## Cohort and recruitment
 
@@ -16,21 +16,25 @@ The pilot evaluates the frozen `orbita30_ru_v1` item bank and deterministic `mvp
 ## Frozen versions
 
 ```text
-assessmentVersion = orbita30_ru_v1
-itemBankVersion = draft-pilot-v1
-scoringVersion = mvp-0.4-norm-safe
-normVersion = pilot-index-unvalidated-v1
-selectorVersion = selector-0.3
+assessmentVersion = orbita30_ru_v2
+itemBankVersion = core60-v1
+scoringVersion = mvp-0.5-core60
+adaptiveVersion = mercury-generated-0.1
+reportVersion = report-0.4
+normVersion = unvalidated-v2
+provider = inception-labs
+model = mercury-2.5
+promptVersion = mercury-adaptive-v1
 translationVersion = ru-source-v1
 ```
 
-No Q001–Q300 item text may change during an active cohort. A change requires a new content version, cohort split and changelog entry.
+The v2 Core60 and accepted adaptive snapshots are immutable during an active cohort. The legacy Q001–Q300 text is frozen only for historical v1 cohorts. Any change requires a new content version, cohort split and changelog entry.
 
 ## Participant flow and safeguards
 
 1. Show pilot/unvalidated disclosure and separate Terms, Privacy, research and marketing choices.
 2. Require Terms and Privacy before answers; research/marketing are optional and never inferred from payment.
-3. Deliver the fixed 250-item core and 10–15 adaptive IDs from Q251–Q300 only.
+3. Deliver exactly 60 fixed Core items, calculate the preliminary profile server-side, then deliver 10–15 newly generated and validated follow-up items or the approved deterministic fallback set.
 4. Store server-confirmed responses, response time metadata and idempotency keys; do not use response time as a hidden score penalty.
 5. Deliver a developmental report with uncertainty wording and no norm/diagnostic/employment claims.
 6. Provide export and deletion routes; monitor fallback, errors, drop-off and retention without exposing raw answers in general analytics.

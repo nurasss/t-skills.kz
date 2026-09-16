@@ -3,6 +3,11 @@ import type {
   ResponseMap,
   ScoreProfile,
 } from "@/lib/assessment-engine";
+import type { GeneratedAdaptiveQuestion } from "@/lib/mercury-adaptive-provider";
+import type { Item } from "@/lib/item-bank";
+import type { Core60Item } from "@/lib/v2-item-bank";
+
+export type AssessmentItem = Item | Core60Item | GeneratedAdaptiveQuestion;
 
 export type View =
   | "home"
@@ -66,11 +71,14 @@ export type SessionPayload = {
   id: string;
   state: string;
   locale?: "ru" | "kk" | "en";
-  selection_mode: "deterministic-fallback" | "ai-openai" | null;
+  selection_mode: "deterministic-fallback" | "ai-openai" | "mercury" | "approved-fallback" | null;
   versions: ScoreProfile["versions"];
   next_item_id: string | null;
   core_answered: number;
   adaptive_item_ids: string[];
+  adaptive_items: GeneratedAdaptiveQuestion[];
+  adaptive_generation_status?: string;
+  adaptive_fallback_used?: boolean;
   response_count: number;
   responses: ResponseMap;
   response_times: Record<string, number>;
