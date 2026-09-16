@@ -6,9 +6,9 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | `9030ef48bee1a2ff22ebfe7c2dac2c452196dcc4` |
-| Source package SHA-256 | `73ba0eaff69ac66a18f31c4fec6104fc4c870af056009ab3da314fc249731705` |
-| Evidence-pack commit | `1bbae120c7249630ecdc17faf9a2f32144eb96a5` |
+| Source release Git SHA | `8d6eb2e9fe4ba1a3ed3f06b168294ed3e8b29500` |
+| Source package SHA-256 | `2d15fbe3f1cfcba2c1ec69344de466fb6b329c77c8f6de6f820863106eb68604` |
+| Evidence-pack commit | `PENDING_FINAL_EVIDENCE_COMMIT` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
@@ -104,16 +104,16 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | `npx tsc --noEmit` | PASS | CI/local command output |
 | `npm test` | PASS | 32 unit/contract/property/fault/routing/queue tests |
 | `npm run test:coverage` | PASS | total lib branches 88.63%; critical modules meet 90% gate |
-| `npm run test:e2e` | PASS — current run `sess_26c687533ded474f88940a2f` | Full local Worker/D1/R2 smoke, required idempotency key, response metadata export, restart/resume and retention recovery |
+| `npm run test:e2e` | PASS — clean-room run `sess_0619f198751347109ee50932` | Full local Worker/D1/R2 smoke, required idempotency key, response metadata export, restart/resume and retention recovery |
 | `npm run test:browser` | PASS | Real browser hydration, strict CSP nonce, navigation and checkout redirect |
 | `npm run test:pdf-visual` | PASS | 4 deterministic 24-page A4 fixtures; visual render QA PASS |
-| `npm run test:load` | PASS | responses=275; p50=110.1ms; p95=945.7ms; p99=950.8ms; error_rate=0; 429=0; retryable_conflicts=0; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_IN_PROGRESS |
+| `npm run test:load` | PASS | responses=275 p50=113.6ms p95=980.5ms p99=985.5ms; assessment=2 p50=52.9ms p95=30399.9ms p99=30399.9ms; complete-core=2 p50=116.9ms p95=158.3ms p99=158.3ms; error_rate=0; 429=0; retryable_conflicts=0; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_IN_PROGRESS |
 | `npm run test:backup` | PASS | `BACKUP_RESTORE_SMOKE=PASS` |
 | `npm run build` | PASS | Vinext production build |
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx` |
 | Docker clean-room release archive | PASS | Exact source archive in Linux Node 22.13.0: locked install, lint, typecheck, 32 tests, coverage, migration check, build, browser CSP, PDF visual QA, E2E, retention plan, load, backup/restore and dependency audit |
-| Docker Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `9030ef48bee1a2ff22ebfe7c2dac2c452196dcc4`; manifest SHA `73ba0eaff69ac66a18f31c4fec6104fc4c870af056009ab3da314fc249731705`; flat manifest fields cross-checked |
+| Docker Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `8d6eb2e9fe4ba1a3ed3f06b168294ed3e8b29500`; manifest SHA `2d15fbe3f1cfcba2c1ec69344de466fb6b329c77c8f6de6f820863106eb68604`; flat manifest fields cross-checked |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register
