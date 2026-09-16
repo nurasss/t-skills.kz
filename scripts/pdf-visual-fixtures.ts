@@ -11,7 +11,8 @@ const fixtures = [
   { name: "low-confidence", recipe: { kind: "contradictory-low-confidence" } as const },
 ];
 
-await mkdir("output/pdf", { recursive: true });
+const outputDirectory = process.env.ORBITA_PDF_FIXTURE_DIR ?? "output/pdf";
+await mkdir(outputDirectory, { recursive: true });
 for (const fixture of fixtures) {
   const profile = scoreAssessment(responsesForRecipe(fixture.recipe));
   const report = buildReport(profile);
@@ -20,6 +21,6 @@ for (const fixture of fixtures) {
     report.stressAndBlindSpots = `${report.stressAndBlindSpots} ${report.stressAndBlindSpots}`;
   }
   const bytes = await buildReportPdf(profile, report);
-  await writeFile(`output/pdf/orbita-30-${fixture.name}.pdf`, bytes);
+  await writeFile(`${outputDirectory}/orbita-30-${fixture.name}.pdf`, bytes);
   console.log(`PDF_FIXTURE=${fixture.name} top5=${profile.traits.slice(0, 5).map((trait) => trait.code).join(",")}`);
 }

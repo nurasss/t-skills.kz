@@ -43,6 +43,8 @@ jobs:
       - name: Install PDF visual regression dependency
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y poppler-utils
       - name: PDF visual fixtures
+        env:
+          ORBITA_PDF_FIXTURE_DIR: tmp/pdfs/fixtures
         run: npm run test:pdf-visual
       - name: Local Worker/D1/R2 negative smoke
         run: npm run test:e2e

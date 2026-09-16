@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { PDFDocument } from "pdf-lib";
 import { readFileSync } from "node:fs";
 
-const directory = "output/pdf";
+const directory = process.env.ORBITA_PDF_FIXTURE_DIR ?? "output/pdf";
 const renderDirectory = "tmp/pdfs/visual-regression";
 rmSync(renderDirectory, { recursive: true, force: true });
 mkdirSync(renderDirectory, { recursive: true });
