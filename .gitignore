@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+# PDF visual regression renders are disposable test output.
+/tmp/
 
 # next.js
 /.next/
