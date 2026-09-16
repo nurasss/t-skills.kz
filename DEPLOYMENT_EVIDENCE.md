@@ -10,8 +10,8 @@ Adaptive: Mercury 2.5 on staging only; approved fallback on failure
 Production Mercury: OFF
 V2_STAGING_READY=NO
 Blocker: INCEPTION_API_KEY must be provisioned as a managed staging secret, then the v2 branch must be deployed and its authenticated full E2E/smoke/failure simulation recorded.
-Source commit: e5c77ef383e8487012f927c1cfa81acb8de0b062
-Source package SHA-256: 2e88dce6224b21bfd049e4e18605c0e85de6aeb19800f4cc672dcc6b98042ffb
+Source commit: 071f50fe12adeed6e7bb22fe05e8f39e68adc656
+Source package SHA-256: bc5d286f889fe41315f0ba1b6fdebc61b4a5ca2252b771a7bed03771603874c7
 ```
 
 The blocker is external and intentional: no API key is stored in the repository or printed in evidence. The exact operator action is `npx wrangler secret put INCEPTION_API_KEY --env staging --config wrangler.jsonc`, followed by staging deployment and the v2 smoke gates. Production must not be switched to Mercury before those gates pass.
