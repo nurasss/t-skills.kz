@@ -53,7 +53,7 @@ BETA_SMOKE_READY=NO
 External blockers recorded 2026-09-16:
 
 - GitHub Actions runs start with `startup_failure` and zero jobs on the current private Free-plan account. GitHub branch protection and repository rulesets return `Upgrade to GitHub Pro or make this repository public`.
-- Cloudflare Zero Trust is not yet initialized. The Cloudflare One onboarding flow is currently at the `Choose a plan` step; Access application/allowlist and hosted beta smoke remain pending until the account owner confirms the Free plan and supplies the beta tester email allowlist.
+- Cloudflare Zero Trust Free is initialized and visible in Cloudflare One; Access application/allowlist and hosted beta smoke remain pending until the beta tester email allowlist is supplied.
 ```
 
 No secret values belong in this file.
