@@ -16,13 +16,13 @@ The current release keeps the complete Russian Q001–Q300 source bank and taxon
 
 ## Release identity
 
-- Source Git SHA: `398113adf5935e17abe97f66b74a2f21a83ead8c`
-- Source package SHA-256: `f14baf0026ea3c83ff94aaf1c5a6c1a155e9a57c7229249223e2c68ce4753b37`
+- Source Git SHA: `1211f83a58de72962d5695a5a9dd902215b28c96`
+- Source package SHA-256: `b45dac72a5b2fb79c15228144653ea9597696a793e120c158a96d134150ddeb6`
 - Evidence commit: `PENDING_EVIDENCE_COMMIT`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
 - Latest migration: `drizzle/0010_clever_unicorn.sql`
-- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-398113a.tar.gz`
+- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-1211f83.tar.gz`
 - Archive rule: tracked blobs from the exact source SHA; generated release evidence and this handoff are delivered alongside the archive.
 
 ## Deployment
@@ -30,6 +30,8 @@ The current release keeps the complete Russian Q001–Q300 source bank and taxon
 The GitHub + Cloudflare closed-beta track is defined in `.github/workflows/deploy-staging.yml`, `.github/workflows/deploy-production.yml` and `wrangler.jsonc`. It adds Cloudflare Access identity, a non-payment `beta_free` entitlement, an explicit `ENTITLED` assessment state, payments/AI kill switches and isolated staging/production bindings without changing the frozen assessment/scoring core. Current external completion evidence is recorded in `DEPLOYMENT_EVIDENCE.md`.
 
 - Production URL: `https://orbita-30.yzh905284.chatgpt.site`
+- Closed-beta staging Worker: `https://orbita-30-staging.bulatulynurasyl22.workers.dev`
+- Closed-beta production Worker: `https://orbita-30-production.bulatulynurasyl22.workers.dev`
 - Hosting project: `.openai/hosting.json` (`appgprj_6aa859a4ac588191b9560deef28958a9`)
 - Source is versioned in Git and published through the Sites `sites` remote.
 - The site remains owner-private. Protected APIs require the Sites/ChatGPT identity boundary; local preview auth is limited to `ORBITA_ENV=development`.
