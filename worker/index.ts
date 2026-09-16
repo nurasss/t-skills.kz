@@ -1,5 +1,6 @@
 import handler from "vinext/server/fetch-handler";
 
+import { identityFromAccessToken } from "@/lib/cloudflare-access";
 import { runRetentionSweep } from "@/lib/retention";
 import { applySecurityHeaders, contentSecurityPolicy, createCspNonce, requestIdFrom } from "@/lib/security-headers";
 import { logRequest } from "@/lib/observability";
@@ -16,8 +17,7 @@ const worker = {
       const access = (ctx as ExecutionContext & {
         access?: { getIdentity(): Promise<{ sub?: string; email?: string; name?: string; commonName?: string } | null> };
       }).access;
-      if (!access) return applySecurityHeaders(new Response("Access required", { status: 401 }), requestId, nonce);
-      const identity = await access.getIdentity();
+      const identity = (access ? await access.getIdentity() : null) ?? await identityFromAccessToken(request, env);
       const subject = identity?.sub?.trim() || identity?.commonName?.trim();
       const email = identity?.email?.trim().toLowerCase()
         || (identity?.commonName ? `${identity.commonName.replace(/[^a-zA-Z0-9._-]/g, "_")}@service.invalid` : "");

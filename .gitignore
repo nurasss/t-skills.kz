@@ -56,3 +56,5 @@ next-env.d.ts
 # Keep the release package available locally for handoff without publishing it
 # as part of the Git source tree or accidentally including it in a source pack.
 /release-artifacts/
+# Local hosted smoke output is captured separately in deployment evidence.
+/hosted-smoke-*.json

@@ -6,7 +6,7 @@
   "preview_urls": false,
   "compatibility_date": "2026-05-15",
   "compatibility_flags": ["nodejs_compat"],
-  "assets": { "directory": "dist/client" },
+  "assets": { "directory": "dist/client", "binding": "ASSETS", "run_worker_first": true },
   "observability": { "enabled": true },
   "env": {
     "staging": {
@@ -15,6 +15,8 @@
         "APP_ENV": "staging",
         "ORBITA_ENV": "staging",
         "AUTH_PROVIDER": "cloudflare-access",
+        "CF_ACCESS_TEAM_DOMAIN": "https://calm-silence-6ead.cloudflareaccess.com",
+        "CF_ACCESS_AUDIENCE": "99610357344699a1880b9e98bd30922074c9f9b0c4f001a329848d79ab1a21bc",
         "PAYMENTS_ENABLED": "false",
         "ENTITLEMENT_MODE": "beta-free",
         "AI_ENABLED": "false",
@@ -37,6 +39,8 @@
         "APP_ENV": "production-beta",
         "ORBITA_ENV": "production",
         "AUTH_PROVIDER": "cloudflare-access",
+        "CF_ACCESS_TEAM_DOMAIN": "https://calm-silence-6ead.cloudflareaccess.com",
+        "CF_ACCESS_AUDIENCE": "99610357344699a1880b9e98bd30922074c9f9b0c4f001a329848d79ab1a21bc",
         "PAYMENTS_ENABLED": "false",
         "ENTITLEMENT_MODE": "beta-free",
         "AI_ENABLED": "false",
