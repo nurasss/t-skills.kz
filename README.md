@@ -52,6 +52,8 @@ The portable profile simulates ChatGPT sign-in only for loopback development req
 
 The Worker entrypoint is `worker/index.ts`. It delegates HTTP requests to `vinext/server/fetch-handler` and also exports the scheduled retention handler. After building, `npm start` runs that Worker locally through Wrangler on `127.0.0.1`, sharing `.wrangler/state` with dev preview and local D1 migrations; it does not deploy the site or simulate sign-in. Use the URL printed by the server. Pass `npm start -- --port <port>` to select a different built-preview port.
 
+Vercel Preview is configured as a separate Nitro target for visual and runtime compatibility checks: `npm run build:vercel`, then `vercel deploy --prebuilt`. The Vercel target intentionally does not emulate Cloudflare D1/R2 or Cloudflare Access; public pages plus storage-independent endpoints can be smoke-tested there, while assessment, account, report, PDF and retention flows remain on the canonical Cloudflare Worker. Never copy Cloudflare or Inception secrets into the Vercel build unless a separate Vercel storage/auth architecture is approved.
+
 Local previews use Miniflare's placeholder `Request.cf` metadata without a network lookup. Set `CLOUDFLARE_CF_FETCH_ENABLED=true` to opt into fetching preview metadata; this setting does not change hosted request metadata.
 
 Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=true` to opt in.
