@@ -62,7 +62,9 @@ jobs:
       - name: Verify release manifest and reproducible package
         run: npm run release:verify
       - name: Build source release artifact
-        run: npm run package:source
+        run: |
+          SOURCE_SHA="$(node -e "process.stdout.write(require('./RELEASE_MANIFEST.json').source_git_sha)")"
+          npm run package:source -- "release-artifacts/orbita-30-source-release-${SOURCE_SHA:0:7}.tar.gz" "$SOURCE_SHA"
       - name: Calculate release gate status
         env:
           ORBITA_CI_GATES_PASSED: "true"

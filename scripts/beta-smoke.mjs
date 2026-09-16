@@ -50,6 +50,10 @@ try {
   assert(healthBody.paymentsEnabled === false && healthBody.aiEnabled === false, "beta feature flags");
   assert(healthBody.entitlementMode === "beta-free" && healthBody.normStatus === "unvalidated", "beta mode and norm status");
 
+  const catalog = await fetch(`${baseUrl}/api/catalog`, { headers });
+  const catalogBody = await catalog.json();
+  assert(catalog.ok && catalogBody.test?.accessMode === "beta-free" && catalogBody.test?.availableForCheckout === false, "beta catalog access mode");
+
   const checkout = await fetch(`${baseUrl}/api/checkout`, { method: "POST", headers, body: JSON.stringify({ test_id: "orbita30" }) });
   assert(checkout.status === 503, "checkout is disabled");
 
