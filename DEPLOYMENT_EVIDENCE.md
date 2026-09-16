@@ -32,6 +32,12 @@ ADAPTIVE_PROVIDER=deterministic
 REPORT_PROVIDER=approved-library
 normStatus=unvalidated
 
+Provisioning checks completed 2026-09-16:
+
+- Root-config deploy dry-run passed with `--config wrangler.jsonc --env staging`; the binding preview resolved `orbita30-staging` for D1 and R2.
+- Remote D1 migrations are complete in both environments; `npx wrangler d1 migrations list ... --env staging` and `... --env production` report no migrations to apply through `0010_clever_unicorn.sql`.
+- GitHub environments `staging` and `production` exist. Repository secret `CLOUDFLARE_ACCOUNT_ID` is configured without recording its value here.
+
 GITHUB_PRIVATE_REPO_READY=YES (private repo with full history; main + develop pushed)
 EXTERNAL_CI_READY=NO
 CLOUDFLARE_STAGING_READY=NO
