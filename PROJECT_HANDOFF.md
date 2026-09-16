@@ -16,13 +16,13 @@ The current release keeps the complete Russian Q001–Q300 source bank and taxon
 
 ## Release identity
 
-- Source Git SHA: `a0c58456917dbafb2ca74885d22dcc4a7f039157`
-- Source package SHA-256: `b2107722e94f1cb05a4630be7d46503df41c5cf4f1b565a93cb41e10ea359cc3`
-- Evidence commit: `edea6acb09049f984342915f385588b1916aa3aa`
+- Source Git SHA: `09976303f2325fc50526e49123c981bd30f3e6c0`
+- Source package SHA-256: `e36dd95cc476e5bc532929ee7158452d1942497764bb5f6892f5faf44b33e2d5`
+- Evidence commit: `PENDING_FINAL_EVIDENCE_COMMIT`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
 - Latest migration: `drizzle/0009_careless_banshee.sql`
-- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-a0c5845.tar.gz`
+- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-0997630.tar.gz`
 - Archive rule: tracked blobs from the exact source SHA; generated release evidence and this handoff are delivered alongside the archive.
 
 ## Deployment
@@ -123,6 +123,7 @@ npm run test:retention-plan
 npm run test:backup
 npm run test:load
 npm run security:scan
+npm run check:gates
 npm run package:source
 npm run release:verify
 npm audit --omit=dev --audit-level=high

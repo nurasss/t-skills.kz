@@ -1,34 +1,35 @@
 ORBITA-30 MASTER release verification record
 Date: 2026-09-16
-Source Git SHA: a0c58456917dbafb2ca74885d22dcc4a7f039157
-Source package SHA256: b2107722e94f1cb05a4630be7d46503df41c5cf4f1b565a93cb41e10ea359cc3
-Evidence commit: edea6acb09049f984342915f385588b1916aa3aa
+Source Git SHA: 09976303f2325fc50526e49123c981bd30f3e6c0
+Source package SHA256: e36dd95cc476e5bc532929ee7158452d1942497764bb5f6892f5faf44b33e2d5
+Evidence commit: PENDING_FINAL_EVIDENCE_COMMIT
 Node: release verification PASS in Linux container v22.13.0; local host v25.9.0 is not used for release manifest generation
 
 Commands and results:
   npm ci                                      PASS — lockfile install; clean Ubuntu run is defined in .github/workflows/ci.yml
   npm run lint                                PASS
   npm run security:scan                      PASS
+  npm run check:gates                        PASS — all computed statuses NO; local_release_checks=PASS; hosted_ci=MISSING
   npx tsc --noEmit                           PASS
   npm test                                   PASS — 32 unit/contract/property/fault/routing/queue tests
   npm run test:coverage                      PASS — total lib branches 88.63%; critical gate PASS
   npm run build                              PASS
-  npm run test:e2e                           PASS — sess_90b98b22befc48dda67d7708
+  npm run test:e2e                           PASS — sess_464e25a6ec4745328907ac31
   npm run test:browser                       PASS — strict nonce CSP and checkout navigation
   npm run test:pdf-visual                    PASS — four 24-page A4 fixtures and render QA
-  npm run test:load                          PASS — responses=275 p50=107.3ms p95=1126.3ms p99=1132.1ms; assessment=2 p50=55.4ms p95=56.4ms p99=56.4ms; complete-core=2 p50=133.5ms p95=174.4ms p99=174.4ms; error_rate=0; 429=0; retryable_conflicts=0; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_IN_PROGRESS
+  npm run test:load                          PASS — responses=275 p50=111.2ms p95=932.8ms p99=938.8ms; assessment=2 p50=48.7ms p95=88.6ms p99=88.6ms; complete-core=2 p50=112.8ms p95=162.2ms p99=162.2ms; error_rate=0; 429=0; retryable_conflicts=0; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_IN_PROGRESS
   npm run test:backup                        PASS — BACKUP_RESTORE_SMOKE=PASS
   npm audit --omit=dev --audit-level=high    PASS — 0 production vulnerabilities in recorded run
   npm run db:check                            PASS — MIGRATION_DRIFT=PASS
   npm run test:retention-plan                 PASS — indexed purge query plan
   Docker clean-room release archive           PASS — exact source archive, Linux Node 22.13.0 through browser/PDF/E2E/load/backup; lost=0; duplicated=0
-  Docker Node 22.13.0 release:verify         PASS — source SHA a0c58456917dbafb2ca74885d22dcc4a7f039157; exact archive reproduced twice; flat manifest fields cross-checked
+  Docker Node 22.13.0 release:verify         PASS — source SHA 09976303f2325fc50526e49123c981bd30f3e6c0; exact archive reproduced twice; flat manifest fields cross-checked
   git status --porcelain                     PASS after evidence commit — clean tree required
 
 PDF QA:
   output/pdf/orbita-30-*.pdf                 PASS — four deterministic PDF fixtures, 24 A4 pages each, render and visual review PASS
 
 Reproducibility:
-Two source package runs in Node 22.13.0     PASS — identical SHA256 b2107722e94f1cb05a4630be7d46503df41c5cf4f1b565a93cb41e10ea359cc3
+Two source package runs in Node 22.13.0     PASS — identical SHA256 e36dd95cc476e5bc532929ee7158452d1942497764bb5f6892f5faf44b33e2d5
 
 The local E2E uses an isolated Wrangler D1/R2 state directory and e2e-only test values. It never uses production secrets or data. A GitHub Actions Ubuntu run is required before promoting READY_FOR_ENGINEERING_100=YES.
