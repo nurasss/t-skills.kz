@@ -53,7 +53,7 @@ normStatus=unvalidated
 Provisioning and deployment checks completed 2026-09-16:
 
 - Root-config deploy dry-run passed with `--config wrangler.jsonc --env staging`; the binding preview resolved `orbita30-staging` for D1 and R2.
-- Remote D1 migrations are complete in both environments; `npx wrangler d1 migrations list ... --env staging` and `... --env production` report no migrations to apply through `0010_clever_unicorn.sql`.
+- Historical pre-v2 remote D1 migrations were complete in both environments through `0010_clever_unicorn.sql`; v2 migrations `0011/0012` remain part of the not-yet-deployed staging gate above.
 - Cloudflare R2 account activation completed in the Dashboard; private buckets `orbita30-staging` and `orbita30-production` were created and verified with Wrangler.
 - Staging and production Workers are published on the account `workers.dev` subdomain and both anonymous probes return the expected `401 Access required` response from the configured `AUTH_PROVIDER=cloudflare-access` boundary.
 - Cloudflare Access application `ORBITA-30 Closed Beta` protects both Worker destinations with an owner-only email Allow policy and a Service Auth policy covering the two smoke tokens; no additional beta tester emails are configured.
@@ -76,7 +76,7 @@ External blockers recorded 2026-09-16:
 
 - GitHub Actions runs start with `startup_failure` and zero jobs on the current private Free-plan account. GitHub branch protection and repository rulesets return `Upgrade to GitHub Pro or make this repository public`.
 - Cloudflare Zero Trust Free is initialized and visible in Cloudflare One. The requested allowlist is owner-only, so no beta tester email list was added.
-- The final local QA run passed all 34 unit/property/fault tests and the release verification reproduced the exact source archive hash twice.
+- The final local QA run passed all 40 unit/property/fault/routing/queue tests and the release verification reproduced the exact source archive hash twice.
 ```
 
 No secret values belong in this file.
