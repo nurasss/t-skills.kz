@@ -1,8 +1,8 @@
 ORBITA-30 MASTER release verification record
 Date: 2026-09-16
-Source Git SHA: 85374d290ce1a23ab7f398b647a3be9a2ca3ec66
-Source package SHA256: db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff
-Evidence commit: f19133b0088f146cc0c61f5a51165ab52e8e7fbc
+Source Git SHA: 77555bc5e5aa0f7bd856e90d4d05ad567f273152
+Source package SHA256: d93f612a1f6d8e7c7a6a8f625f6847d454f61a7b38701a2f286ac683f6259e37
+Evidence commit: PENDING_FINAL_EVIDENCE_COMMIT
 Node: release verification PASS in Linux container v22.13.0; local host v25.9.0 is not used for release manifest generation
 
 Commands and results:
@@ -13,22 +13,22 @@ Commands and results:
   npm test                                   PASS — 32 unit/contract/property/fault/routing/queue tests
   npm run test:coverage                      PASS — total lib branches 88.63%; critical gate PASS
   npm run build                              PASS
-  npm run test:e2e                           PASS — sess_a60ec547d9ff43bb845f5578
+  npm run test:e2e                           PASS — sess_c79cf072a4ed467a858e6949
   npm run test:browser                       PASS — strict nonce CSP and checkout navigation
   npm run test:pdf-visual                    PASS — four 24-page A4 fixtures and render QA
-  npm run test:load                          PASS — 275 requests; lost=0; duplicated=0
+  npm run test:load                          PASS — responses=275; p50=109.2ms; p95=1138ms; p99=1160.3ms; error_rate=0; 429=0; retryable_conflicts=0; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_IN_PROGRESS
   npm run test:backup                        PASS — BACKUP_RESTORE_SMOKE=PASS
   npm audit --omit=dev --audit-level=high    PASS — 0 production vulnerabilities in recorded run
   npm run db:check                            PASS — MIGRATION_DRIFT=PASS
   npm run test:retention-plan                 PASS — indexed purge query plan
   Docker clean-room release archive           PASS — exact source archive, Linux Node 22.13.0 through browser/PDF/E2E/load/backup; lost=0; duplicated=0
-  Docker Node 22.13.0 release:verify         PASS — deterministic archive reproduced twice
+  Docker Node 22.13.0 release:verify         PASS — source SHA 77555bc5e5aa0f7bd856e90d4d05ad567f273152; exact archive reproduced twice
   git status --porcelain                     PASS after evidence commit — clean tree required
 
 PDF QA:
   output/pdf/orbita-30-*.pdf                 PASS — four deterministic PDF fixtures, 24 A4 pages each, render and visual review PASS
 
 Reproducibility:
-Two source package runs in Node 22.13.0     PASS — identical SHA256 db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff
+Two source package runs in Node 22.13.0     PASS — identical SHA256 d93f612a1f6d8e7c7a6a8f625f6847d454f61a7b38701a2f286ac683f6259e37
 
 The local E2E uses an isolated Wrangler D1/R2 state directory and e2e-only test values. It never uses production secrets or data. A GitHub Actions Ubuntu run is required before promoting READY_FOR_ENGINEERING_100=YES.

@@ -16,13 +16,13 @@ The current release keeps the complete Russian Q001–Q300 source bank and taxon
 
 ## Release identity
 
-- Source Git SHA: `85374d290ce1a23ab7f398b647a3be9a2ca3ec66`
-- Source package SHA-256: `db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff`
-- Evidence commit: `f19133b0088f146cc0c61f5a51165ab52e8e7fbc`
+- Source Git SHA: `77555bc5e5aa0f7bd856e90d4d05ad567f273152`
+- Source package SHA-256: `d93f612a1f6d8e7c7a6a8f625f6847d454f61a7b38701a2f286ac683f6259e37`
+- Evidence commit: `PENDING_FINAL_EVIDENCE_COMMIT`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
 - Latest migration: `drizzle/0009_careless_banshee.sql`
-- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-85374d2.tar.gz`
+- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-77555bc.tar.gz`
 - Archive rule: tracked blobs from the exact source SHA; generated release evidence and this handoff are delivered alongside the archive.
 
 ## Deployment

@@ -6,9 +6,9 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | `85374d290ce1a23ab7f398b647a3be9a2ca3ec66` |
-| Source package SHA-256 | `db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff` |
-| Evidence-pack commit | `f19133b0088f146cc0c61f5a51165ab52e8e7fbc` |
+| Source release Git SHA | `77555bc5e5aa0f7bd856e90d4d05ad567f273152` |
+| Source package SHA-256 | `d93f612a1f6d8e7c7a6a8f625f6847d454f61a7b38701a2f286ac683f6259e37` |
+| Evidence-pack commit | `PENDING_FINAL_EVIDENCE_COMMIT` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
@@ -103,16 +103,16 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | `npx tsc --noEmit` | PASS | CI/local command output |
 | `npm test` | PASS | 32 unit/contract/property/fault/routing/queue tests |
 | `npm run test:coverage` | PASS | total lib branches 88.63%; critical modules meet 90% gate |
-| `npm run test:e2e` | PASS — current run `sess_a60ec547d9ff43bb845f5578` | Full local Worker/D1/R2 smoke, required idempotency key, response metadata export, restart/resume and retention recovery |
+| `npm run test:e2e` | PASS — current run `sess_c79cf072a4ed467a858e6949` | Full local Worker/D1/R2 smoke, required idempotency key, response metadata export, restart/resume and retention recovery |
 | `npm run test:browser` | PASS | Real browser hydration, strict CSP nonce, navigation and checkout redirect |
 | `npm run test:pdf-visual` | PASS | 4 deterministic 24-page A4 fixtures; visual render QA PASS |
-| `npm run test:load` | PASS | 275 requests; lost=0, duplicated=0, idempotency=PASS; state=ADAPTIVE_IN_PROGRESS |
+| `npm run test:load` | PASS | responses=275; p50=109.2ms; p95=1138ms; p99=1160.3ms; error_rate=0; 429=0; retryable_conflicts=0; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_IN_PROGRESS |
 | `npm run test:backup` | PASS | `BACKUP_RESTORE_SMOKE=PASS` |
 | `npm run build` | PASS | Vinext production build |
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx` |
 | Docker clean-room release archive | PASS | Exact source archive in Linux Node 22.13.0: locked install, lint, typecheck, 32 tests, coverage, migration check, build, browser CSP, PDF visual QA, E2E, retention plan, load, backup/restore and dependency audit |
-| Docker Node 22.13.0 `release:verify` | PASS | exact-Git archive reproduced twice; manifest SHA `db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff` |
+| Docker Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `77555bc5e5aa0f7bd856e90d4d05ad567f273152`; manifest SHA `d93f612a1f6d8e7c7a6a8f625f6847d454f61a7b38701a2f286ac683f6259e37` |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register
