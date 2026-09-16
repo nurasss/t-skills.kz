@@ -233,7 +233,7 @@ try {
   const allowedAtLimit = await request("/api/telemetry", { method: "POST", headers: rateLimitHeaders, body: JSON.stringify({ name: "test_view", metadata: { status: "at_limit" } }) });
   assert(allowedAtLimit.response.status === 200, `rate-limit allows request 120 (${allowedAtLimit.response.status})`);
   const rateLimited = await request("/api/telemetry", { method: "POST", headers: rateLimitHeaders, body: JSON.stringify({ name: "test_view", metadata: { status: "over_limit" } }) });
-  const allowedBeforeLimit = 120;
+  const allowedBeforeLimit = allowedAtLimit.response.status === 200 ? 120 : 0;
   assert(allowedBeforeLimit === 120, `rate-limit allows exactly 120 requests, got ${allowedBeforeLimit}`);
   assert(rateLimited?.response.status === 429 && rateLimited.response.headers.get("retry-after"), "mutation rate limit returns 429 and Retry-After");
   const exported = await request("/api/account/export", { method: "POST", body: "{}" });
