@@ -12,6 +12,7 @@ const stateDir = `.wrangler/e2e-smoke-${Date.now()}`;
 const userId = `e2e_${Date.now()}`;
 const deleteUserId = `${userId}_delete`;
 const noPaymentUserId = `${userId}_no_payment`;
+const rateLimitUserId = `${userId}_rate_limit`;
 const concurrentOrderId = `${userId}_concurrent`;
 const retentionUserId = `${userId}_retention`;
 const retentionAssessmentId = `${retentionUserId}_complete`;
@@ -115,6 +116,7 @@ const seed = [
   `INSERT OR IGNORE INTO users (id, email, full_name, locale, created_at, updated_at, deleted_at) VALUES (${sql(userId)}, ${sql(`${userId}@local.invalid`)}, 'E2E Smoke', 'ru', ${timestamp}, ${timestamp}, NULL)`,
   `INSERT OR IGNORE INTO users (id, email, full_name, locale, created_at, updated_at, deleted_at) VALUES (${sql(deleteUserId)}, ${sql(`${deleteUserId}@local.invalid`)}, 'E2E Delete', 'ru', ${timestamp}, ${timestamp}, NULL)`,
   `INSERT OR IGNORE INTO users (id, email, full_name, locale, created_at, updated_at, deleted_at) VALUES (${sql(noPaymentUserId)}, ${sql(`${noPaymentUserId}@local.invalid`)}, 'E2E No Payment', 'ru', ${timestamp}, ${timestamp}, NULL)`,
+  `INSERT OR IGNORE INTO users (id, email, full_name, locale, created_at, updated_at, deleted_at) VALUES (${sql(rateLimitUserId)}, ${sql(`${rateLimitUserId}@local.invalid`)}, 'E2E Rate Limit', 'ru', ${timestamp}, ${timestamp}, NULL)`,
   `INSERT OR IGNORE INTO users (id, email, full_name, locale, created_at, updated_at, deleted_at) VALUES (${sql(retentionUserId)}, ${sql(`${retentionUserId}@local.invalid`)}, 'E2E Retention', 'ru', ${timestamp - 400 * 24 * 60 * 60 * 1000}, ${timestamp - 400 * 24 * 60 * 60 * 1000}, NULL)`,
   `INSERT OR IGNORE INTO orders (id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id, provider_checkout_url, provider_payment_id, provider_event_id, idempotency_key, created_at, updated_at) VALUES (${sql(retentionOrderId)}, ${sql(retentionUserId)}, 'orbita30', 150000, 'KZT', 'PAID', 'stripe', 'cs_retention', 'https://checkout.stripe.test/cs_retention', 'pi_retention', 'evt_retention', ${sql(`${retentionUserId}_idem`)}, ${timestamp - 400 * 24 * 60 * 60 * 1000}, ${timestamp - 400 * 24 * 60 * 60 * 1000})`,
   `INSERT OR IGNORE INTO orders (id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id, provider_checkout_url, provider_payment_id, provider_event_id, idempotency_key, created_at, updated_at) VALUES (${sql(activeRetentionOrderId)}, ${sql(retentionUserId)}, 'orbita30', 150000, 'KZT', 'PAID', 'stripe', 'cs_retention_active', 'https://checkout.stripe.test/cs_retention_active', 'pi_retention_active', 'evt_retention_active', ${sql(`${retentionUserId}_active_idem`)}, ${timestamp - 400 * 24 * 60 * 60 * 1000}, ${timestamp - 400 * 24 * 60 * 60 * 1000})`,
@@ -224,17 +226,14 @@ try {
   if (process.env.E2E_PDF_OUTPUT) writeFileSync(process.env.E2E_PDF_OUTPUT, pdf.buffer);
   const telemetry = await request("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "test_view", metadata: { provider: "stripe", raw_answer: 7 } }) });
   assert(telemetry.response.status === 200, "allowlisted privacy-safe telemetry");
-  let rateLimited;
-  let allowedBeforeLimit = 1;
-  for (let attempt = 0; attempt < 125; attempt += 1) {
-    const burst = await request("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "test_view", metadata: { status: "burst" } }) });
-    if (burst.response.status === 429) {
-      rateLimited = burst;
-      break;
-    }
-    assert(burst.response.status === 200, `rate-limit warmup ${attempt + 1}`);
-    allowedBeforeLimit += 1;
-  }
+  const rateLimitWindow = Date.now();
+  const rateLimitWindowStartedAt = rateLimitWindow - (rateLimitWindow % (60 * 1000));
+  runWrangler(["d1", "execute", "DB", "--local", "--config", configPath, "--persist-to", stateDir, "--command", `INSERT OR REPLACE INTO rate_limits (bucket_key, window_started_at, request_count, updated_at) VALUES (${sql(`telemetry:${rateLimitUserId}`)}, ${rateLimitWindowStartedAt}, 119, ${rateLimitWindow})`]);
+  const rateLimitHeaders = { "x-orbita-preview-user": rateLimitUserId };
+  const allowedAtLimit = await request("/api/telemetry", { method: "POST", headers: rateLimitHeaders, body: JSON.stringify({ name: "test_view", metadata: { status: "at_limit" } }) });
+  assert(allowedAtLimit.response.status === 200, `rate-limit allows request 120 (${allowedAtLimit.response.status})`);
+  const rateLimited = await request("/api/telemetry", { method: "POST", headers: rateLimitHeaders, body: JSON.stringify({ name: "test_view", metadata: { status: "over_limit" } }) });
+  const allowedBeforeLimit = 120;
   assert(allowedBeforeLimit === 120, `rate-limit allows exactly 120 requests, got ${allowedBeforeLimit}`);
   assert(rateLimited?.response.status === 429 && rateLimited.response.headers.get("retry-after"), "mutation rate limit returns 429 and Retry-After");
   const exported = await request("/api/account/export", { method: "POST", body: "{}" });

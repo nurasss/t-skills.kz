@@ -30,13 +30,13 @@ promptVersion = mercury-adaptive-v1
 
 ## Release identity
 
-- Source Git SHA: `TBD — see RELEASE_MANIFEST.json after the source commit is frozen`
-- Source package SHA-256: `TBD — see RELEASE_MANIFEST.json`
-- Evidence commit: `TBD — evidence commit after release manifest generation`
+- Source Git SHA: `0e2fb3cafba6ab77cc3fd5ad2b3324c14482a3fa`
+- Source package SHA-256: `9b21ac322c695ed25bd5483c4ce8238b46c2cb51a39dc565b202c7246dec8a15`
+- Evidence commit: `see final Git HEAD; source identity is frozen in RELEASE_MANIFEST.json`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
 - Latest migration: `drizzle/0012_adaptive_generation_attempts.sql`
-- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release.tar.gz`
+- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-0e2fb3c.tar.gz`
 - Archive rule: tracked blobs from the exact source SHA; generated release evidence and this handoff are delivered alongside the archive.
 
 ## Deployment
