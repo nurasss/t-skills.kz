@@ -16,13 +16,13 @@ The current release keeps the complete Russian Q001–Q300 source bank and taxon
 
 ## Release identity
 
-- Source Git SHA: `1211f83a58de72962d5695a5a9dd902215b28c96`
-- Source package SHA-256: `b45dac72a5b2fb79c15228144653ea9597696a793e120c158a96d134150ddeb6`
-- Evidence commit: `9c176f2fa12f10cab279dd2b06b6e2676bea19fe`
+- Source Git SHA: `6523f627cef5a9014d9ef6d2edd8e0b4c5c0159a`
+- Source package SHA-256: `69d3a208cf8a81f93878568c797789769faac3f25e3b93ed449ee78400d9cc11`
+- Evidence commit: `PENDING_FINAL_EVIDENCE_COMMIT`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
 - Latest migration: `drizzle/0010_clever_unicorn.sql`
-- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-1211f83.tar.gz`
+- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release.tar.gz`
 - Archive rule: tracked blobs from the exact source SHA; generated release evidence and this handoff are delivered alongside the archive.
 
 ## Deployment
@@ -36,6 +36,7 @@ The GitHub + Cloudflare closed-beta track is defined in `.github/workflows/deplo
 - Source is versioned in Git and published through the Sites `sites` remote.
 - The site remains owner-private. Protected APIs require the Sites/ChatGPT identity boundary; local preview auth is limited to `ORBITA_ENV=development`.
 - D1 binding is `DB`; R2 binding is `BUCKET`. The custom deploy Worker is `worker/index.ts`; its built `dist/server/index.js` exports both HTTP `fetch` and scheduled retention `scheduled`.
+- Cloudflare Access is owner-only for the closed beta. The Worker runs auth before Static Assets and verifies the signed Access JWT fallback when the assets router does not provide `ctx.access`.
 - Cron: `0 2 * * *`. Retention defaults to dry-run until explicitly disabled.
 
 Before any publish, run the Sites build/package/save/deploy workflow and verify the exact full Git SHA. The immutable source archive is source-only and intentionally excludes generated `dist/`; the separate Sites deployment build must contain `dist/server/index.js`, `dist/.openai/hosting.json` and `dist/.openai/drizzle/**`, while excluding dependencies, generated local state and OS artifacts.
