@@ -6,10 +6,10 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | `09976303f2325fc50526e49123c981bd30f3e6c0` |
-| Source package SHA-256 | `e36dd95cc476e5bc532929ee7158452d1942497764bb5f6892f5faf44b33e2d5` |
-| Source package path | `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-0997630.tar.gz` |
-| Evidence-pack commit | `1eb55068941638fad0f53ea7b414a19ee774bd2e` |
+| Source release Git SHA | `8af4c9ef7f25134aae929aece2e8815a0e2a8d16` |
+| Source package SHA-256 | `3882148e4d1a425e5b9399584f7af6b9fd5208ac18ff73da90f55e3cd0e1cf1d` |
+| Source package path | `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-8af4c9e.tar.gz` |
+| Evidence-pack commit | `PENDING_EVIDENCE_COMMIT` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
@@ -117,7 +117,7 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx` |
 | Docker clean-room release archive | PASS | Exact source archive in Linux Node 22.13.0: locked install, lint, typecheck, 32 tests, coverage, migration check, build, browser CSP, PDF visual QA, E2E, retention plan, load, backup/restore and dependency audit |
-| Docker Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `09976303f2325fc50526e49123c981bd30f3e6c0`; manifest SHA `e36dd95cc476e5bc532929ee7158452d1942497764bb5f6892f5faf44b33e2d5`; flat manifest fields cross-checked |
+| Docker Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `8af4c9ef7f25134aae929aece2e8815a0e2a8d16`; manifest SHA `3882148e4d1a425e5b9399584f7af6b9fd5208ac18ff73da90f55e3cd0e1cf1d`; flat manifest fields cross-checked |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register

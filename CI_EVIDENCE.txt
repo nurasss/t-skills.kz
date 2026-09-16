@@ -1,8 +1,8 @@
 ORBITA-30 MASTER release verification record
 Date: 2026-09-16
-Source Git SHA: 09976303f2325fc50526e49123c981bd30f3e6c0
-Source package SHA256: e36dd95cc476e5bc532929ee7158452d1942497764bb5f6892f5faf44b33e2d5
-Evidence commit: 1eb55068941638fad0f53ea7b414a19ee774bd2e
+Source Git SHA: 8af4c9ef7f25134aae929aece2e8815a0e2a8d16
+Source package SHA256: 3882148e4d1a425e5b9399584f7af6b9fd5208ac18ff73da90f55e3cd0e1cf1d
+Evidence commit: PENDING_EVIDENCE_COMMIT
 Node: release verification PASS in Linux container v22.13.0; local host v25.9.0 is not used for release manifest generation
 
 Commands and results:
@@ -23,13 +23,13 @@ Commands and results:
   npm run db:check                            PASS — MIGRATION_DRIFT=PASS
   npm run test:retention-plan                 PASS — indexed purge query plan
   Docker clean-room release archive           PASS — exact source archive, Linux Node 22.13.0 through browser/PDF/E2E/load/backup; lost=0; duplicated=0
-  Docker Node 22.13.0 release:verify         PASS — source SHA 09976303f2325fc50526e49123c981bd30f3e6c0; exact archive reproduced twice; flat manifest fields cross-checked
+  Docker Node 22.13.0 release:verify         PASS — source SHA 8af4c9ef7f25134aae929aece2e8815a0e2a8d16; exact archive reproduced twice; flat manifest fields cross-checked
   git status --porcelain                     PASS after evidence commit — clean tree required
 
 PDF QA:
   output/pdf/orbita-30-*.pdf                 PASS — four deterministic PDF fixtures, 24 A4 pages each, render and visual review PASS
 
 Reproducibility:
-Two source package runs in Node 22.13.0     PASS — identical SHA256 e36dd95cc476e5bc532929ee7158452d1942497764bb5f6892f5faf44b33e2d5
+Two source package runs in Node 22.13.0     PASS — identical SHA256 3882148e4d1a425e5b9399584f7af6b9fd5208ac18ff73da90f55e3cd0e1cf1d
 
 The local E2E uses an isolated Wrangler D1/R2 state directory and e2e-only test values. It never uses production secrets or data. A GitHub Actions Ubuntu run is required before promoting READY_FOR_ENGINEERING_100=YES.
