@@ -14,6 +14,8 @@
 /coverage
 # PDF visual regression renders are disposable test output.
 /tmp/
+# Playwright traces and attachments are disposable test output.
+/test-results/
 
 # next.js
 /.next/
