@@ -8,15 +8,20 @@ Assessment: orbita30_ru_v2
 Core: 60 fixed items
 Adaptive: Mercury 2.5 on staging only; approved fallback on failure
 Production Mercury: OFF
-V2_STAGING_READY=NO
-Blocker: INCEPTION_API_KEY must be provisioned as a managed staging secret, then the v2 branch must be deployed and its authenticated full E2E/smoke/failure simulation recorded.
-Source commit: 071f50fe12adeed6e7bb22fe05e8f39e68adc656
-Source package SHA-256: bc5d286f889fe41315f0ba1b6fdebc61b4a5ca2252b771a7bed03771603874c7
+V2_STAGING_READY=YES
+Managed staging secret: PASS (INCEPTION_API_KEY exists; value is not recorded)
+Remote v2 migrations: PASS (0011_hard_lifeguard.sql, 0012_adaptive_generation_attempts.sql)
+V2 staging deploy: PASS (Worker version 7c31c70a-33c4-4d82-807a-b811e3f31b95)
+Authenticated v2 smoke: PASS (health, catalog, Core60, Mercury, report and signed PDF)
+Source commit: d3ea99fd1cac90b7d76d3fcf5e790a73eaa35f13
+Source package SHA-256: 0e7975c9f9085762e0a56550de35c165bb58956421034ab740ad1b48e3bd0efb
 ```
 
-The blocker is external and intentional: no API key is stored in the repository or printed in evidence. The exact operator action is `npx wrangler secret put INCEPTION_API_KEY --env staging --config wrangler.jsonc`, followed by staging deployment and the v2 smoke gates. Production must not be switched to Mercury before those gates pass.
+The key is managed outside Git and is not printed in evidence. Staging v2 acceptance completed on 2026-09-16: anonymous access returned 302 at the Access boundary; authenticated health returned 200 with `paymentsEnabled=false`, `aiEnabled=true`, `adaptiveProvider=mercury`, `entitlementMode=beta-free`, and `normStatus=unvalidated`; the live assessment completed all 60 Core responses, Mercury returned 12 adaptive questions on its first attempt, the report completed with `adaptiveFallbackUsed=false`, and the signed PDF download returned HTTP 200 (`49,362` bytes). Local malformed/timeout/fallback tests remain PASS. Production Mercury remains OFF.
 
-The deployment block below is retained as historical pre-v2 Cloudflare evidence; its `AI_ENABLED=false` state is not evidence that the v2 Mercury staging gate has passed.
+The source commit shown above predates the evidence-only deployment commit. The exact current code and evidence identity are recorded in `RELEASE_MANIFEST.json` after the evidence commit; no secret value belongs in this file.
+
+The deployment block below is retained as historical pre-v2 Cloudflare evidence; its `AI_ENABLED=false` state is not evidence for the current v2 Mercury staging gate.
 
 ```text
 GitHub URL: https://github.com/nurasss/orbita-30
@@ -53,7 +58,7 @@ normStatus=unvalidated
 Provisioning and deployment checks completed 2026-09-16:
 
 - Root-config deploy dry-run passed with `--config wrangler.jsonc --env staging`; the binding preview resolved `orbita30-staging` for D1 and R2.
-- Historical pre-v2 remote D1 migrations were complete in both environments through `0010_clever_unicorn.sql`; v2 migrations `0011/0012` remain part of the not-yet-deployed staging gate above.
+- Historical pre-v2 remote D1 migrations were complete in both environments through `0010_clever_unicorn.sql`; current staging v2 deployment additionally applied `0011_hard_lifeguard.sql` and `0012_adaptive_generation_attempts.sql`.
 - Cloudflare R2 account activation completed in the Dashboard; private buckets `orbita30-staging` and `orbita30-production` were created and verified with Wrangler.
 - Staging and production Workers are published on the account `workers.dev` subdomain and both anonymous probes return the expected `401 Access required` response from the configured `AUTH_PROVIDER=cloudflare-access` boundary.
 - Cloudflare Access application `ORBITA-30 Closed Beta` protects both Worker destinations with an owner-only email Allow policy and a Service Auth policy covering the two smoke tokens; no additional beta tester emails are configured.

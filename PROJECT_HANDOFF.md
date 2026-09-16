@@ -30,18 +30,18 @@ promptVersion = mercury-adaptive-v1
 
 ## Release identity
 
-- Source Git SHA: `071f50fe12adeed6e7bb22fe05e8f39e68adc656`
-- Source package SHA-256: `bc5d286f889fe41315f0ba1b6fdebc61b4a5ca2252b771a7bed03771603874c7`
+- Source Git SHA: `d3ea99fd1cac90b7d76d3fcf5e790a73eaa35f13`
+- Source package SHA-256: `0e7975c9f9085762e0a56550de35c165bb58956421034ab740ad1b48e3bd0efb`
 - Evidence commit: `see final Git HEAD; source identity is frozen in RELEASE_MANIFEST.json`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
 - Latest migration: `drizzle/0012_adaptive_generation_attempts.sql`
-- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-071f50f.tar.gz`
+- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-d3ea99f.tar.gz`
 - Archive rule: tracked blobs from the exact source SHA; generated release evidence and this handoff are delivered alongside the archive.
 
 ## Deployment
 
-The GitHub + Cloudflare closed-beta track is defined in `.github/workflows/deploy-staging.yml`, `.github/workflows/deploy-production.yml` and `wrangler.jsonc`. It adds Cloudflare Access identity, a non-payment `beta_free` entitlement, an explicit `ENTITLED` assessment state, payments/AI kill switches and isolated staging/production bindings. v2 keeps production Mercury off until staging E2E is accepted. Current external completion evidence is recorded in `DEPLOYMENT_EVIDENCE.md`.
+The GitHub + Cloudflare closed-beta track is defined in `.github/workflows/deploy-staging.yml`, `.github/workflows/deploy-production.yml` and `wrangler.jsonc`. It adds Cloudflare Access identity, a non-payment `beta_free` entitlement, an explicit `ENTITLED` assessment state, payments/AI kill switches and isolated staging/production bindings. Staging v2 Mercury E2E is accepted; production Mercury remains off until a separate explicit production approval. Current external completion evidence is recorded in `DEPLOYMENT_EVIDENCE.md`.
 
 - Production URL: `https://orbita-30.yzh905284.chatgpt.site`
 - Closed-beta staging Worker: `https://orbita-30-staging.bulatulynurasyl22.workers.dev`

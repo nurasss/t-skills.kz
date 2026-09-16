@@ -6,9 +6,9 @@ This document is the release checklist for the ORBITA-30 v2 Core60 + Mercury mig
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | `071f50fe12adeed6e7bb22fe05e8f39e68adc656` |
-| Source package SHA-256 | `bc5d286f889fe41315f0ba1b6fdebc61b4a5ca2252b771a7bed03771603874c7` |
-| Source package path | `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-071f50f.tar.gz` |
+| Source release Git SHA | `d3ea99fd1cac90b7d76d3fcf5e790a73eaa35f13` |
+| Source package SHA-256 | `0e7975c9f9085762e0a56550de35c165bb58956421034ab740ad1b48e3bd0efb` |
+| Source package path | `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-d3ea99f.tar.gz` |
 | Evidence-pack commit | `see final Git HEAD; source identity is frozen in RELEASE_MANIFEST.json` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v2` / `core60-v1`, 60 fixed items; legacy v1 Q001–Q300 preserved |
@@ -64,7 +64,7 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | PAY-03 | PASS | `lib/stripe-signature.ts`, `lib/payment-integrity.ts` | Signature, snapshot, replay and race E2E | Grant follows exact order/session/amount/currency/test/payment checks. | Product / Payments | 2026-09-16 |
 | PAY-04 | PARTIAL | `lib/payment-event-policy.ts`, `RUNBOOKS.md` | Refund/dispute state transitions and webhook tests | Approved commercial refund policy and support action are external. | Product / Payments | 2026-09-16 |
 | PAY-05 | OPEN | `RUNBOOKS.md` | Named support owner/channel required | No support SLA or contact is fabricated. | Product / Payments | 2026-09-16 |
-| AI-01 | PASS (local) | `lib/mercury-adaptive-provider.ts`, `lib/orbita-v2-engine.ts` | Core60/Mercury validation and fallback tests | Mercury generates question content only; server-side v2 scoring remains authoritative and production Mercury stays off until staging PASS. | Engineering | 2026-09-16 |
+| AI-01 | PASS | `lib/mercury-adaptive-provider.ts`, `lib/orbita-v2-engine.ts`, `DEPLOYMENT_EVIDENCE.md` | Core60/Mercury validation and fallback tests plus authenticated staging smoke | Live staging generated 12 adaptive questions with Inception Labs `mercury-2.5` (`provider=inception-labs`, `attempts=1`, no fallback); server-side v2 scoring remains authoritative and production Mercury stays off. | Engineering | 2026-09-16 |
 | AI-02 | PASS | `lib/provider-contract.ts`, `tests/unit.test.ts` | Provider failure and malformed-output tests | Fallback is structured and auditable. | Engineering | 2026-09-16 |
 | AI-03 | PASS | `lib/report-safety.ts`, `lib/report-provider.ts` | Source-key, forbidden-claim and prompt-injection tests | Frozen score and approved library are authoritative. | Engineering | 2026-09-16 |
 | AI-04 | PARTIAL | `lib/ops-monitoring.ts`, `lib/analytics.ts` | Telemetry and alert helper tests | A deployed alert sink and on-call escalation are not configured. | Engineering | 2026-09-16 |
@@ -117,7 +117,11 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | `npm run build` | PASS | Vinext production build |
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx`; migration chain through `0012_adaptive_generation_attempts.sql` |
-| Linux Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `071f50fe12adeed6e7bb22fe05e8f39e68adc656`; archive SHA `bc5d286f889fe41315f0ba1b6fdebc61b4a5ca2252b771a7bed03771603874c7` |
+| `npx wrangler secret list --env staging` | PASS | Managed secret names include `INCEPTION_API_KEY` and `PDF_SIGNING_SECRET`; values are never recorded |
+| `npx wrangler d1 migrations apply DB --remote --env staging` | PASS | Remote staging applied `0011_hard_lifeguard.sql` and `0012_adaptive_generation_attempts.sql` |
+| `npx wrangler deploy --env staging` | PASS | Worker `orbita-30-staging`, version `7c31c70a-33c4-4d82-807a-b811e3f31b95`, 100% traffic |
+| Authenticated staging v2 smoke | PASS | Health/catalog 200; 60 Core responses; live Mercury 2.5 returned 12 questions in 1 attempt (~2.8s); report 200 with `adaptiveFallbackUsed=false`; signed PDF 200, 49,362 bytes |
+| Linux Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `d3ea99fd1cac90b7d76d3fcf5e790a73eaa35f13`; archive SHA `0e7975c9f9085762e0a56550de35c165bb58956421034ab740ad1b48e3bd0efb` |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register

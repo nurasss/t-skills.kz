@@ -6,7 +6,7 @@ The assessment is an original developmental product. It is not a Gallup/CliftonS
 
 ## Closed beta deployment
 
-The beta profile is intentionally free and closed: `PAYMENTS_ENABLED=false`, `ENTITLEMENT_MODE=beta-free`, and the approved interpretation library. Production beta remains `AI_ENABLED=false` until staging E2E passes; staging is configured for `AI_ENABLED=true`, `ADAPTIVE_PROVIDER=mercury`, and managed `INCEPTION_API_KEY`, with deterministic approved fallback on provider failure. Staging and production use separate Workers, D1 databases, R2 buckets, credentials and Cloudflare Access applications. See `wrangler.jsonc`, `docs/deployment/` and `BETA_TESTER_GUIDE.md`. The legacy owner-private Site remains available as a reference and is not deleted by this deployment.
+The beta profile is intentionally free and closed: `PAYMENTS_ENABLED=false`, `ENTITLEMENT_MODE=beta-free`, and the approved interpretation library. Production beta remains `AI_ENABLED=false` by policy; staging is configured for `AI_ENABLED=true`, `ADAPTIVE_PROVIDER=mercury`, and a managed `INCEPTION_API_KEY`, with deterministic approved fallback on provider failure. Staging and production use separate Workers, D1 databases, R2 buckets, credentials and Cloudflare Access applications. See `wrangler.jsonc`, `docs/deployment/` and `BETA_TESTER_GUIDE.md`. The legacy owner-private Site remains available as a reference and is not deleted by this deployment.
 
 ## Prerequisites
 
@@ -112,7 +112,7 @@ MERCURY_TIMEOUT_MS=12000
 MERCURY_MAX_RETRIES=2
 ```
 
-Set the staging secret only after the Worker exists, for example with `npx wrangler secret put INCEPTION_API_KEY --env staging --config wrangler.jsonc`. Production keeps its own separate secret binding and remains Mercury-off until staging acceptance is recorded.
+Set the staging secret only after the Worker exists, for example with `npx wrangler secret put INCEPTION_API_KEY --env staging --config wrangler.jsonc`. Production keeps its own separate secret binding and remains Mercury-off until an explicit production approval is recorded; current staging acceptance is recorded in `DEPLOYMENT_EVIDENCE.md`.
 
 Required before accepting real payments:
 
@@ -133,7 +133,7 @@ Adaptive generation:
 
 - Current v2 staging uses `ADAPTIVE_PROVIDER=mercury`, `MERCURY_MODEL=mercury-2.5` and the server-only `INCEPTION_API_KEY`.
 - The provider calls the official Inception Labs OpenAI-compatible endpoint, requests strict JSON schema output, validates every item server-side, retries at most twice, and then selects 10–15 items from the approved fallback bank.
-- Production beta remains `ADAPTIVE_PROVIDER=deterministic`/`AI_ENABLED=false` until staging Mercury smoke and full E2E are both PASS. The historical v1 OpenAI selector is not used by new v2 assessments.
+- Production beta remains `ADAPTIVE_PROVIDER=deterministic`/`AI_ENABLED=false` by policy after the staging Mercury smoke and full E2E passed. The historical v1 OpenAI selector is not used by new v2 assessments.
 
 Scheduled retention and manual recovery:
 

@@ -1,11 +1,11 @@
 {
   "schema_version": "orbita-30-release-manifest-v2",
-  "generated_at": "2026-09-16T15:39:55.379Z",
-  "source_git_sha": "071f50fe12adeed6e7bb22fe05e8f39e68adc656",
+  "generated_at": "2026-09-16T16:23:43.694Z",
+  "source_git_sha": "d3ea99fd1cac90b7d76d3fcf5e790a73eaa35f13",
   "node_version": "22.13.0",
   "package_lock_sha256": "f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57",
   "artifact_name": "orbita-30-source-release.tar.gz",
-  "artifact_sha256": "bc5d286f889fe41315f0ba1b6fdebc61b4a5ca2252b771a7bed03771603874c7",
+  "artifact_sha256": "0e7975c9f9085762e0a56550de35c165bb58956421034ab740ad1b48e3bd0efb",
   "assessment_version": "orbita30_ru_v2",
   "item_bank_version": "core60-v1",
   "scoring_version": "mvp-0.5-core60",
@@ -21,7 +21,7 @@
   "norm_version": "unvalidated-v2",
   "source_package": {
     "file": "orbita-30-source-release.tar.gz",
-    "sha256": "bc5d286f889fe41315f0ba1b6fdebc61b4a5ca2252b771a7bed03771603874c7",
+    "sha256": "0e7975c9f9085762e0a56550de35c165bb58956421034ab740ad1b48e3bd0efb",
     "packaging_rule": "tracked blobs from exact source_git_sha; generated release evidence, DEPLOYMENT_EVIDENCE.md and PROJECT_HANDOFF.md excluded"
   },
   "runtime": {
