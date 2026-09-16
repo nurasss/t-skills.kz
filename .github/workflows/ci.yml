@@ -40,6 +40,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Browser hydration and CSP regression
         run: npm run test:browser
+      - name: Install PDF visual regression dependency
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y poppler-utils
       - name: PDF visual fixtures
         run: npm run test:pdf-visual
       - name: Local Worker/D1/R2 negative smoke
