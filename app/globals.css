@@ -65,17 +65,19 @@ button:focus-visible, a:focus-visible, [role="radio"]:focus-visible {
 }
 p, h1, h2, h3 { margin: 0; }
 
-.orbita-app { min-height: 100vh; overflow: hidden; }
+.orbita-app { min-height: 100vh; }
 .orbita-header {
   align-items: center;
-  background: rgba(243,245,242,.92);
-  border-bottom: 1px solid var(--line);
+  background: rgba(247, 244, 238, 0.92);
+  border-bottom: 1px solid rgba(23, 26, 24, 0.12);
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  min-height: 78px;
+  min-height: 76px;
   padding: 0 52px;
   position: relative;
   z-index: 2;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 .orbita-brand {
   align-items: center;

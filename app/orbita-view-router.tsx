@@ -1,21 +1,52 @@
 "use client";
 
-import { InfoView } from "@/app/orbita-public-views";
 import {
-  AccountView,
-  AdminView,
-  AssessmentView,
-  BreakView,
-  CatalogView,
-  CheckoutView,
-  ConsentView,
-  DetailView,
-  HomeView,
-  MethodologyView,
-  ProcessingView,
-  ResultsView,
-} from "@/app/orbita-views";
+  InfoViewFAQ,
+  InfoViewSupport,
+  InfoView as EditorialInfoView,
+} from "@/app/views/info/info-view";
+import { getLegalDocument, DEFAULT_LEGAL_CONFIG } from "@/lib/legal-documents";
 import type { OrbitaController } from "@/hooks/use-orbita-controller";
+
+function getInfoContent(kind: "privacy" | "terms" | "faq" | "support", supportContact: string | null) {
+  if (kind === "privacy" || kind === "terms") {
+    const legal = getLegalDocument(kind, {
+      ...DEFAULT_LEGAL_CONFIG,
+      supportContact: supportContact || DEFAULT_LEGAL_CONFIG.supportContact,
+    });
+    return {
+      title: legal.title,
+      version: legal.version,
+      updatedAt: legal.updatedAt,
+      reviewStatus: DEFAULT_LEGAL_CONFIG.reviewStatus,
+      blocks: legal.blocks.map((block) => ({ title: block.title, body: block.body })),
+    };
+  }
+  if (kind === "faq") {
+    return {
+      title: "Вопросы, которые обычно задают.",
+      blocks: [
+        { title: "Сколько длится тест?", body: "60 основных вопросов. После предварительного профиля система задаёт ещё 10–15 персональных уточняющих вопросов. Между частями можно делать паузы." },
+        { title: "Что если я закрою браузер?", body: "Введённый ответ сохраняется сразу, а session продолжает с последнего подтверждённого item. Уже принятые adaptive-вопросы не меняются при reload." },
+        { title: "Почему вопросы разные?", body: "В тесте нет хороших и плохих сильных сторон. Mercury уточняет зоны неопределённости, а сервер проверяет каждый новый вопрос и оставляет scoring детерминированным." },
+        { title: "Можно ли сравнивать людей?", body: "В MVP нет. Пилотный индекс профиля и ранг предназначены для чтения собственного среза и не являются межличностной шкалой." },
+      ],
+    };
+  }
+  return {
+    title: "Нужна помощь?",
+    blocks: [
+      { title: "Проблема с оплатой", body: "Статус order проверяется по provider event. Support может повторно выдать entitlement после проверки, без повторной оплаты." },
+      { title: "Проблема с PDF", body: "Отчёт можно безопасно регенерировать без пересчёта frozen score JSON." },
+      {
+        title: "Контакт",
+        body: supportContact
+          ? `${supportContact} · укажите session ID, локаль и описание шага, на котором остановились.`
+          : "Контакт поддержки ещё не настроен. Укажите session ID, локаль и описание шага только через утверждённый канал поддержки.",
+      },
+    ],
+  };
+}
 
 export function OrbitaViewRouter({ controller }: { controller: OrbitaController }) {
   const {
@@ -25,7 +56,6 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
     activeValue,
     questionIndex,
     coreItemCount,
-    adaptiveIndex,
     adaptiveItems,
     selection,
     profile,
@@ -59,18 +89,73 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
     deleteAccountData,
     deleteAssessmentData,
   } = controller;
-  if (view === "home") return <HomeView onNavigate={go} onDemo={openDemo} />;
-  if (view === "catalog") return <CatalogView onNavigate={go} />;
-  if (view === "detail") return <DetailView onNavigate={go} onDemo={openDemo} />;
-  if (view === "checkout") return <CheckoutView onNavigate={go} onCheckout={startCheckout} busy={checkoutBusy} error={checkoutError} catalog={publicCatalog} />;
-  if (view === "consent") return <ConsentView consents={consents} onConsentChange={setConsent} onBegin={beginAssessment} onBack={() => go("account")} onPrivacy={() => go("privacy")} />;
-  if (view === "assessment") return <AssessmentView phase={phase} item={activeItem} currentIndex={phase === "core" ? questionIndex : adaptiveIndex} total={phase === "core" ? coreItemCount : adaptiveItems.length} blockNumber={Math.floor(questionIndex / (coreItemCount === 60 ? 20 : 50)) + 1} selectedValue={activeValue} onAnswer={saveResponse} onNext={nextQuestion} onPause={() => go("break")} autosaveStatus={autosaveStatus} elapsedSeconds={elapsedSeconds} />;
-  if (view === "break") return <BreakView adaptiveReady={phase === "adaptive"} selection={selection} onContinue={continueFromBreak} onExit={() => go("account")} />;
-  if (view === "processing") return <ProcessingView status={processingStatus} onOpenResults={() => go("results")} onRetry={retryReport} profile={profile} />;
-  if (view === "results" && profile && report) return <ResultsView profile={profile} report={report} provider={reportProvider} onNavigate={go} onPrint={downloadReport} />;
+
+  if (view === "home") return null;
+  if (view === "catalog") {
+    return <LazyCatalog onNavigate={go} />;
+  }
+  if (view === "detail") {
+    return <LazyDetail onNavigate={go} onDemo={openDemo} />;
+  }
+  if (view === "checkout") {
+    return (
+      <LazyCheckout
+        onNavigate={go}
+        onCheckout={startCheckout}
+        busy={checkoutBusy}
+        error={checkoutError}
+        catalog={publicCatalog}
+      />
+    );
+  }
+  if (view === "consent") {
+    return (
+      <LazyConsent
+        consents={consents}
+        onConsentChange={setConsent}
+        onBegin={beginAssessment}
+        onBack={() => go("account")}
+        onPrivacy={() => go("privacy")}
+      />
+    );
+  }
+  if (view === "assessment") {
+    return (
+      <LazyAssessment
+        phase={phase}
+        item={activeItem}
+        currentIndex={questionIndex}
+        total={phase === "core" ? coreItemCount : adaptiveItems.length}
+        blockNumber={Math.floor(questionIndex / (coreItemCount === 60 ? 20 : 50)) + 1}
+        selectedValue={activeValue}
+        onAnswer={saveResponse}
+        onNext={nextQuestion}
+        onPause={() => go("break")}
+        autosaveStatus={autosaveStatus}
+        elapsedSeconds={elapsedSeconds}
+      />
+    );
+  }
+  if (view === "break") {
+    return <LazyBreak adaptiveReady={phase === "adaptive"} selection={selection} onContinue={continueFromBreak} onExit={go} />;
+  }
+  if (view === "processing") {
+    return <LazyProcessing status={processingStatus} onOpenResults={() => go("results")} onRetry={retryReport} profile={profile} />;
+  }
+  if (view === "results" && profile && report) {
+    return (
+      <LazyResults
+        profile={profile}
+        report={report}
+        provider={reportProvider}
+        onNavigate={go}
+        onPrint={downloadReport}
+      />
+    );
+  }
   if (view === "account") {
     return (
-      <AccountView
+      <LazyAccount
         onNavigate={go}
         profile={profile}
         demoMode={demoMode}
@@ -86,8 +171,142 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
       />
     );
   }
-  if (view === "methodology") return <MethodologyView onNavigate={go} />;
-  if (view === "admin") return <AdminView profile={profile} metrics={adminMetrics} onNavigate={go} />;
-  if (view === "privacy" || view === "terms" || view === "faq" || view === "support") return <InfoView kind={view} onNavigate={go} supportContact={publicCatalog?.supportContact} />;
-  return <HomeView onNavigate={go} onDemo={openDemo} />;
+  if (view === "methodology") {
+    return <LazyMethodology onNavigate={go} />;
+  }
+  if (view === "admin") {
+    return <LazyAdmin profile={profile} metrics={adminMetrics} onNavigate={go} />;
+  }
+  if (view === "privacy" || view === "terms" || view === "faq" || view === "support") {
+    if (view === "privacy" || view === "terms") {
+      const content = getInfoContent(view, publicCatalog?.supportContact ?? null);
+      return (
+        <EditorialInfoView
+          kind={view}
+          onNavigate={go}
+          title={content.title}
+          blocks={content.blocks}
+          version={content.version}
+          updatedAt={content.updatedAt}
+          reviewStatus={content.reviewStatus}
+        />
+      );
+    }
+    if (view === "faq") {
+      return <InfoViewFAQ onNavigate={go} />;
+    }
+    return <InfoViewSupport onNavigate={go} supportContact={publicCatalog?.supportContact} />;
+  }
+  return null;
+}
+
+import { CatalogView } from "@/app/views/catalog/catalog-view";
+import { DetailView } from "@/app/views/detail/detail-view";
+import { CheckoutView } from "@/app/views/checkout/checkout-view";
+import { ConsentView } from "@/app/views/consent/consent-view";
+import { AssessmentView } from "@/app/views/assessment/assessment-view";
+import { BreakView } from "@/app/views/assessment/break-view";
+import { ProcessingView } from "@/app/views/assessment/processing-view";
+import { ResultsView } from "@/app/views/results/results-view";
+import { AccountView } from "@/app/views/account/account-view";
+import { MethodologyView } from "@/app/views/methodology/methodology-view";
+import { AdminView } from "@/app/views/admin/admin-view";
+import type { AccountOverview, AdminMetrics, AssessmentItem, Phase, PublicCatalog, View } from "@/app/orbita-view-types";
+import type { AdaptiveSelection, ReportJSON, ScoreProfile } from "@/lib/assessment-engine";
+
+function LazyCatalog(props: { onNavigate: (view: View) => void }) {
+  return <CatalogView {...props} />;
+}
+
+function LazyDetail(props: { onNavigate: (view: View) => void; onDemo: () => void }) {
+  return <DetailView {...props} />;
+}
+
+function LazyCheckout(props: {
+  onNavigate: (view: View) => void;
+  onCheckout: () => void;
+  busy: boolean;
+  error?: string;
+  catalog?: PublicCatalog;
+}) {
+  return <CheckoutView {...props} />;
+}
+
+function LazyConsent(props: {
+  consents: { terms: boolean; privacy: boolean; research: boolean; marketing: boolean };
+  onConsentChange: (key: "terms" | "privacy" | "research" | "marketing", value: boolean) => void;
+  onBegin: () => void;
+  onBack: () => void;
+  onPrivacy: () => void;
+}) {
+  return <ConsentView {...props} />;
+}
+
+function LazyAssessment(props: {
+  phase: Phase;
+  item?: AssessmentItem;
+  currentIndex: number;
+  total: number;
+  blockNumber: number;
+  selectedValue?: number;
+  onAnswer: (value: number) => void;
+  onNext: () => void;
+  onPause: () => void;
+  autosaveStatus: string;
+  elapsedSeconds: number;
+}) {
+  return <AssessmentView {...props} />;
+}
+
+function LazyBreak(props: {
+  adaptiveReady: boolean;
+  selection?: AdaptiveSelection;
+  onContinue: () => void;
+  onExit: (view: View) => void;
+}) {
+  return <BreakView {...props} />;
+}
+
+function LazyProcessing(props: {
+  status: "ADAPTIVE_GENERATING" | "ADAPTIVE_PROVIDER_FAILED" | "SCORING" | "REPORT_GENERATING" | "REPORT_FAILED_RETRYABLE" | "COMPLETE";
+  onOpenResults: () => void;
+  onRetry: () => void;
+  profile?: ScoreProfile;
+}) {
+  return <ProcessingView {...props} />;
+}
+
+function LazyResults(props: {
+  profile: ScoreProfile;
+  report: ReportJSON;
+  provider?: string;
+  onNavigate: (view: View) => void;
+  onPrint: () => void;
+}) {
+  return <ResultsView {...props} />;
+}
+
+function LazyAccount(props: {
+  onNavigate: (view: View) => void;
+  profile?: ScoreProfile;
+  demoMode: boolean;
+  overview?: AccountOverview;
+  loading: boolean;
+  actionStatus?: string;
+  betaFree: boolean;
+  onStartAssessment: () => void;
+  onOpenReport: (reportId: string) => void;
+  onExport: () => void;
+  onDelete: () => void;
+  onDeleteAssessment: (assessmentId: string) => void;
+}) {
+  return <AccountView {...props} />;
+}
+
+function LazyMethodology(props: { onNavigate: (view: View) => void }) {
+  return <MethodologyView {...props} />;
+}
+
+function LazyAdmin(props: { profile?: ScoreProfile; onNavigate: (view: View) => void; metrics?: AdminMetrics }) {
+  return <AdminView {...props} />;
 }
