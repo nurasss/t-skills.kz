@@ -2,10 +2,10 @@
 
 ## Release status
 
-The project contains the engineering implementation for a controlled closed pilot, but master acceptance remains evidence-driven. It is deliberately blocked from pilot/public launch until the required external content, legal, support and operations approvals are supplied.
+The project contains the engineering implementation for a controlled closed pilot, but master acceptance remains evidence-driven. The exact source archive passes the clean Linux release checks; pilot/public launch remains blocked until the required external content, legal, support and operations approvals are supplied.
 
 ```text
-READY_FOR_ENGINEERING_100=NO (clean Linux CI and clean release-checkout evidence are still required)
+READY_FOR_ENGINEERING_100=NO (clean-room/release verification PASS; external GitHub Actions clean Linux CI run is not yet recorded)
 READY_FOR_CLOSED_PILOT=NO (content/legal/protocol/support sign-off is still required)
 READY_FOR_PUBLIC_PAID_LAUNCH=NO
 READY_FOR_VALIDATED_CLAIMS=NO
@@ -13,6 +13,17 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 ```
 
 The current release keeps the complete Russian Q001–Q300 source bank and taxonomy unchanged. Every score carries explicit assessment, item-bank, scoring, selector, report and norm version IDs. `normStatus=unvalidated` is the only production-safe norm state in this release; UI/PDF wording is `pilot profile index` and `uncertainty range`, never percentile or population norm.
+
+## Release identity
+
+- Source Git SHA: `85374d290ce1a23ab7f398b647a3be9a2ca3ec66`
+- Source package SHA-256: `db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff`
+- Evidence commit: `f19133b0088f146cc0c61f5a51165ab52e8e7fbc`
+- CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
+- Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
+- Latest migration: `drizzle/0009_careless_banshee.sql`
+- Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-85374d2.tar.gz`
+- Archive rule: tracked blobs from the exact source SHA; generated release evidence and this handoff are delivered alongside the archive.
 
 ## Deployment
 
@@ -56,7 +67,12 @@ Before any publish, run the Sites build/package/save/deploy workflow and verify 
    - PDF is generated from structured JSON and frozen score data. It contains the required profile, domains, top strengths, combinations, teamwork, communication, thinking/execution/influence, self-management, stress/blind spots, development plan, methodology and limitations sections.
    - Current output is a 24-page A4 report and contains no normative percentile claim.
 
-5. Payments
+5. Response persistence
+
+   - Every response submit requires a bounded `Idempotency-Key`; replay returns the original server sequence without creating a duplicate.
+   - The server records the timestamp, client sequence and non-PII presentation metadata (phase, position, block, locale and frozen item/translation versions), and includes it in the owner export.
+
+6. Payments
 
    - Checkout is hosted by Stripe; the backend does not collect card data.
    - Price and currency are read from the backend catalog before redirect and copied into the order.
@@ -64,7 +80,7 @@ Before any publish, run the Sites build/package/save/deploy workflow and verify 
    - Order uniqueness is `(user_id, idempotency_key)` with migration `drizzle/0006_common_rick_jones.sql`.
    - Entitlement is created only after the durable verification transaction succeeds.
 
-6. Retention, privacy and analytics
+7. Retention, privacy and analytics
 
    - The scheduled and internal retention paths exclude active sessions, delete R2 artifacts before D1 rows, retain transaction records, record pseudonymous purge audit entries and support bounded idempotent dry-runs.
    - Full versioned Privacy and Terms documents are rendered from env-driven operator/legal configuration. Kazakhstan legal review and replacement of every placeholder are launch gates.
@@ -80,7 +96,7 @@ These values cannot be inferred or fabricated:
 3. Managed secret `STRIPE_WEBHOOK_SECRET`.
 4. Operator/legal values in `.env.example` for entity, support, jurisdiction, purposes, data categories, retention, processors, cross-border processing, rights, security, research and marketing.
 
-`PDF_SIGNING_SECRET` is already present as a managed secret in the current production environment. The default `approved-library` report/adaptive providers are safe without OpenAI. If enabled, `OPENAI_API_KEY` must be a managed secret; missing/error/timeout/schema failure falls back to approved deterministic behavior.
+`PDF_SIGNING_SECRET` is a dedicated required managed secret for protected PDF links; the implementation has no fallback to the internal token, and its production presence must be verified by the operator. The default `approved-library` report/adaptive providers are safe without OpenAI. If enabled, `OPENAI_API_KEY` must be a managed secret; missing/error/timeout/schema failure falls back to approved deterministic behavior.
 
 Until the three payment values are configured, `/api/catalog` reports checkout unavailable and the UI cannot redirect to a checkout with an unknown price. Until legal text is approved, the app must remain a controlled pilot. Do not publish percentile, norm, clinical, IQ, employment-selection or other high-stakes claims.
 
@@ -91,13 +107,21 @@ npm ci
 npm run lint
 npx tsc --noEmit
 npm test
+npm run test:coverage
 npm run test:e2e
+npm run test:browser
+npm run test:pdf-visual
 npm run build
+npm run test:retention-plan
+npm run test:backup
+npm run test:load
+npm run security:scan
 npm run package:source
+npm run release:verify
 npm audit --omit=dev --audit-level=high
 ```
 
-The smoke test runs a real local Worker with D1/R2 bindings and exercises the catalog, auth, entitlement, versioned consent, Q001–Q250, idempotency, restart/resume, adaptive completion, frozen score, approved report, signed PDF negative paths, ownership, rate limiting, payment races/refund/dispute states and privacy deletion/export paths.
+The smoke test runs a real local Worker with D1/R2 bindings and exercises the catalog, auth, entitlement, versioned consent, Q001–Q250, required idempotency keys, server-derived response presentation metadata/export, restart/resume, adaptive completion, frozen score, approved report, signed PDF negative paths, ownership, rate limiting, payment races/refund/dispute states and privacy deletion/export paths.
 
 ## Known non-code gates
 
@@ -108,3 +132,4 @@ The smoke test runs a real local Worker with D1/R2 bindings and exercises the ca
 - Kazakhstan privacy/consumer/payment/legal review and approved retention/processor/cross-border wording.
 - Real Stripe business account, amount, webhook endpoint, refund policy and operational support channel.
 - KZ/EN translations with back-translation and cognitive/invariance checks.
+- External GitHub Actions Ubuntu clean Linux CI run and hosted run URL/ID.

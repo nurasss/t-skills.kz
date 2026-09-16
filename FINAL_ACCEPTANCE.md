@@ -8,7 +8,7 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 |---|---|
 | Source release Git SHA | `85374d290ce1a23ab7f398b647a3be9a2ca3ec66` |
 | Source package SHA-256 | `db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff` |
-| Evidence-pack commit | `PENDING_EVIDENCE_COMMIT` |
+| Evidence-pack commit | `f19133b0088f146cc0c61f5a51165ab52e8e7fbc` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
@@ -75,7 +75,7 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | PSY-08 | OPEN | `PREREGISTRATION.md` | Calibration evidence required | Adaptive information is proxy-based until calibration. |
 | PSY-09 | OPEN | `NORMING_REPORT.md` | Norm sample/tables required | No percentiles are available. |
 | PSY-10 | OPEN | `PREREGISTRATION.md` | Independent cross-validation required | No external review is claimed. |
-| LOC-01 | PASS | `lib/i18n.ts`, `drizzle/0007_tough_gorgon.sql` | Unit/E2E canonical `kz → kk` checks | New persisted locale values are canonical. |
+| LOC-01 | PASS | `lib/i18n.ts`, `drizzle/0009_careless_banshee.sql` | Unit/E2E canonical `kz → kk` checks | New persisted locale values are canonical. |
 | LOC-02 | PASS | `PILOT_PROTOCOL.md`, `lib/i18n.ts` | Versioned translation metadata | RU source remains authoritative for pilot. |
 | LOC-03 | OPEN | `PILOT_PROTOCOL.md` | kk translation/cognitive review required | Locale is intentionally unpublished. |
 | LOC-04 | OPEN | `PILOT_PROTOCOL.md` | EN translation/cognitive review required | Locale is intentionally unpublished. |
@@ -112,7 +112,7 @@ READY_FOR_NORMATIVE_PERCENTILES=NO
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx` |
 | Docker clean-room release archive | PASS | Exact source archive in Linux Node 22.13.0: locked install, lint, typecheck, 32 tests, coverage, migration check, build, browser CSP, PDF visual QA, E2E, retention plan, load, backup/restore and dependency audit |
-| Docker Node 22.13.0 `release:verify` | PASS | exact-Git archive reproduced twice; manifest SHA `db8be2d9c8e0...6fc29ff` |
+| Docker Node 22.13.0 `release:verify` | PASS | exact-Git archive reproduced twice; manifest SHA `db8be2d9c8e0c9c7f0ac10da72ee57b20e832057b58f1e8187aeab2636fc29ff` |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register
