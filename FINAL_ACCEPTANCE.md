@@ -9,7 +9,7 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 | Source release Git SHA | `a0c58456917dbafb2ca74885d22dcc4a7f039157` |
 | Source package SHA-256 | `b2107722e94f1cb05a4630be7d46503df41c5cf4f1b565a93cb41e10ea359cc3` |
 | Source package path | `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-a0c5845.tar.gz` |
-| Evidence-pack commit | `PENDING_FINAL_EVIDENCE_COMMIT` |
+| Evidence-pack commit | `edea6acb09049f984342915f385588b1916aa3aa` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
 | Scoring/norms | `mvp-0.4-norm-safe` / `pilot-index-unvalidated-v1` |
