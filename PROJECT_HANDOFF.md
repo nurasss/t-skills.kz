@@ -18,7 +18,7 @@ The current release keeps the complete Russian Q001–Q300 source bank and taxon
 
 - Source Git SHA: `1211f83a58de72962d5695a5a9dd902215b28c96`
 - Source package SHA-256: `b45dac72a5b2fb79c15228144653ea9597696a793e120c158a96d134150ddeb6`
-- Evidence commit: `PENDING_EVIDENCE_COMMIT`
+- Evidence commit: `c83cde027dabf12b3957829096111ef42834359e`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
 - Latest migration: `drizzle/0010_clever_unicorn.sql`
