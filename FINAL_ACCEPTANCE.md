@@ -6,9 +6,9 @@ This document is the release checklist for the ORBITA-30 MASTER ТЗ v2.0. It re
 
 | Field | Value |
 |---|---|
-| Source release Git SHA | `60a39f47e5aa98c905f2893fa5359538b9b15793` |
-| Source package SHA-256 | `ddcee9a8ecc5fe3db8c97635d449ae078fb368a7844169250014ce27586a1500` |
-| Source package path | `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-60a39f4.tar.gz` |
+| Source release Git SHA | `398113adf5935e17abe97f66b74a2f21a83ead8c` |
+| Source package SHA-256 | `f14baf0026ea3c83ff94aaf1c5a6c1a155e9a57c7229249223e2c68ce4753b37` |
+| Source package path | `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-398113a.tar.gz` |
 | Evidence-pack commit | `PENDING_EVIDENCE_COMMIT` |
 | Release date | 2026-09-16 |
 | Assessment/item bank | `orbita30_ru_v1` / `draft-pilot-v1`, Q001–Q300 frozen |
@@ -116,7 +116,7 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | `npm run build` | PASS | Vinext production build |
 | `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
 | `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx` |
-| Linux Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `60a39f47e5aa98c905f2893fa5359538b9b15793`; manifest SHA `ddcee9a8ecc5fe3db8c97635d449ae078fb368a7844169250014ce27586a1500`; flat manifest fields cross-checked |
+| Linux Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `398113adf5935e17abe97f66b74a2f21a83ead8c`; manifest SHA `f14baf0026ea3c83ff94aaf1c5a6c1a155e9a57c7229249223e2c68ce4753b37`; flat manifest fields cross-checked |
 | `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
 
 ## Remaining risk register

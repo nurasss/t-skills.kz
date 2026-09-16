@@ -1,7 +1,7 @@
 ORBITA-30 MASTER release verification record
 Date: 2026-09-16
-Source Git SHA: 60a39f47e5aa98c905f2893fa5359538b9b15793
-Source package SHA256: ddcee9a8ecc5fe3db8c97635d449ae078fb368a7844169250014ce27586a1500
+Source Git SHA: 398113adf5935e17abe97f66b74a2f21a83ead8c
+Source package SHA256: f14baf0026ea3c83ff94aaf1c5a6c1a155e9a57c7229249223e2c68ce4753b37
 Evidence commit: PENDING_EVIDENCE_COMMIT
 Node: release verification PASS in Linux container v22.13.0; local host v25.9.0 is not used for release manifest generation
 
@@ -23,13 +23,13 @@ Commands and results:
   npm run db:check                            PASS — MIGRATION_DRIFT=PASS
   npm run test:retention-plan                 PASS — indexed purge query plan
   Prior clean-room release archive            PASS — the preceding source release completed Linux Node 22.13.0 browser/PDF/E2E/load/backup checks; the final source is covered by the current local suite below
-  Node 22.13.0 release:verify                 PASS — source SHA 60a39f47e5aa98c905f2893fa5359538b9b15793; exact archive reproduced twice; flat manifest fields cross-checked
+  Node 22.13.0 release:verify                 PASS — source SHA 398113adf5935e17abe97f66b74a2f21a83ead8c; exact archive reproduced twice; flat manifest fields cross-checked
   git status --porcelain                     PASS after evidence commit — clean tree required
 
 PDF QA:
   output/pdf/orbita-30-*.pdf                 PASS — four deterministic PDF fixtures, 24 A4 pages each, render and visual review PASS
 
 Reproducibility:
-Two source package runs in Node 22.13.0     PASS — identical SHA256 ddcee9a8ecc5fe3db8c97635d449ae078fb368a7844169250014ce27586a1500
+Two source package runs in Node 22.13.0     PASS — identical SHA256 f14baf0026ea3c83ff94aaf1c5a6c1a155e9a57c7229249223e2c68ce4753b37
 
 The local E2E uses an isolated Wrangler D1/R2 state directory and e2e-only test values. It never uses production secrets or data. A GitHub Actions Ubuntu run is required before promoting READY_FOR_ENGINEERING_100=YES.
