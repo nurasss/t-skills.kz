@@ -52,11 +52,13 @@ ACCESS_ALLOWLIST_READY=YES
 BETA_FREE_FLOW_READY=YES (local automated evidence only)
 AI_OFF_FLOW_READY=YES (local automated evidence only)
 BETA_SMOKE_READY=YES
+FINAL_LOCAL_QA=PASS (34/34 tests; lint; TypeScript; build; security scan; deployment config; release verification)
 
 External blockers recorded 2026-09-16:
 
 - GitHub Actions runs start with `startup_failure` and zero jobs on the current private Free-plan account. GitHub branch protection and repository rulesets return `Upgrade to GitHub Pro or make this repository public`.
 - Cloudflare Zero Trust Free is initialized and visible in Cloudflare One. The requested allowlist is owner-only, so no beta tester email list was added.
+- The final local QA run passed all 34 unit/property/fault tests and the release verification reproduced the exact source archive hash twice.
 ```
 
 No secret values belong in this file.
