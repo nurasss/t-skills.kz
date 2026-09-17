@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-17 — Product renamed to T-Skills
+
+- Public product brand is now **T-Skills** (tagline «Профиль ваших сильных сторон»); the user-facing assessment is called **Тест T-Skills**. All UI, PDF, email, legal, SEO and metadata strings were switched from ORBITA-30 to T-Skills.
+- Canonical routes are now `/tests/t-skills` and `/checkout/t-skills`; legacy `/tests/orbita30` and `/checkout/orbita30` return a permanent redirect to the new URLs and keep resolving in the client shell.
+- New PDF/export downloads are named `t-skills-*.pdf` / `t-skills-data-*.json`. Existing R2 objects keep their keys and stored metadata.
+- Internal compatibility identifiers are unchanged: assessment/item-bank/scoring/adaptive/report/norm version IDs (`orbita30_ru_v2`, `core60-v1`, …), API `test_id="orbita30"`, env vars (`ORBITA_ENV`, `ORBITA_INTERNAL_TOKEN`, …), cookies/storage keys, worker/D1/R2 names and the release-manifest schema. Historical evidence documents were not rewritten.
+
 ## 2026-09-16 — ORBITA-30 v2 Core60 + Mercury adaptive migration
 
 - Added immutable `orbita30_ru_v2` Core60 (`core60-v1`): 30 primary Likert items plus 30 discrimination forced-choice items covering all 30 traits and 6 domains; legacy Q001–Q300 remains available for v1 snapshots.

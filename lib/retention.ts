@@ -1,10 +1,8 @@
 import { getD1, getR2, getRuntimeEnv } from "@/db";
 import { RETENTION_ACTIVE_STATES, retentionDaysFrom } from "@/lib/retention-policy";
-export { isRetentionCandidate, purgeAfterFrom, RETENTION_ACTIVE_STATES, retentionDaysFrom } from "@/lib/retention-policy";
+const RETENTION_JOB_VERSION = "purge-job-v1";
 
-export const RETENTION_JOB_VERSION = "purge-job-v1";
-
-export type PurgeJobStatus =
+type PurgeJobStatus =
   | "PURGE_PENDING"
   | "ARTIFACTS_DELETED"
   | "DB_PURGED"

@@ -9,7 +9,7 @@ import {
 } from "@/lib/assessment-engine";
 import { ITEM_BANK, type Item } from "@/lib/item-bank";
 import { selectionFromPayload } from "@/lib/adaptive-contract";
-import { parseStrictJsonProviderOutput, providerFailureReason } from "@/lib/provider-contract";
+import { parseStrictJsonProviderOutput, providerFailureReason, readBoundedResponseJson } from "@/lib/provider-contract";
 
 export type AdaptiveRunRecord = {
   selectorVersion: string;
@@ -29,12 +29,12 @@ export type AdaptiveRunRecord = {
   generatedCount?: number;
 };
 
-export type AdaptiveDecision = {
+type AdaptiveDecision = {
   selection: AdaptiveSelection;
   run: AdaptiveRunRecord;
 };
 
-export const ADAPTIVE_SELECTOR_VERSION = "selector-0.3";
+const ADAPTIVE_SELECTOR_VERSION = "selector-0.3";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -68,7 +68,7 @@ function expectedInformation(item: Item) {
   return item.type === "adaptive_forced" ? 0.84 : 0.71;
 }
 
-export function buildAdaptivePayload(profile: ScoreProfile, answeredItemIds: string[], targetCount: number) {
+function buildAdaptivePayload(profile: ScoreProfile, answeredItemIds: string[], targetCount: number) {
   const priorities = profile.traits.map((trait) => ({
     code: trait.code,
     theta: trait.theta,
@@ -123,7 +123,7 @@ async function chooseWithOpenAI(
           {
             role: "system",
             content: [{ type: "input_text", text: [
-              `Ты — безопасный Adaptive Item Selector ORBITA-30, prompt ${ADAPTIVE_SELECTOR_VERSION}.`,
+              `Ты — безопасный Adaptive Item Selector T-Skills, prompt ${ADAPTIVE_SELECTOR_VERSION}.`,
               "Выбирай только item_id из adaptive_pool; не меняй тексты, не создавай новые items, не считай score и не делай интерпретаций.",
               "Цель приоритета: 0.45×нормализованный SE + 0.25×близость к границе Top 5/Top 10 + 0.20×contradiction + 0.10×undercoverage.",
               "Ожидаемая информация: используй expected_information и предпочитай более информативные items после учёта приоритета; для items у границ Top 5/Top 10 отдавай преимущество при сопоставимом приоритете.",
@@ -166,7 +166,7 @@ async function chooseWithOpenAI(
       }),
     });
     if (!response.ok) throw new Error(`ADAPTIVE_OPENAI_HTTP_${response.status}`);
-    const parsed = parseStrictJsonProviderOutput(await response.json() as Record<string, unknown>);
+    const parsed = parseStrictJsonProviderOutput(await readBoundedResponseJson(response, 128 * 1024) as Record<string, unknown>);
     if (!parsed.ok) throw new Error(`ADAPTIVE_${parsed.reason}`);
     return selectionFromPayload(parsed.value);
   } finally {

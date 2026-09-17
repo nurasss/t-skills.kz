@@ -29,7 +29,7 @@ export type View =
 
 export type Phase = "core" | "adaptive";
 
-export type AccountOrder = {
+type AccountOrder = {
   id: string;
   testId: string;
   amountMinor: number;
@@ -40,7 +40,7 @@ export type AccountOrder = {
   createdAt: string;
 };
 
-export type AccountAssessment = {
+type AccountAssessment = {
   id: string;
   testId: string;
   state: string;
@@ -65,6 +65,7 @@ export type PendingResponse = {
   responseTimeMs: number;
   clientSeq: number;
   idempotencyKey: string;
+  queuedAt: number;
 };
 
 export type SessionPayload = {
@@ -129,7 +130,6 @@ export type AdminMetrics = {
 
 export type PublicCatalog = {
   supportContact: string | null;
-  authProvider?: "legacy-private" | "cloudflare-access" | "development";
   locale?: {
     requested: string | null;
     canonical: "ru" | "kk" | "en";
@@ -149,19 +149,4 @@ export type PublicCatalog = {
     oneTime: true;
     description: string;
   };
-};
-
-export type WebMcpState = {
-  sessionId?: string;
-  phase: Phase;
-  view: View;
-  answered: number;
-  coreAnswered: number;
-  adaptiveCount: number;
-  activeItemId?: string;
-};
-
-export type WebMcpActions = {
-  start: () => Promise<void>;
-  submit: (value: number) => Promise<void>;
 };

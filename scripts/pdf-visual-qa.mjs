@@ -7,7 +7,7 @@ const directory = process.env.ORBITA_PDF_FIXTURE_DIR ?? "output/pdf";
 const renderDirectory = "tmp/pdfs/visual-regression";
 rmSync(renderDirectory, { recursive: true, force: true });
 mkdirSync(renderDirectory, { recursive: true });
-const files = readdirSync(directory).filter((file) => /^orbita-30-(analytical|execution|balanced-long-text|low-confidence)\.pdf$/.test(file)).sort();
+const files = readdirSync(directory).filter((file) => /^t-skills-(analytical|execution|balanced-long-text|low-confidence)\.pdf$/.test(file)).sort();
 if (files.length !== 4) throw new Error(`PDF_VISUAL_FIXTURE_COUNT:${files.length}`);
 
 for (const file of files) {

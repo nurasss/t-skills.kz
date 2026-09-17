@@ -10,7 +10,7 @@ export type PdfDownloadGrant = {
 const GRANT_TTL_SECONDS = 5 * 60;
 
 function signingSecret() {
-  return getRuntimeEnv().PDF_SIGNING_SECRET;
+  return getRuntimeEnv().PDF_SIGNING_SECRET?.trim();
 }
 
 function base64Url(bytes: Uint8Array) {

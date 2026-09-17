@@ -3,31 +3,29 @@ import { NextResponse } from "next/server";
 import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
 import { consumeRateLimit, createAssessmentForUser, getAccountOverview, nextItemIdForSession } from "@/lib/durable-store";
 import { canPublishLocale, resolveLocaleInput } from "@/lib/i18n";
+import { assessmentCreateSchema, parseJsonBody } from "@/lib/request-validation";
 
 export async function GET(request: Request) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   try {
-    return NextResponse.json(await getAccountOverview(viewer));
+    return NextResponse.json(await getAccountOverview(viewer), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return errorResponse(error);
   }
 }
 export async function POST(request: Request) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const originError = sameOriginOrResponse(request);
   if (originError) return originError;
-  let body: { test_id?: string; locale?: string } = {};
-  try {
-    body = (await request.json()) as { test_id?: string };
-  } catch {
-    return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(request, assessmentCreateSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
   const testId = body.test_id ?? "orbita30";
-  if (testId !== "orbita30") return NextResponse.json({ error: "TEST_NOT_FOUND" }, { status: 404 });
+  if (testId !== "orbita30") return NextResponse.json({ error: "TEST_NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   const locale = resolveLocaleInput(body.locale).locale;
-  if (!canPublishLocale(locale)) return NextResponse.json({ error: "LOCALE_NOT_PUBLISHED", locale }, { status: 422 });
+  if (!canPublishLocale(locale)) return NextResponse.json({ error: "LOCALE_NOT_PUBLISHED", locale }, { status: 422, headers: { "Cache-Control": "no-store" } });
   try {
     const rate = await consumeRateLimit({ userId: viewer.userId, scope: "assessment-create", limit: 5, windowMs: 10 * 60 * 1000 });
     if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);

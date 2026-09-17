@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { readdirSync, rmSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = process.cwd();
@@ -83,9 +83,12 @@ async function waitForServer() {
 // stale dist/ artifact left by an earlier release.
 execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
 rmSync(state, { recursive: true, force: true });
-for (const migration of readdirSync("drizzle").filter((entry) => /^\d+_.*\.sql$/.test(entry)).sort()) {
-  wrangler(["d1", "execute", "DB", "--local", "--config", config, "--persist-to", state, "--file", `drizzle/${migration}`]);
-}
+const migrationSql = readdirSync("drizzle")
+  .filter((entry) => /^\d+_.*\.sql$/.test(entry))
+  .sort()
+  .map((entry) => readFileSync(`drizzle/${entry}`, "utf8"))
+  .join("\n");
+wrangler(["d1", "execute", "DB", "--local", "--config", config, "--persist-to", state, "--command", migrationSql]);
 
 const now = Date.now();
 wrangler([

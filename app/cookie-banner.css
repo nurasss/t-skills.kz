@@ -1,0 +1,41 @@
+.cookie-banner {
+  align-items: center;
+  background: #173d32;
+  border: 1px solid rgba(247, 244, 238, .24);
+  border-radius: 14px;
+  bottom: 16px;
+  box-shadow: 0 18px 50px rgba(16, 26, 49, .2);
+  color: #f7f4ee;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  left: 16px;
+  max-width: 920px;
+  padding: 18px 20px;
+  position: fixed;
+  right: 16px;
+  z-index: 300;
+}
+
+.cookie-banner-copy { max-width: 620px; }
+.cookie-banner-copy strong { display: block; font-size: 15px; }
+.cookie-banner-copy p { color: rgba(247, 244, 238, .82); font-size: 13px; line-height: 1.5; margin: 4px 0 6px; }
+.cookie-banner-copy a { color: #f2d29a; font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.cookie-banner-actions, .cookie-preferences-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cookie-banner-actions { flex-shrink: 0; justify-content: flex-end; }
+.cookie-banner button, .cookie-preferences button { border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; min-height: 42px; padding: 9px 13px; }
+.cookie-banner-primary, .cookie-preferences .cookie-banner-primary { background: #f2d29a; border: 1px solid #f2d29a; color: #173d32; }
+.cookie-banner-secondary, .cookie-preferences .cookie-banner-secondary { background: transparent; border: 1px solid rgba(247, 244, 238, .55); color: #f7f4ee; }
+.cookie-banner button:focus-visible, .cookie-preferences button:focus-visible { outline: 3px solid #f2d29a; outline-offset: 3px; }
+.cookie-preferences { background: #f1eee6; border: 1px solid rgba(23, 26, 24, .12); border-radius: 14px; margin: 32px auto 0; max-width: 720px; padding: 22px; }
+.cookie-preferences h2 { color: #173d32; font-size: 20px; margin: 0 0 8px; }
+.cookie-preferences p { color: #4d5d55; font-size: 14px; line-height: 1.55; margin: 0 0 15px; }
+.cookie-preferences-actions { margin-bottom: 14px; }
+.cookie-preferences .cookie-banner-secondary { background: #173d32; border-color: #173d32; }
+.cookie-preferences-status { color: #4d5d55; font-size: 13px; margin: 0; }
+
+@media (max-width: 680px) {
+  .cookie-banner { align-items: stretch; flex-direction: column; gap: 14px; left: 10px; right: 10px; bottom: 10px; padding: 16px; }
+  .cookie-banner-actions { justify-content: stretch; }
+  .cookie-banner-actions button { flex: 1 1 160px; }
+}

@@ -1,0 +1,1 @@
+ALTER TABLE `auth_tokens` ADD `consumption_nonce` text;

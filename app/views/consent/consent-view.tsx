@@ -2,7 +2,7 @@
 
 import { ArrowRight, SectionHeading } from "@/app/views/shared/section-heading";
 
-export type ConsentRow = {
+type ConsentRow = {
   key: "terms" | "privacy" | "research" | "marketing";
   title: string;
   description: string;
@@ -74,9 +74,10 @@ export function ConsentView({ consents, onConsentChange, onBegin, onBack, onPriv
 
             <div className="ov-consent-list">
               {rows.map((row) => (
-                <label className="ov-consent-row" key={row.key}>
+                <div className="ov-consent-row" key={row.key}>
                   <ConsentCheckbox
                     checked={row.checked}
+                    label={row.title}
                     onChange={(v) => onConsentChange(row.key, v)}
                   />
                   <div className="ov-consent-row-text">
@@ -86,7 +87,7 @@ export function ConsentView({ consents, onConsentChange, onBegin, onBack, onPriv
                   <span className={`ov-badge ${row.required ? "ov-badge-primary" : "ov-badge-outline"}`}>
                     {row.required ? "обязательно" : "необязательно"}
                   </span>
-                </label>
+                </div>
               ))}
             </div>
 
@@ -123,20 +124,17 @@ export function ConsentView({ consents, onConsentChange, onBegin, onBack, onPriv
   );
 }
 
-function ConsentCheckbox({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+function ConsentCheckbox({ checked, label, onChange }: { checked: boolean; label: string; onChange: (value: boolean) => void }) {
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      className={`ov-checkbox${checked ? " checked" : ""}`}
-      onClick={() => onChange(!checked)}
-    >
-      {checked ? (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
-          <polyline points="4 12 10 18 20 6" />
-        </svg>
-      ) : null}
-    </button>
+    <label className="ov-checkbox-control">
+      <input className="ov-checkbox-input" type="checkbox" checked={checked} aria-label={label} onChange={(event) => onChange(event.target.checked)} />
+      <span className={`ov-checkbox${checked ? " checked" : ""}`} aria-hidden="true">
+        {checked ? (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <polyline points="4 12 10 18 20 6" />
+          </svg>
+        ) : null}
+      </span>
+    </label>
   );
 }

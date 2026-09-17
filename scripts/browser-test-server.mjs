@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
-import { readdirSync, rmSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 const root = process.cwd();
 const config = "dist/server/wrangler.json";
@@ -14,9 +15,12 @@ function wrangler(args) {
 }
 
 rmSync(state, { recursive: true, force: true });
-for (const migration of readdirSync("drizzle").filter((entry) => /^\d+_.*\.sql$/.test(entry)).sort()) {
-  wrangler(["d1", "execute", "DB", "--local", "--config", config, "--persist-to", state, "--file", "drizzle/" + migration]);
-}
+const migrationSql = readdirSync("drizzle")
+  .filter((entry) => /^\d+_.*\.sql$/.test(entry))
+  .sort()
+  .map((entry) => readFileSync(join("drizzle", entry), "utf8"))
+  .join("\n");
+wrangler(["d1", "execute", "DB", "--local", "--config", config, "--persist-to", state, "--command", migrationSql]);
 
 const child = spawn(
   process.execPath,

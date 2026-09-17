@@ -1,4 +1,5 @@
 import { getRuntimeEnv } from "@/db";
+import { resolveOpenAIBaseUrl } from "@/lib/openai-endpoint";
 import { buildReport, type ReportJSON, type ScoreProfile } from "@/lib/assessment-engine";
 import { TRAITS, type TraitCode } from "@/lib/item-bank";
 import {
@@ -7,7 +8,7 @@ import {
   INTERPRETATION_LIBRARY_VERSION,
 } from "@/lib/interpretation-library";
 import { validateReportSafety } from "@/lib/report-safety";
-import { extractProviderOutputText, parseStrictJsonProviderOutput } from "@/lib/provider-contract";
+import { parseStrictJsonProviderOutput, readBoundedResponseJson } from "@/lib/provider-contract";
 import { aiEnabled } from "@/lib/runtime-config";
 
 export type GeneratedReport = {
@@ -21,7 +22,7 @@ export type GeneratedReport = {
   fallbackReason: string | null;
 };
 
-export const REPORT_PROMPT_VERSION = "report-writer-0.3";
+const REPORT_PROMPT_VERSION = "report-writer-0.3";
 
 const sourceKeyArraySchema = {
   type: "array",
@@ -310,7 +311,7 @@ function scorePayload(profile: ScoreProfile) {
 
 function systemPrompt() {
   return [
-    "Ты — слой безопасной интерпретации ORBITA-30.",
+    "Ты — слой безопасной интерпретации T-Skills.",
     "На входе уже рассчитанный score JSON. Никогда не меняй числа, rank, profileIndex, uncertaintyRange, normStatus, версии или флаги качества.",
     "Верни только JSON по заданной схеме, на русском языке.",
     "Используй вероятностный язык: может быть, вероятно, часто помогает. Не ставь диагнозы, не оценивай IQ, здоровье, личностную ценность и не обещай профессию, успех, найм или иной исход.",
@@ -322,11 +323,7 @@ function systemPrompt() {
   ].join(" ");
 }
 
-export function outputText(payload: Record<string, unknown>) {
-  return extractProviderOutputText(payload);
-}
-
-export function parseReportOutput(payload: Record<string, unknown>) {
+function parseReportOutput(payload: Record<string, unknown>) {
   const result = parseStrictJsonProviderOutput(payload);
   if (!result.ok) throw new ReportProviderError(result.reason === "EMPTY_OUTPUT" ? "OPENAI_EMPTY_OUTPUT" : "OPENAI_INVALID_JSON");
   return result.value;
@@ -334,7 +331,8 @@ export function parseReportOutput(payload: Record<string, unknown>) {
 
 async function generateWithOpenAI(profile: ScoreProfile, apiKey: string, inputText: string, modelId: string): Promise<ReportJSON> {
   const runtimeEnv = getRuntimeEnv();
-  const baseUrl = (runtimeEnv.OPENAI_BASE_URL ?? "https://api.openai.com").replace(/\/$/, "").replace(/\/v1$/, "");
+  const baseUrl = resolveOpenAIBaseUrl(runtimeEnv.OPENAI_BASE_URL);
+  if (!baseUrl) throw new ReportProviderError("OPENAI_ENDPOINT_INVALID");
   const controller = new AbortController();
   const timeout = Math.max(3000, Math.min(60000, Number(runtimeEnv.REPORT_TIMEOUT_MS ?? 20000)));
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -367,7 +365,7 @@ async function generateWithOpenAI(profile: ScoreProfile, apiKey: string, inputTe
       console.error("openai_report_request_failed", { status: response.status });
       throw new ReportProviderError("OPENAI_REQUEST_FAILED");
     }
-    const payload = (await response.json()) as Record<string, unknown>;
+    const payload = await readBoundedResponseJson(response, 256 * 1024) as Record<string, unknown>;
     const parsed = parseReportOutput(payload);
     if (!isReportJSON(parsed) || !validateReportAgainstProfile(parsed, profile)) throw new ReportProviderError("OPENAI_SCHEMA_INVALID");
     return parsed;
@@ -382,7 +380,7 @@ async function generateWithOpenAI(profile: ScoreProfile, apiKey: string, inputTe
 
 export async function generateReportContent(profile: ScoreProfile): Promise<GeneratedReport> {
   const runtimeEnv = getRuntimeEnv();
-  const provider = (runtimeEnv.REPORT_PROVIDER ?? "approved-library").toLowerCase();
+  const provider = (runtimeEnv.REPORT_PROVIDER ?? "approved-library").trim().toLowerCase();
   const input = {
     score_profile: scorePayload(profile),
     approved_interpretation_library: approvedLibraryPayload(profile.traits.slice(0, 5).map((trait) => trait.code)),
@@ -391,9 +389,10 @@ export async function generateReportContent(profile: ScoreProfile): Promise<Gene
   const inputHash = await sha256(inputText);
   if (aiEnabled(runtimeEnv) && provider === "openai") {
     const modelId = runtimeEnv.REPORT_MODEL ?? runtimeEnv.OPENAI_MODEL ?? "gpt-5";
-    if (runtimeEnv.OPENAI_API_KEY) {
+    const apiKey = runtimeEnv.OPENAI_API_KEY?.trim();
+    if (apiKey) {
       try {
-        const report = canonicalizeApprovedSemantics(await generateWithOpenAI(profile, runtimeEnv.OPENAI_API_KEY, inputText, modelId), profile);
+        const report = canonicalizeApprovedSemantics(await generateWithOpenAI(profile, apiKey, inputText, modelId), profile);
         return {
           report,
           provider: "openai",

@@ -32,17 +32,12 @@ export const V2_VERSION_IDS = {
 
 export type AssessmentVersionIds = typeof VERSION_IDS | typeof V2_VERSION_IDS;
 
-export type NormStatus = "unvalidated" | "pilot" | "normed";
+type NormStatus = "unvalidated" | "pilot" | "normed";
 
 export interface NormProvider {
   readonly status: NormStatus;
   readonly version: string;
   profileIndexFor(theta: number): number;
-}
-
-export interface ScoringProvider {
-  readonly version: string;
-  score(responses: ResponseMap, responseTimes?: Record<string, number>): ScoreProfile;
 }
 
 export const UNVALIDATED_NORM_PROVIDER: NormProvider = {
@@ -617,11 +612,6 @@ export function selectAdaptiveItems(
     validation: "passed",
   };
 }
-
-export const MVP_SCORING_PROVIDER: ScoringProvider = {
-  version: VERSION_IDS.scoring,
-  score: scoreAssessment,
-};
 
 export function buildDemoResponses(): ResponseMap {
   const biases: Record<TraitCode, number> = Object.fromEntries(

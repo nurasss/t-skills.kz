@@ -231,7 +231,7 @@ export function scoreCore60(
   } satisfies ScoreProfile;
 }
 
-export function topBoundaries(profile: ScoreProfile) {
+function topBoundaries(profile: ScoreProfile) {
   return {
     top5: profile.traits.filter((trait) => Math.abs(trait.rank - 5) <= 1).map((trait) => trait.code),
     top10: profile.traits.filter((trait) => Math.abs(trait.rank - 10) <= 1).map((trait) => trait.code),
@@ -269,17 +269,6 @@ export function buildAdaptiveContext(profile: ScoreProfile, answeredCoreItems: s
     ambiguousTraitPairs,
     answeredCoreItems: [...answeredCoreItems].sort(),
   };
-}
-
-export function adaptiveTargetCount(profile: ScoreProfile) {
-  const meanSe = mean(profile.traits.map((trait) => trait.se));
-  if (meanSe >= 0.37 || profile.responseQuality.flags.includes("CONTRADICTION")) return 15;
-  if (meanSe >= 0.31) return 12;
-  return 10;
-}
-
-export function isV2Profile(profile: Pick<ScoreProfile, "versions">) {
-  return profile.versions.assessment === V2_VERSION_IDS.assessment;
 }
 
 export function buildV2DemoResponses(): ResponseMap {

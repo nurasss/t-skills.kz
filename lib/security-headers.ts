@@ -21,11 +21,12 @@ export function contentSecurityPolicy(nonce?: string) {
     "frame-ancestors 'none'",
     "form-action 'self' https://checkout.stripe.com",
     `script-src 'self'${nonce ? ` 'nonce-${nonce}'` : ""}`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
-    "font-src 'self' data: https://fonts.gstatic.com",
-    "connect-src 'self' https://api.stripe.com https://fonts.googleapis.com https://fonts.gstatic.com",
-    "prefetch-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com",
+    "font-src 'self' data:",
+    "connect-src 'self' https://api.stripe.com",
+    "frame-src 'self' https://checkout.stripe.com",
+    "worker-src 'self' blob:",
   ].join("; ");
 }
 
@@ -36,6 +37,9 @@ export const SECURITY_HEADERS: Record<string, string> = {
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Resource-Policy": "same-origin",
+  "X-DNS-Prefetch-Control": "off",
 };
 
 export function applySecurityHeaders(response: Response, requestId: string, nonce?: string) {

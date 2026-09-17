@@ -1,12 +1,12 @@
-# ORBITA—30
+# T-Skills
 
-Production-oriented ORBITA—30 v2 assessment: 60 fixed Russian Core items, deterministic 30-trait scoring, 10–15 server-validated Mercury 2.5 follow-up items (with an approved deterministic fallback), protected identity, durable Cloudflare D1 state, private R2 report artifacts, short-lived signed PDF links, preserved Stripe Checkout/webhooks, exports/deletion workflows, privacy-safe telemetry, scheduled retention, and a private closed-beta deployment. The legacy Q001–Q300 bank remains available only for historical v1 snapshots.
+Production-oriented T-Skills v2 assessment: 60 fixed Russian Core items, deterministic 30-trait scoring, 10–15 server-validated Mercury 2.5 follow-up items (with an approved deterministic fallback), protected identity, durable Cloudflare D1 state, private R2 report artifacts, short-lived signed PDF links, preserved Stripe Checkout/webhooks, exports/deletion workflows, privacy-safe telemetry, scheduled retention, and a private closed-beta deployment. The legacy Q001–Q300 bank remains available only for historical v1 snapshots.
 
 The assessment is an original developmental product. It is not a Gallup/CliftonStrengths® implementation, a diagnosis, or a high-stakes decision tool. Items are marked `draft for pilot` until independent psychometric validation is completed.
 
 ## Closed beta deployment
 
-The beta profile is intentionally free and closed: `PAYMENTS_ENABLED=false`, `ENTITLEMENT_MODE=beta-free`, and the approved interpretation library. Production beta remains `AI_ENABLED=false` by policy; staging is configured for `AI_ENABLED=true`, `ADAPTIVE_PROVIDER=mercury`, and a managed `INCEPTION_API_KEY`, with deterministic approved fallback on provider failure. Staging and production use separate Workers, D1 databases, R2 buckets, credentials and Cloudflare Access applications. See `wrangler.jsonc`, `docs/deployment/` and `BETA_TESTER_GUIDE.md`. The legacy owner-private Site remains available as a reference and is not deleted by this deployment.
+The beta profile is intentionally free and closed: `PAYMENTS_ENABLED=false`, `ENTITLEMENT_MODE=beta-free`, and the approved interpretation library. Production beta remains `AI_ENABLED=false` by policy; staging is configured for `AI_ENABLED=true`, `ADAPTIVE_PROVIDER=mercury`, and a managed `INCEPTION_API_KEY`, with deterministic approved fallback on provider failure. Staging and production use separate Workers, D1 databases, R2 buckets and application-auth secrets. See `wrangler.jsonc`, `docs/deployment/` and `BETA_TESTER_GUIDE.md`.
 
 ## Prerequisites
 
@@ -48,11 +48,11 @@ On portable, `npm run dev` uses `vinext dev` with HMR, starting at port 5173. Vi
 
 On managed Linux, use `sites-preview start` only for requested browser QA. The project's dev script runs Vite and accepts the supervisor's `--host 0.0.0.0 --port 4173 --strictPort` arguments. The internal browser uses `http://terminal.local:4173/`; it is not a user-facing URL. The supervisor owns the preview lifecycle. The ignored local profile survives the supervisor's cleared process environment.
 
-The portable profile simulates ChatGPT sign-in only for loopback development requests. Visit `/signin-with-chatgpt?return_to=/` to sign in as `local_seedy` (`seedy@sites.test`, display name `Seedy`) and `/signout-with-chatgpt?return_to=/` to sign out. The development cookie preserves that identity across server restarts. Mock auth is disabled in the managed-linux profile and is not included in production builds; hosted authentication remains dispatch-owned.
+The portable profile supports a preview-only identity header for local smoke tests. It is accepted only when `ORBITA_ENV=development`; production accepts only a verified D1-backed application session. No ChatGPT or Cloudflare Access identity header is used by the application.
 
 The Worker entrypoint is `worker/index.ts`. It delegates HTTP requests to `vinext/server/fetch-handler` and also exports the scheduled retention handler. After building, `npm start` runs that Worker locally through Wrangler on `127.0.0.1`, sharing `.wrangler/state` with dev preview and local D1 migrations; it does not deploy the site or simulate sign-in. Use the URL printed by the server. Pass `npm start -- --port <port>` to select a different built-preview port.
 
-Vercel Preview is configured as a separate Nitro target for visual and runtime compatibility checks: `npm run build:vercel`, then `vercel deploy --prebuilt`. The Vercel target intentionally does not emulate Cloudflare D1/R2 or Cloudflare Access; public pages plus storage-independent endpoints can be smoke-tested there, while assessment, account, report, PDF and retention flows remain on the canonical Cloudflare Worker. Never copy Cloudflare or Inception secrets into the Vercel build unless a separate Vercel storage/auth architecture is approved.
+Vercel Preview is configured as a separate Nitro target for visual and runtime compatibility checks: `npm run build:vercel`, then `vercel deploy --prebuilt`. The Vercel target intentionally does not emulate Cloudflare D1/R2 or the D1-backed application auth; public pages plus storage-independent endpoints can be smoke-tested there, while assessment, account, report, PDF and retention flows remain on the canonical Cloudflare Worker. Never copy Cloudflare, Resend or Inception secrets into the Vercel build unless a separate Vercel storage/auth architecture is approved.
 
 Local previews use Miniflare's placeholder `Request.cf` metadata without a network lookup. Set `CLOUDFLARE_CF_FETCH_ENABLED=true` to opt into fetching preview metadata; this setting does not change hosted request metadata.
 
@@ -76,6 +76,7 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `docs/adr/ADR-001-runtime-and-cloudflare.md` — accepted pilot runtime decision and Vinext migration triggers.
 - `scripts/load-smoke.mjs`, `scripts/pdf-visual-qa.mjs`, `scripts/verify-release.mjs` — load, visual PDF, and exact-Git release gates.
 - `lib/security-headers.ts`, `lib/observability.ts` and `lib/ops-monitoring.ts` — request IDs, security headers, PII-safe logs and explicit alert thresholds.
+- `lib/app-auth.ts`, `lib/password.ts`, `lib/email.ts` and `lib/auth-rate-limit.ts` — D1-backed password auth, one-time e-mail tokens, server-only transactional mail and hashed rate-limit identities.
 - `lib/provider-contract.ts`, `lib/adaptive-contract.ts`, `lib/report-safety.ts` and `lib/mercury-adaptive-provider.ts` — strict provider output, source-key grounding and deterministic safety boundaries.
 - `lib/pilot-analytics.ts` and `app/api/admin/overview/route.ts` — aggregate-only pilot analytics with a minimum-sample guard.
 - `app/orbita-api.ts` and `app/orbita-view-types.ts` — client API/retry persistence and shared view contracts.
@@ -83,7 +84,7 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `FINAL_ACCEPTANCE.md`, `TEST_MATRIX.md`, `RELEASE_MANIFEST.json`, `CI_EVIDENCE.txt`, `SECURITY_REVIEW.md`, `DATA_PRIVACY_REVIEW.md`, `LEGAL_LAUNCH_APPROVAL.md`, `PILOT_PROTOCOL.md`, `PREREGISTRATION.md`, `PSYCHOMETRIC_REPORT.md`, `NORMING_REPORT.md` and `RUNBOOKS.md` — release evidence and explicit open gates.
 - `.openai/hosting.json` — logical Sites bindings (`DB` and `BUCKET`) and the existing private project ID.
 
-The production site is owner-private. User identity comes from the Sites/ChatGPT headers; local preview-only auth is available only when `ORBITA_ENV=development`. State-changing API routes enforce same-origin requests and per-user server-side fixed-window limits; no permissive CORS policy is enabled. TLS, WAF/CDN policy, and edge security headers remain deployment controls of the Sites platform.
+The production site is closed beta. User identity comes from a verified D1-backed application session; local preview-only auth is available only when `ORBITA_ENV=development`. State-changing API routes enforce same-origin requests, CSRF validation and server-side fixed-window limits; no permissive CORS policy is enabled. TLS, WAF/CDN policy and edge security headers remain deployment controls of the Sites platform.
 
 ## Production configuration
 
@@ -128,7 +129,7 @@ Before an assessment can start, the server records four independent, versioned d
 Optional AI narrative provider (managed secret only; approved-library fallback is always available):
 
 - `REPORT_PROVIDER=openai` and secret `OPENAI_API_KEY`.
-- Optional `REPORT_MODEL` (defaults to `gpt-5`) and `OPENAI_BASE_URL`.
+- Optional `REPORT_MODEL` (defaults to `gpt-5`) and `OPENAI_BASE_URL`; the endpoint is restricted to the official HTTPS `api.openai.com` origin (root or `/v1`) so an API key cannot be sent to an arbitrary host.
 - Store `OPENAI_API_KEY` in the Sites/Cloudflare managed secret store. Never put it in `.env.example`, Git, the browser bundle, telemetry, or a report payload. A timeout, schema violation, unavailable key, or provider error records a fallback and returns the deterministic approved-library report.
 
 Adaptive generation:
@@ -145,61 +146,21 @@ Scheduled retention and manual recovery:
 
 Legal configuration is env-driven through `lib/legal-config.ts`. Replace every `ТРЕБУЕТСЯ УТВЕРЖДЕНИЕ`/`ТРЕБУЕТСЯ НАСТРОЙКА` placeholder with operator, contact, jurisdiction, purposes, categories, retention, processors, cross-border, rights, security, research and marketing decisions. The full versioned pages are `/privacy` and `/terms`; Kazakhstan legal review is a launch gate, not a code assumption. Russian is the only published locale in this release; `kk` is the canonical Kazakh code and `kz` is accepted only as a legacy alias. KZ/EN are intentionally marked unpublished until translation, back-translation, cognitive review and measurement-invariance review are complete.
 
-The default `approved-library` provider is deterministic and safe to run without an AI key. It never pretends that an AI call happened. Set `ORBITA_ADMIN_USER_IDS` only for the ChatGPT user IDs that should access aggregate admin metrics.
+The default `approved-library` provider is deterministic and safe to run without an AI key. It never pretends that an AI call happened. Set `users.role=admin` through a controlled operations procedure, or use `ORBITA_ADMIN_USER_IDS` for an explicit server-side allowlist; never expose either control to client input.
 
 See [`.env.example`](./.env.example) for the complete variable list.
 
 The explicit release handoff, audit evidence, missing external values and non-code launch gates are recorded in [`PROJECT_HANDOFF.md`](./PROJECT_HANDOFF.md), [`AUDIT_REMEDIATION.md`](./AUDIT_REMEDIATION.md) and [`FINAL_ACCEPTANCE.md`](./FINAL_ACCEPTANCE.md).
 
-## Workspace Auth Headers
+## Application authentication
 
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
+The application uses its own D1-backed account boundary. `app/auth/` provides login, invite-gated registration, e-mail verification, password reset and logout. Protected server-rendered pages use `requireAppUser()` or `requireAppAdmin()`; API routes call the async session verifier and never accept a user ID from request JSON.
 
-The user ID is stable for the same user on the same Site and different across Sites. Use it as the durable user key; use email and name for display or contact purposes.
+Passwords are hashed on the server with Web Crypto PBKDF2-HMAC-SHA-256 (`600,000` iterations, per-password random salt). The browser receives only an opaque HttpOnly session cookie; D1 stores a hash of the session token, expiry and revocation state. In production the cookie uses the `__Host-` prefix, `Secure`, `SameSite=Lax` and `Path=/`.
 
-SIWC-authenticated workspace sites may also receive `oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty `name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by `oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+All state-changing browser requests use same-origin checks, a CSRF token and independent per-IP/account rate limits. JSON bodies are size-limited and strict-validated with Zod. One-time e-mail and invite values are placed in URL fragments and removed from the address bar after capture; legacy query links are still accepted during migration. Admin status comes from the server-side `users.role` field or an operations-managed allowlist. `x-orbita-preview-user` exists only for local development and smoke tests.
 
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
-```
-
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use the returned `userId` as the stable user key for user-owned records; do not use email as a durable identifier.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send anonymous visitors through Sign in with ChatGPT.
-- In a Server Component, start sign-in with `<a href={chatGPTSignInPath(returnTo)} target="_top">`. The auth helper module is server-only; do not import it into a Client Component.
-- Do not use `fetch`, XHR, a client-side router, or a framework link that can prefetch the sign-in route. SIWC must start as a top-level navigation.
-- Never request the AuthAPI authorization endpoint directly. The dispatch-owned `/signin-with-chatgpt` route must start the SIWC flow.
-- Use `chatGPTSignOutPath(returnTo)` for browser sign-out links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the OAuth cookies, and identity header injection. Do not implement app routes for those reserved paths. Routes that do not import and call the helper remain anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the Sites hosting platform's access policy controls for workspace-wide restrictions, or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write actions tied to the current ChatGPT user. Leave public content anonymous.
+The first-party auth code does not use ChatGPT/Cloudflare Access identity headers. Those headers are stripped at the Worker boundary and are not an authentication source. One-time e-mail verification, reset and invite tokens are carried in URL fragments and are removed from browser history after capture.
 
 ## Local D1 migrations
 
@@ -213,7 +174,7 @@ Replace the filename with each pending migration and `DB` with your D1 binding n
 
 ## Local QA flow
 
-After building and applying the migrations, run the Worker with `npm start`. For local-only authenticated requests, start it with `--var ORBITA_ENV:development` and send `x-orbita-preview-user`. Production-mode requests must provide both `oai-authenticated-user-id` and `oai-authenticated-user-email`.
+After building and applying the migrations, run the Worker with `npm start`. For local-only authenticated smoke requests, start it with `--var ORBITA_ENV:development` and send `x-orbita-preview-user`. Production-mode requests must use the e-mail/password flow and a verified D1 session; identity headers are not accepted.
 
 The critical contract checks are:
 
@@ -245,8 +206,10 @@ npm run test:e2e
 - `npm run test:e2e`: run the full local Worker/D1/R2 smoke flow
 - `npm run test:load`: concurrent response/replay and completion load smoke with latency/error/rate-limit metrics
 - `npm run test:backup`: local D1 export/restore smoke
-- `npm run security:scan`: tracked-source secret/generated-state scan
-- `npm run ci:verify`: lint, secret scan, TypeScript, tests and build
+- `npm run security:scan`: tracked/untracked source and reachable Git history secret/generated-state scan
+- `npm run audit:check`: full npm dependency audit for runtime and development dependencies
+- `npm run contrast:check`: critical text/button color-pair WCAG AA gate
+- `npm run ci:verify`: lint, secret scan, full dependency audit, CSP/contrast/prompt/dead-code/dependency/bundle checks, TypeScript, tests, coverage, build, migration/retention and browser smoke
 - `npm run package:source`: create a clean, reproducible source archive without generated/dependency artifacts
 
 When using the Sites plugin, follow its skill instructions for installation, builds, and publishing. These npm commands remain available for standalone use.

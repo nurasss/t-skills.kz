@@ -14,7 +14,10 @@ for (const [name, environment] of [["staging", staging], ["production", producti
   }
   const vars = environment.vars ?? {};
   const required = {
-    AUTH_PROVIDER: "cloudflare-access",
+    AUTH_PROVIDER: "app-password",
+    REGISTRATION_MODE: "hybrid",
+    PUBLIC_SIGNUP_ENABLED: "false",
+    PUBLIC_INDEXING_ENABLED: "false",
     PAYMENTS_ENABLED: "false",
     ENTITLEMENT_MODE: "beta-free",
     REPORT_PROVIDER: "approved-library",
@@ -24,6 +27,47 @@ for (const [name, environment] of [["staging", staging], ["production", producti
   };
   for (const [key, value] of Object.entries(required)) {
     if (vars[key] !== value) throw new Error(`DEPLOY_CONFIG_UNSAFE_FLAG:${name}:${key}`);
+  }
+  const expectedAppEnv = name === "staging" ? "staging" : "production-beta";
+  if (vars.APP_ENV !== expectedAppEnv || vars.ORBITA_ENV !== name) {
+    throw new Error(`DEPLOY_CONFIG_ENVIRONMENT_MISMATCH:${name}`);
+  }
+  if (name === "production" && !/^https:\/\//.test(vars.APP_BASE_URL ?? "")) {
+    throw new Error("DEPLOY_CONFIG_PRODUCTION_APP_BASE_URL_MUST_BE_HTTPS");
+  }
+  const requiredSecrets = environment.secrets?.required ?? [];
+  for (const secret of ["RESEND_API_KEY", "AUTH_RATE_LIMIT_SECRET", "PDF_SIGNING_SECRET", "ORBITA_INTERNAL_TOKEN"]) {
+    if (!requiredSecrets.includes(secret)) throw new Error(`DEPLOY_CONFIG_SECRET_NOT_REQUIRED:${name}:${secret}`);
+  }
+  if (!/^https:\/\//.test(vars.APP_BASE_URL ?? "")) throw new Error(`DEPLOY_CONFIG_APP_BASE_URL_MUST_BE_HTTPS:${name}`);
+  if (!vars.EMAIL_FROM?.trim() || /example\.com|replace|placeholder/i.test(vars.EMAIL_FROM)) {
+    throw new Error(`DEPLOY_CONFIG_EMAIL_FROM_MISSING:${name}`);
+  }
+  if (!vars.SECURITY_CONTACT_EMAIL?.trim() || /example\.com|replace|placeholder/i.test(vars.SECURITY_CONTACT_EMAIL)) {
+    throw new Error(`DEPLOY_CONFIG_SECURITY_CONTACT_MISSING:${name}`);
+  }
+  const legalKeys = [
+    "SUPPORT_CONTACT",
+    "LEGAL_ENTITY_NAME",
+    "LEGAL_CONTACT_ADDRESS",
+    "LEGAL_CONTACT_PHONE",
+    "LEGAL_JURISDICTION",
+    "LEGAL_PROCESSING_PURPOSES",
+    "LEGAL_DATA_CATEGORIES",
+    "LEGAL_RETENTION_SCHEDULE",
+    "LEGAL_PROCESSORS",
+    "LEGAL_CROSS_BORDER_PROCESSING",
+    "LEGAL_USER_RIGHTS",
+    "LEGAL_SECURITY_SUMMARY",
+    "LEGAL_RESEARCH_POLICY",
+    "LEGAL_MARKETING_POLICY",
+    "LEGAL_REFUND_POLICY",
+    "LEGAL_COOKIE_POLICY",
+  ];
+  for (const key of legalKeys) {
+    if (!vars[key]?.trim() || /ТРЕБУЕТСЯ|REPLACE|PLACEHOLDER/i.test(vars[key])) {
+      throw new Error(`DEPLOY_CONFIG_LEGAL_VALUE_MISSING:${name}:${key}`);
+    }
   }
   if (name === "staging" && (vars.AI_ENABLED !== "true" || vars.ADAPTIVE_PROVIDER !== "mercury")) throw new Error("DEPLOY_CONFIG_STAGING_MERCURY_NOT_ENABLED");
   if (name === "production" && (vars.AI_ENABLED !== "false" || !["deterministic", "fallback"].includes(vars.ADAPTIVE_PROVIDER))) throw new Error("DEPLOY_CONFIG_PRODUCTION_MERCURY_MUST_REMAIN_OFF");

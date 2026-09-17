@@ -1,4 +1,4 @@
-export const TELEMETRY_EVENT_NAMES = [
+const TELEMETRY_EVENT_NAMES = [
   "test_view",
   "catalog_viewed",
   "checkout_started",

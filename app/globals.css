@@ -1,11 +1,10 @@
 @import "tailwindcss";
-@import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 
 :root {
   --ink: #101a31;
   --ink-soft: #38445f;
-  --muted: #6a758b;
+  --muted: #566175;
   --paper: #f3f5f2;
   --white: #ffffff;
   --navy: #0b1530;
@@ -59,7 +58,7 @@ body {
 }
 button, a, input { font: inherit; }
 button { cursor: pointer; }
-button:focus-visible, a:focus-visible, [role="radio"]:focus-visible {
+button:focus-visible, a:focus-visible, input:focus-visible, [role="radio"]:focus-visible, [role="checkbox"]:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 3px;
 }
@@ -236,7 +235,6 @@ p, h1, h2, h3 { margin: 0; }
 .footer-links button { background: transparent; border: 0; color: rgba(255,255,255,.68); font-size: 12px; padding: 5px 0; }
 .footer-links button:hover { color: var(--lime); }
 .footer-version { justify-self: end; margin-top: 0; }
-.admin-secret { background: transparent; border: 0; bottom: 10px; color: rgba(255,255,255,.2); font-size: 10px; position: fixed; right: 10px; z-index: 4; }
 
 .catalog-grid { display: grid; gap: 32px; grid-template-columns: minmax(0,1.3fr) minmax(220px,.7fr); margin-top: 60px; }
 .test-card, .checkout-card, .account-card, .admin-panel, .consent-card { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 12px 45px rgba(11,21,48,.06); }

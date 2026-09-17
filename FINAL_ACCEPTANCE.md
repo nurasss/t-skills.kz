@@ -1,5 +1,7 @@
 # ORBITA-30 Final Acceptance
 
+> Re-baselining note (2026-09-17): this checklist records the previous v2 release evidence. The current worktree adds first-party application authentication, legal/cookie pages and additional security controls. Local lint, typecheck, 51 tests, coverage, build, browser, security, dependency and API smoke checks were rerun for the current source; historical SHA/deployment rows remain non-current until managed environments are redeployed. Do not mark a release gate from this document alone.
+
 This document is the release checklist for the ORBITA-30 v2 Core60 + Mercury migration. It records executable evidence separately from external approvals. A row is `PASS` only when the referenced artifact exists and the check has actually run; `OPEN` means the gate is outside this repository or has not yet been evidenced; `PARTIAL` means the code covers a material subset but the full acceptance requirement still has an explicit remainder. Older v1 references are retained only as historical evidence.
 
 ## Release identity
@@ -37,22 +39,22 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 |---|---|---|---|---|---|---|
 | ENG-01 | PASS at release | `scripts/package-source.mjs` | `npm run package:source`, `SOURCE_MANIFEST.txt`, clean Git check | Archive excludes dependencies, build output, state and secrets. | Engineering | 2026-09-16 |
 | ENG-02 | OPEN | `.github/workflows/ci.yml` | GitHub Actions run required | Workflow is defined; GitHub currently returns `startup_failure` with zero jobs for this private Free-plan repository, so no hosted Linux evidence exists. | Engineering | 2026-09-16 |
-| ENG-03 | PASS | `scripts/security-scan.mjs` | `npm run security:scan`, `npm audit --omit=dev --audit-level=high` | No tracked secret findings and no production high/critical audit finding in the recorded run. | Engineering | 2026-09-16 |
-| ENG-04 | PASS | `drizzle/0012_adaptive_generation_attempts.sql`, `scripts/check-migration-drift.mjs`, `scripts/backup-restore-smoke.mjs` | `npm run db:check`, `npm run test:backup` | Migration chain 0000–0012 is drift-free and local export/restore smoke passes. | Engineering | 2026-09-16 |
+| ENG-03 | PASS | `scripts/security-scan.mjs`, `package.json` | `npm run security:scan`, `npm run audit:check` | No tracked secret findings and no runtime/tooling audit finding in the recorded run. | Engineering | 2026-09-17 |
+| ENG-04 | PASS (local) | `drizzle/0015_steady_thunderbird.sql`, `scripts/check-migration-drift.mjs`, `scripts/backup-restore-smoke.mjs` | `npm run db:check`, `npm run test:backup` | Migration chain 0000–0015 has no local drift; local export/restore smoke passes. Managed backup/RPO evidence remains an operational gate. | Engineering | 2026-09-17 |
 | ENG-05 | OPEN | `.env.example`, `PROJECT_HANDOFF.md` | Deployment configuration review required | Current Site is owner-private; staging/prod resource separation is an operator gate. | Engineering | 2026-09-16 |
 | ENG-06 | PASS | `app/orbita-app.tsx`, `app/orbita-view-router.tsx`, `hooks/use-orbita-controller.ts`, `app/orbita-views.tsx`, `hooks/use-assessment-queue.ts` | `npm run lint`, `npx tsc --noEmit`, `npm test`; typed controller and DOM-free queue/routing boundaries | Shell, routing, orchestration, presentation, API and queue responsibilities are separated; server business rules remain outside views. | Engineering | 2026-09-16 |
-| TST-01 | PASS | `TEST_MATRIX.md`, `scripts/check-coverage.mjs` | 40 unit/contract tests, fixed-seed property tests, fault tests, load smoke, beta smoke, browser CSP, PDF visual and E2E | Repository test gates are automated; external auth and production-scale capacity remain separate gates. | Engineering | 2026-09-16 |
-| TST-02 | PASS | `scripts/e2e-smoke.mjs` | E2E ownership checks | User B receives 404/401 for assessment, report, PDF and export objects. | Engineering | 2026-09-16 |
+| TST-01 | PASS | `TEST_MATRIX.md`, `scripts/check-coverage.mjs` | 51 unit/contract/property/fault/routing/queue tests, fixed-seed property tests, load smoke, beta smoke, browser CSP, PDF visual and E2E | Repository test gates are automated; external auth and production-scale capacity remain separate gates. | Engineering | 2026-09-17 |
+| TST-02 | PASS | `scripts/e2e-smoke.mjs` | E2E ownership checks | User B receives 404/401 for assessment, report, PDF and export objects. | Engineering | 2026-09-17 |
 | TST-03 | PASS | `lib/provider-contract.ts`, `lib/report-safety.ts` | Unit provider failure and injection tests | Empty/malformed/extra text, schema and safety boundaries are covered. | Engineering | 2026-09-16 |
 | TST-04 | PASS | `lib/payment-integrity.ts`, `lib/payment-event-policy.ts` | E2E webhook mismatch/replay/race/refund/dispute | No live Stripe business transaction is claimed. | Engineering | 2026-09-16 |
 | TST-05 | PASS | `lib/pdf-token-policy.ts`, `scripts/pdf-visual-qa.mjs` | PDF token/tamper/expiry/owner/regeneration E2E plus 4 RU visual fixtures | 4 x 24-page A4 fixtures include analytical, execution, long-text and low-confidence profiles; kk/en remain intentionally unpublished. | Engineering | 2026-09-16 |
-| TST-06 | PASS | `lib/retention.ts`, `scripts/e2e-smoke.mjs` | Account/assessment delete, export, retention dry-run, real purge and active-session exclusion | Fixture uses paid entitlements and isolated local D1/R2 state. | Engineering | 2026-09-16 |
-| TST-07 | PASS | `scripts/e2e-smoke.mjs` | Restart/resume and idempotent response replay | Server restart occurs during the core flow. | Engineering | 2026-09-16 |
-| AUTH-01 | OPEN | `lib/server-auth.ts` | External public identity provider required | Current Sites identity is owner-private/dispatch-owned. | Product / Identity | 2026-09-16 |
-| AUTH-02 | OPEN | `lib/server-auth.ts` | External public verified identity acceptance required | No public account creation is fabricated. | Product / Identity | 2026-09-16 |
-| AUTH-03 | OPEN | `PROJECT_HANDOFF.md` | Logout/revoke acceptance required | Dispatch-owned session lifecycle is outside the repository. | Product / Identity | 2026-09-16 |
-| AUTH-04 | OPEN | `scripts/e2e-smoke.mjs` | Same-device Worker restart is tested | Cross-device public auth is still an external gate. | Product / Identity | 2026-09-16 |
-| AUTH-05 | OPEN | `SECURITY_REVIEW.md` | MFA/RBAC deployment acceptance required | Admin is allowlist/read-only aggregate in this release. | Product / Identity | 2026-09-16 |
+| TST-06 | PASS | `lib/retention.ts`, `scripts/e2e-smoke.mjs` | Account/assessment delete, export, retention dry-run, real purge and active-session exclusion | Fixture uses paid entitlements and isolated local D1/R2 state. | Engineering | 2026-09-17 |
+| TST-07 | PASS | `scripts/e2e-smoke.mjs` | Restart/resume and idempotent response replay | Server restart occurs during the core flow. | Engineering | 2026-09-17 |
+| AUTH-01 | PARTIAL | `lib/server-auth.ts`, `lib/app-auth.ts` | First-party application authentication required | E-mail/password, verified e-mail, opaque sessions and invite-only registration are implemented; production sender/configuration remains open. | Product / Identity | 2026-09-17 |
+| AUTH-02 | PARTIAL | `app/api/auth/register/route.ts`, `app/api/auth/verify-email/route.ts` | Verified account creation and recovery acceptance required | Registration, e-mail verification and password reset are implemented; production delivery and acceptance evidence remain open. | Product / Identity | 2026-09-17 |
+| AUTH-03 | PARTIAL | `app/api/auth/logout/route.ts`, `lib/app-auth.ts` | Logout/revoke acceptance required | Logout and session revocation are implemented; cross-device acceptance test must be rerun on the current source. | Product / Identity | 2026-09-17 |
+| AUTH-04 | PARTIAL | `scripts/e2e-smoke.mjs`, `lib/app-auth.ts` | Restart/resume and session lifecycle test required | Current-source local E2E covers restart/resume and session lifecycle; cross-device acceptance and production delivery evidence remain open. | Product / Identity | 2026-09-17 |
+| AUTH-05 | PARTIAL | `app/admin/page.tsx`, `app/app-auth.ts`, `SECURITY_REVIEW.md` | MFA/RBAC deployment acceptance required | Role-gated admin access and allowlist are implemented; MFA and external security review remain open. | Product / Identity | 2026-09-17 |
 | SEC-01 | PASS | `lib/security-headers.ts`, `worker/index.ts`, `tests/browser/csp.spec.ts` | Unit + real-browser nonce/CSP assertions | CSP has no `unsafe-inline`/`unsafe-eval` in `script-src`; hydration and checkout pass. | Engineering | 2026-09-16 |
 | SEC-02 | PASS | `lib/durable-store.ts` | E2E 429/Retry-After boundary | Limits are server-side and scoped; tuning remains deployment-specific. | Engineering | 2026-09-16 |
 | SEC-03 | PASS | `lib/observability.ts`, `scripts/security-scan.mjs` | Structured log shape and scan | Logs omit answers, email, payment data and raw provider output. | Engineering | 2026-09-16 |
@@ -86,9 +88,9 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | LOC-05 | OPEN | `PREREGISTRATION.md` | Measurement invariance required | No cross-language pooling is enabled. | Product / Localization | 2026-09-16 |
 | LOC-06 | PASS | `lib/i18n.ts`, `lib/assessment-engine.ts` | Unvalidated norm/version boundary | Norm versions are language/population-specific by policy. | Product / Localization | 2026-09-16 |
 | OPS-01 | PASS | `lib/observability.ts`, `lib/ops-monitoring.ts` | Structured request logs and SLO helper tests | No external alert sink is implied. | Operations | 2026-09-16 |
-| OPS-02 | OPEN | `RUNBOOKS.md` | Transactional notification provider required | No email/SMS provider is wired in this release. | Operations | 2026-09-16 |
+| OPS-02 | PARTIAL | `lib/email.ts`, `RUNBOOKS.md` | Transactional notification provider required | Resend delivery is wired server-side; verified sender, secret and production delivery evidence remain open. | Operations | 2026-09-17 |
 | OPS-03 | OPEN | `RUNBOOKS.md` | Approved support channel/SLA required | Contact remains a configuration gate. | Operations | 2026-09-16 |
-| OPS-04 | PASS (local gate) | `scripts/load-smoke.mjs` | 94 requests; p50/p95/p99, errors, throughput, 429 and idempotency reported | Local Wrangler/D1 load is not a production capacity claim; target production load remains an operations gate. | Operations | 2026-09-16 |
+| OPS-04 | PASS (local gate) | `scripts/load-smoke.mjs` | 97 requests; p50/p95/p99, errors, throughput, 429 and idempotency reported | Local Wrangler/D1 load is not a production capacity claim; target production load remains an operations gate. | Operations | 2026-09-17 |
 | OPS-05 | PARTIAL | `lib/ops-monitoring.ts`, `worker/index.ts` | Metrics/cron events exist | Uptime/error alert destination is a deployment task. | Operations | 2026-09-16 |
 | OPS-06 | OPEN | `RUNBOOKS.md` | Named on-call rotation required | No person or SLA is invented. | Operations | 2026-09-16 |
 | LEG-01 | OPEN | `LEGAL_LAUNCH_APPROVAL.md` | Written privacy approval required | Runtime legal config still has operator placeholders. | Legal / Operator | 2026-09-16 |
@@ -105,24 +107,24 @@ The status block is checked by `npm run check:gates`. The evaluator requires the
 | `npm ci` | PASS in locked local checkout; Node runtime recorded in manifest | `.github/workflows/ci.yml`, `package-lock.json` |
 | `npm run lint` | PASS | CI/local command output |
 | `npx tsc --noEmit` | PASS | CI/local command output |
-| `npm test` | PASS | 40 unit/contract/property/fault/routing/queue tests |
-| `npm run test:coverage` | PASS | total lib branches 84.88%; critical modules meet 90% gate |
-| `npm run check:gates` | PASS | `READY_FOR_ENGINEERING_100=NO` through `READY_FOR_NORMATIVE_PERCENTILES=NO`; `local_release_checks=PASS`; `hosted_ci=MISSING` |
+| `npm test` | PASS | 51 unit/contract/property/fault/routing/queue tests |
+| `npm run test:coverage` | PASS | total lib branch coverage 83.29%; configured critical-module gates pass |
+| `npm run check:gates` | NOT RUN — expected NO while worktree is dirty | The gate intentionally requires a clean tree; run it from the clean release checkout after these changes are committed and the external CI marker is available. |
 | `npm run test:e2e` | PASS — current-source local run | Full local Worker/D1/R2 smoke, required idempotency key, Core60 + adaptive fallback, response metadata export, restart/resume and retention recovery |
 | `npm run test:beta` | PASS | Beta-free entitlement with payments/AI OFF and `normStatus=unvalidated` |
 | `npm run test:browser` | PASS | Real browser hydration, strict CSP nonce, navigation and checkout redirect |
 | `npm run test:pdf-visual` | PASS | 4 deterministic 24-page A4 fixtures; visual render QA PASS |
-| `npm run test:load` | PASS | responses=90 p50=221.5ms p95=2676.7ms p99=2713.3ms; assessment=2 p50=129ms p95=30419.8ms; complete-core=2 p50=236.5ms p95=240ms; error_rate=0; 429=0; retryable_conflicts=5; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_FALLBACK |
+| `npm run test:load` | PASS | responses=97 p50=193.5ms p95=1594.6ms p99=1639ms; assessment=2 p50=42.7ms p95=85.6ms; complete-core=2 p50=220.3ms p95=264.8ms; error_rate=0; 429=0; retryable_conflicts=12; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_FALLBACK |
 | `npm run test:backup` | PASS | `BACKUP_RESTORE_SMOKE=PASS` |
 | `npm run build` | PASS | Vinext production build |
-| `npm audit --omit=dev --audit-level=high` | PASS | 0 vulnerabilities in recorded local run |
-| `npm run db:check` / `npm run test:retention-plan` | PASS | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS` with `assessments_purge_due_idx`; migration chain through `0012_adaptive_generation_attempts.sql` |
+| `npm run audit:check` | PASS | 0 runtime and development vulnerabilities in current local run |
+| `npm run db:check` / `npm run test:retention-plan` | PASS — current-source local run | `MIGRATION_DRIFT=PASS`; `RETENTION_QUERY_PLAN=PASS index=assessments_purge_due_idx`; current chain includes `0015_steady_thunderbird.sql`. |
 | `npx wrangler secret list --env staging` | PASS | Managed secret names include `INCEPTION_API_KEY` and `PDF_SIGNING_SECRET`; values are never recorded |
-| `npx wrangler d1 migrations apply DB --remote --env staging` | PASS | Remote staging applied `0011_hard_lifeguard.sql` and `0012_adaptive_generation_attempts.sql` |
+| `npx wrangler d1 migrations apply DB --remote --env staging` | STALE | Previous remote evidence covered `0011`–`0012`; current `0013`–`0015` deployment remains unverified. |
 | `npx wrangler deploy --env staging` | PASS | Worker `orbita-30-staging`, version `7c31c70a-33c4-4d82-807a-b811e3f31b95`, 100% traffic |
 | Authenticated staging v2 smoke | PASS | Health/catalog 200; 60 Core responses; live Mercury 2.5 returned 12 questions in 1 attempt (~2.8s); report 200 with `adaptiveFallbackUsed=false`; signed PDF 200, 49,362 bytes |
 | Linux Node 22.13.0 `release:verify` | PASS | Exact-Git archive reproduced twice; source SHA `d3ea99fd1cac90b7d76d3fcf5e790a73eaa35f13`; archive SHA `0e7975c9f9085762e0a56550de35c165bb58956421034ab740ad1b48e3bd0efb` |
-| `git status --porcelain` | PASS after evidence commit | Must be empty before deployment |
+| `git status --porcelain` | EXPECTED DIRTY | The deliverable worktree contains the requested changes; it must be clean only in the release checkout used for deployment. |
 
 ## Remaining risk register
 
@@ -133,7 +135,7 @@ None found in the tracked source scan or local ownership/webhook checks. Any fut
 ### P1
 
 - Clean Linux CI and staging/production resource isolation are not evidenced locally.
-- Public multi-user identity, logout/revocation, MFA/RBAC and support controls are not implemented by this private Site.
+- First-party multi-user identity, logout/revocation and role-gated admin access are implemented; MFA, support operations and external security review remain open for launch.
 - Live Stripe price/secrets/refund operations and approved Kazakhstan legal documents are open.
 - Production GitHub Actions Linux run, staging/prod resource isolation and managed backup/RPO evidence remain deployment gates. GitHub branch protection/rulesets are also unavailable for this private repository on the current plan; the repository remains private and production is manual-only until plan access is changed.
 - The repository PDF matrix is complete for four RU profiles; kk/en remain unpublished until localization review and invariance evidence.

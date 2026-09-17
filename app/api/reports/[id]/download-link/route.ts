@@ -6,7 +6,7 @@ import { createPdfDownloadToken } from "@/lib/pdf-access";
 import { getReportForUser, StoreError } from "@/lib/durable-store";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const originError = sameOriginOrResponse(request);
   if (originError) return originError;
@@ -20,10 +20,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({
       download_path: `/api/reports/${encodeURIComponent(report.id)}/download?token=${encodeURIComponent(grant.token)}`,
       expires_at: new Date(grant.expiresAt * 1000).toISOString(),
-    });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     if (error instanceof Error && error.message === "PDF_SIGNING_SECRET_MISSING") {
-      return NextResponse.json({ error: "PDF_SIGNING_SECRET_MISSING", message: "Сервис защищённой выдачи PDF ещё не настроен." }, { status: 503 });
+      return NextResponse.json({ error: "PDF_SIGNING_SECRET_MISSING", message: "Сервис защищённой выдачи PDF ещё не настроен." }, { status: 503, headers: { "Cache-Control": "no-store" } });
     }
     return errorResponse(error);
   }

@@ -4,7 +4,7 @@ import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, vie
 import { completeAssessmentForUser, consumeRateLimit, generateReportForUser, getReportForUser } from "@/lib/durable-store";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const originError = sameOriginOrResponse(request);
   if (originError) return originError;

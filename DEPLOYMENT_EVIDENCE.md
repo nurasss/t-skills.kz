@@ -1,6 +1,10 @@
 # ORBITA-30 deployment evidence
 
-## Current v2 deployment gate
+> Product subsequently renamed to T-Skills. This file is preserved as historical evidence of the release that shipped under the ORBITA-30 name; worker, D1/R2 and URL identifiers below are intentionally unchanged.
+
+> Historical-evidence warning (2026-09-17): the deployment records below were produced before the current worktree switched from the dispatch/Cloudflare Access identity boundary to first-party application authentication and added legal/cookie/auth hardening. They are not evidence that the current uncommitted source is deployed. Re-run migrations, deploy both environments and regenerate this file after operator values and secrets are configured.
+
+## Historical v2 deployment gate
 
 ```text
 Branch: feature/orbita-v2-core60-mercury
@@ -19,7 +23,7 @@ Source package SHA-256: 0e7975c9f9085762e0a56550de35c165bb58956421034ab740ad1b48
 
 The key is managed outside Git and is not printed in evidence. Staging v2 acceptance completed on 2026-09-16: anonymous access returned 302 at the Access boundary; authenticated health returned 200 with `paymentsEnabled=false`, `aiEnabled=true`, `adaptiveProvider=mercury`, `entitlementMode=beta-free`, and `normStatus=unvalidated`; the live assessment completed all 60 Core responses, Mercury returned 12 adaptive questions on its first attempt, the report completed with `adaptiveFallbackUsed=false`, and the signed PDF download returned HTTP 200 (`49,362` bytes). Local malformed/timeout/fallback tests remain PASS. Production Mercury remains OFF.
 
-## Secondary Vercel Preview
+## Historical secondary Vercel preview
 
 ```text
 Project: nurasss-projects/orbita-30 (private)
@@ -33,11 +37,11 @@ Smoke: PASS (home 200; /api/health 200; /api/catalog?locale=ru 200)
 Storage/auth boundary: D1/R2 and Cloudflare Access are intentionally not emulated on Vercel
 ```
 
-This Vercel deployment is a private visual/runtime preview only. The complete assessment, account, report, PDF and retention flows remain on the Cloudflare Worker because the current production architecture uses Cloudflare D1/R2 bindings and Cloudflare Access. A protected Vercel Preview request to a storage-backed account route correctly returns `DATABASE_UNAVAILABLE`; no Vercel production promotion was performed.
+This Vercel deployment is a private visual/runtime preview only. The complete assessment, account, report, PDF and retention flows remain on the Cloudflare Worker because the application requires Cloudflare D1/R2 bindings. A protected Vercel Preview request to a storage-backed account route correctly returns `DATABASE_UNAVAILABLE`; no Vercel production promotion was performed.
 
 The source commit shown above predates the evidence-only deployment commit. The exact current code and evidence identity are recorded in `RELEASE_MANIFEST.json` after the evidence commit; no secret value belongs in this file.
 
-The deployment block below is retained as historical pre-v2 Cloudflare evidence; its `AI_ENABLED=false` state is not evidence for the current v2 Mercury staging gate.
+The deployment block below is retained as historical pre-v2 Cloudflare evidence; its Access boundary and `AI_ENABLED=false` state are not evidence for the current source.
 
 ```text
 GitHub URL: https://github.com/nurasss/orbita-30

@@ -14,8 +14,8 @@ export function CatalogView({ onNavigate }: CatalogViewProps) {
       <div className="ov-container wide">
         <SectionHeading
           eyebrow="КАТАЛОГ"
-          title="Один тест. Полная карта."
-          body="Выберите оценку, которая помогает увидеть устойчивый способ действовать — в работе и повседневных ситуациях."
+          title="Один тест. Рабочая карта."
+          body="Выберите оценку, которая может стать поводом заметить устойчивые способы действовать — в работе и повседневных ситуациях."
         />
 
         <div className="ov-catalog-grid">
@@ -25,12 +25,12 @@ export function CatalogView({ onNavigate }: CatalogViewProps) {
                 <span className="ov-badge ov-badge-primary">Основной тест</span>
                 <span className="ov-badge ov-badge-outline">orbita30_ru_v2</span>
               </div>
-              <h3>ORBITA—30</h3>
-              <p>Профиль сильных сторон и рабочих предпочтений</p>
+              <h3>T-Skills</h3>
+              <p>Профиль ваших сильных сторон</p>
             </header>
 
             <div className="ov-catalog-visual">
-              <CatalogOrbitaGraphic />
+              <CatalogMarkGraphic />
               <div className="ov-catalog-stats">
                 <div>
                   <strong>30</strong>
@@ -103,7 +103,7 @@ function CatalogIcon({ name }: { name: "time" | "doc" | "shield" }) {
   );
 }
 
-function CatalogOrbitaGraphic() {
+function CatalogMarkGraphic() {
   return (
     <svg viewBox="0 0 200 200" width="180" height="180" aria-hidden="true">
       <defs>
@@ -131,11 +131,8 @@ function CatalogOrbitaGraphic() {
         return <circle key={label} cx={x} cy={y} r="10" fill={color} opacity="0.85" />;
       })}
       <circle cx="100" cy="100" r="22" fill="#FCFBF8" stroke="rgba(23,26,24,0.18)" />
-      <text x="100" y="97" textAnchor="middle" fontFamily="serif" fontSize="13" fill="#171A18">
-        ORBITA
-      </text>
-      <text x="100" y="113" textAnchor="middle" fontFamily="serif" fontSize="13" fill="#171A18">
-        30
+      <text x="100" y="104" textAnchor="middle" fontFamily="serif" fontSize="11" fill="#171A18">
+        T-Skills
       </text>
     </svg>
   );

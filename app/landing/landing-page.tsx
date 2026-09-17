@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { View } from "@/app/orbita-view-types";
 import "./landing.css";
 
@@ -49,12 +50,17 @@ export function LandingPage({ onNavigate, onDemo, requestError, onDismissError }
       <LandingDrawer onNavigate={onNavigate} />
       <main id="main">
         <LandingHero onNavigate={onNavigate} />
-        <SocialProof />
+        <PilotStatus />
         <Benefits />
-        <Testimonials />
         <HowItWorks onNavigate={onNavigate} onDemo={onDemo} />
         <FinalCta onNavigate={onNavigate} />
       </main>
+      <div className="l-mobile-cta">
+        <button className="l-btn l-btn-primary" onClick={() => onNavigate("detail")} type="button">
+          Начать оценку
+          <ArrowRight />
+        </button>
+      </div>
       <LandingFooter onNavigate={onNavigate} />
     </div>
   );
@@ -109,6 +115,7 @@ function ArrowRight({ size = 16 }: { size?: number }) {
 function LandingHeader({ onNavigate }: { onNavigate: (view: View) => void }) {
   const headerRef = useRef<HTMLElement>(null);
   const menuOpenRef = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const header = headerRef.current;
@@ -123,11 +130,22 @@ function LandingHeader({ onNavigate }: { onNavigate: (view: View) => void }) {
   }, []);
 
   const openDrawer = useCallback(() => {
+    setMenuOpen(true);
     window.dispatchEvent(new CustomEvent("orbita-landing-drawer", { detail: "open" }));
     setTimeout(() => {
       const close = document.getElementById("menuClose");
       close?.focus();
     }, 50);
+  }, []);
+
+  useEffect(() => {
+    const onEvent = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      if (detail === "close") setMenuOpen(false);
+      if (detail === "open") setMenuOpen(true);
+    };
+    window.addEventListener("orbita-landing-drawer", onEvent);
+    return () => window.removeEventListener("orbita-landing-drawer", onEvent);
   }, []);
 
   const handleNav = useCallback(
@@ -142,17 +160,17 @@ function LandingHeader({ onNavigate }: { onNavigate: (view: View) => void }) {
           className="l-logo"
           onClick={handleNav("home")}
           type="button"
-          aria-label="ORBITA-30, на главную"
+          aria-label="T-Skills, на главную"
         >
           <LogoMark />
-          ORBITA-30
+          T-Skills
         </button>
 
         <nav className="l-main-nav" aria-label="Основная навигация">
           <a href="#benefits">Для вас</a>
           <a href="#how-it-works">Как это работает</a>
           <a href="#report">Что вы узнаете</a>
-          <a href="#testimonials">Примеры результатов</a>
+          <a href="#report">Пример результата</a>
           <a href="#footer">Ресурсы</a>
         </nav>
 
@@ -188,12 +206,12 @@ function LandingHeader({ onNavigate }: { onNavigate: (view: View) => void }) {
           className="l-menu-toggle"
           onClick={openDrawer}
           type="button"
-          aria-label="Открыть меню"
-          aria-expanded="false"
+          aria-label={menuOpen ? "Меню открыто" : "Открыть меню"}
+          aria-expanded={menuOpen}
           aria-controls="drawer"
           ref={menuOpenRef}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
             <line x1="3" y1="6" x2="21" y2="6" />
             <line x1="3" y1="12" x2="21" y2="12" />
             <line x1="3" y1="18" x2="21" y2="18" />
@@ -213,6 +231,7 @@ function LandingDrawer({ onNavigate }: { onNavigate: (view: View) => void }) {
   const closeDrawer = useCallback(() => {
     setOpen(false);
     document.body.style.overflow = "";
+    window.dispatchEvent(new CustomEvent("orbita-landing-drawer", { detail: "close" }));
     openBtnRef.current?.focus();
   }, []);
 
@@ -238,6 +257,20 @@ function LandingDrawer({ onNavigate }: { onNavigate: (view: View) => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && open) closeDrawer();
+      if (e.key !== "Tab" || !open || !drawerRef.current) return;
+      const focusable = Array.from(drawerRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -262,12 +295,13 @@ function LandingDrawer({ onNavigate }: { onNavigate: (view: View) => void }) {
         className={`l-drawer${open ? " open" : ""}`}
         id="drawer"
         aria-hidden={open ? "false" : "true"}
+        inert={!open ? true : undefined}
         ref={drawerRef}
       >
         <div className="l-drawer-top">
           <span className="l-logo" style={{ fontSize: 18 }}>
             <LogoMark size={22} />
-            ORBITA-30
+            T-Skills
           </span>
           <button
             className="l-drawer-close"
@@ -283,6 +317,7 @@ function LandingDrawer({ onNavigate }: { onNavigate: (view: View) => void }) {
               fill="none"
               stroke="currentColor"
               strokeWidth="1.8"
+              aria-hidden="true"
             >
               <line x1="6" y1="6" x2="18" y2="18" />
               <line x1="6" y1="18" x2="18" y2="6" />
@@ -299,7 +334,7 @@ function LandingDrawer({ onNavigate }: { onNavigate: (view: View) => void }) {
           <a href="#report" onClick={closeDrawer}>
             Что вы узнаете
           </a>
-          <a href="#testimonials" onClick={closeDrawer}>
+          <a href="#report" onClick={closeDrawer}>
             Пример результата
           </a>
           <a href="#footer" onClick={closeDrawer}>
@@ -327,17 +362,17 @@ function LandingHero({ onNavigate }: { onNavigate: (view: View) => void }) {
     <section className="l-hero">
       <div className="landing-container l-hero-grid">
         <div className="l-hero-copy">
-          <span className="eyebrow">Глубже, чем тест. Ближе к вам.</span>
+          <span className="eyebrow">Развивающая оценка для рефлексии</span>
           <h1>
-            Поймите свои
+            Исследуйте свои
             <br />
-            естественные
+            способы
             <br />
-            сильные стороны
+            действовать
           </h1>
           <p className="lede">
-            ORBITA-30 — это научно обоснованная оценка, которая помогает вам лучше понять, как вы
-            мыслите, действуете, взаимодействуете и достигаете результатов.
+            T-Skills — развивающая оценка для рефлексии: она помогает заметить устойчивые
+            предпочтения в том, как вы мыслите, действуете и взаимодействуете.
           </p>
           <div className="l-cta-row">
             <button
@@ -405,7 +440,7 @@ function LandingHero({ onNavigate }: { onNavigate: (view: View) => void }) {
         <div
           className="l-hero-visual"
           role="img"
-          aria-label="Превью карточки профиля ORBITA-30 с диаграммой сильных сторон и списком топ-5 качеств"
+          aria-label="Демонстрационный пример карточки профиля T-Skills с диаграммой и списком топ-5 качеств"
         >
           <div className="l-hv-texture" aria-hidden="true">
             <svg viewBox="0 0 400 560" preserveAspectRatio="xMidYMid slice">
@@ -429,7 +464,7 @@ function LandingHero({ onNavigate }: { onNavigate: (view: View) => void }) {
 
           <div className="l-hv-card-main">
             <div className="row-top">
-              <h3>Ваш профиль</h3>
+              <h3>Демонстрационный профиль</h3>
               <div className="l-hv-card-actions">
                 <span className="l-hv-chip">
                   <svg
@@ -473,7 +508,7 @@ function LandingHero({ onNavigate }: { onNavigate: (view: View) => void }) {
               </div>
             </div>
 
-            <div className="l-hv-list-title">Топ&nbsp;5 сильных сторон</div>
+            <div className="l-hv-list-title">Пример топ&nbsp;5 · данные вымышлены</div>
             <ul className="l-hv-list">
               {TOP5_STRENGTHS.map((item, i) => (
                 <li key={item.name}>
@@ -488,8 +523,8 @@ function LandingHero({ onNavigate }: { onNavigate: (view: View) => void }) {
           <div className="l-hv-card-small" aria-hidden="true">
             <div className="quote-mark">&ldquo;</div>
             <p>
-              Чем лучше вы понимаете свои сильные стороны, тем больше возможностей вы создаёте для
-              себя и окружающих.
+              Иллюстрация интерфейса — показатели и текст на карточке не являются данными реального
+              пользователя.
             </p>
           </div>
         </div>
@@ -580,23 +615,13 @@ function FingerprintSvg() {
 
     const label = document.createElementNS(ns, "text");
     label.setAttribute("x", String(cx));
-    label.setAttribute("y", String(cy - 2));
+    label.setAttribute("y", String(cy + 4));
     label.setAttribute("text-anchor", "middle");
     label.setAttribute("font-family", "'Instrument Serif', serif");
-    label.setAttribute("font-size", "13");
+    label.setAttribute("font-size", "12");
     label.setAttribute("fill", "#171A18");
-    label.textContent = "ORBITA";
+    label.textContent = "T-Skills";
     frag.appendChild(label);
-
-    const label2 = document.createElementNS(ns, "text");
-    label2.setAttribute("x", String(cx));
-    label2.setAttribute("y", String(cy + 14));
-    label2.setAttribute("text-anchor", "middle");
-    label2.setAttribute("font-family", "'Instrument Serif', serif");
-    label2.setAttribute("font-size", "13");
-    label2.setAttribute("fill", "#171A18");
-    label2.textContent = "30";
-    frag.appendChild(label2);
 
     svg.appendChild(frag);
   }, []);
@@ -612,23 +637,22 @@ function FingerprintSvg() {
   );
 }
 
-function SocialProof() {
+function PilotStatus() {
   return (
     <section className="l-social-proof">
       <div className="landing-container l-sp-inner">
         <div className="l-sp-number">
-          <strong>120,000+</strong>
-          <span>людей уже используют ORBITA-30 для роста в работе и жизни</span>
+          <strong>PILOT</strong>
+          <span>Текущая версия проверяется на понятность, устойчивость и качество пользовательского опыта.</span>
         </div>
         <div
           className="l-sp-logos"
-          aria-label="Категории специалистов, использующих ORBITA-30"
+          aria-label="Фактические параметры текущей версии T-Skills"
         >
-          <span>Company</span>
-          <span>Studio</span>
-          <span>Team</span>
-          <span>Agency</span>
-          <span>Research Lab</span>
+          <span>60 core items</span>
+          <span>adaptive follow-up</span>
+          <span>6 domains</span>
+          <span>без норм популяции</span>
         </div>
       </div>
     </section>
@@ -640,10 +664,10 @@ function Benefits() {
     {
       bg: "var(--primary-soft)",
       color: "var(--primary)",
-      title: "Лучшее понимание себя",
-      body: "Узнайте, что даёт вам энергию и в чём состоит ваша естественная сила.",
+      title: "Материал для рефлексии",
+      body: "Замечайте собственные привычные способы действовать и описывайте их своими словами.",
       icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
           <circle cx="12" cy="12" r="9" />
           <path d="M12 7v5l3 3" />
         </svg>
@@ -652,10 +676,10 @@ function Benefits() {
     {
       bg: "#E7ECF0",
       color: "var(--blue)",
-      title: "Более сильные отношения",
-      body: "Поймите, как вы взаимодействуете с другими и влияете на них.",
+      title: "Осознаннее взаимодействие",
+      body: "Обсуждайте наблюдения и проверяйте их в реальных разговорах и ситуациях.",
       icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
           <circle cx="9" cy="8" r="3.4" />
           <path d="M3.5 19c1-3.4 3-5 5.5-5s4.5 1.6 5.5 5" />
           <circle cx="17.5" cy="9.5" r="2.4" />
@@ -666,10 +690,10 @@ function Benefits() {
     {
       bg: "#EDE7F2",
       color: "var(--lavender)",
-      title: "Больше возможностей",
-      body: "Принимайте решения, которые соответствуют вашим сильным сторонам.",
+      title: "Больше ясности",
+      body: "Сопоставляйте профиль со своими наблюдениями, контекстом и личными ценностями.",
       icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
           <path d="M4 19V11M11 19V5M18 19v-7" />
         </svg>
       ),
@@ -677,10 +701,10 @@ function Benefits() {
     {
       bg: "#F3E9E0",
       color: "var(--amber)",
-      title: "Реальное развитие",
-      body: "Получите конкретные рекомендации для личного и профессионального роста.",
+      title: "План развития",
+      body: "Формулируйте небольшие эксперименты без обещаний конкретного результата.",
       icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
           <path d="M13 3L4 14h6l-1 7 9-11h-6l1-7z" strokeLinejoin="round" />
         </svg>
       ),
@@ -692,10 +716,10 @@ function Benefits() {
       <div className="landing-container">
         <div className="l-section-head l-reveal">
           <span className="eyebrow">Больше, чем результат</span>
-          <h2>Ясность для более осознанной жизни</h2>
+          <h2>Материал для осознанной рефлексии</h2>
           <p>
-            Понимание своих сильных сторон помогает принимать более уверенные решения, строить
-            более глубокие отношения и раскрывать свой потенциал.
+            Профиль может стать отправной точкой для наблюдений, разговора и небольших изменений,
+            которые вы проверяете самостоятельно.
           </p>
         </div>
 
@@ -715,58 +739,6 @@ function Benefits() {
   );
 }
 
-function Testimonials() {
-  const items = [
-    {
-      quote:
-        "Этот отчёт помог мне лучше понять, почему я всегда чувствовала себя по-другому. Теперь у меня есть язык, чтобы объяснить это.",
-      name: "Алина С.",
-      role: "Продукт-менеджер",
-      avatar: "А",
-      color: "var(--rose)",
-    },
-    {
-      quote:
-        "Я лучше понимаю себя и свою команду. Это настоящий прорыв в том, как мы распределяем задачи.",
-      name: "Нурсултан А.",
-      role: "Предприниматель",
-      avatar: "Н",
-      color: "var(--blue)",
-    },
-    {
-      quote:
-        "Практичные инсайты, которые действительно работают. Я постоянно возвращаюсь к своему отчёту.",
-      name: "Диана К.",
-      role: "Маркетинг-лид",
-      avatar: "Д",
-      color: "var(--sage)",
-    },
-  ];
-
-  return (
-    <section className="l-section" id="testimonials" style={{ paddingTop: 0 }}>
-      <div className="landing-container">
-        <div className="l-testimonials-grid">
-          {items.map((item) => (
-            <div className="l-t-card l-reveal" key={item.name}>
-              <p className="quote">{item.quote}</p>
-              <div className="l-t-person">
-                <div className="l-t-avatar" style={{ background: item.color }}>
-                  {item.avatar}
-                </div>
-                <div>
-                  <strong>{item.name}</strong>
-                  <span>{item.role}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function HowItWorks({
   onNavigate,
   onDemo,
@@ -776,16 +748,16 @@ function HowItWorks({
 }) {
   const steps = [
     {
-      title: "Пройдите оценку ORBITA-30",
-      body: "Ответьте на серию продуманных утверждений о вашем естественном поведении. Вы можете делать перерывы и продолжать позже.",
+      title: "Пройдите тест T-Skills",
+      body: "Ответьте на серию утверждений о типичных ситуациях и своём способе действовать. Вы можете делать перерывы и продолжать позже.",
     },
     {
-      title: "Получите персональные результаты",
-      body: "Узнайте свои топ‑5 сильных сторон, полный профиль из 30 качеств и подробные инсайты.",
+      title: "Получите персональный профиль",
+      body: "Увидьте топ‑5, полный профиль из 30 качеств и пояснения для самостоятельной рефлексии.",
     },
     {
-      title: "Применяйте в жизни",
-      body: "Используйте практические рекомендации и инструменты, чтобы раскрывать свой потенциал в работе, отношениях и личном развитии.",
+      title: "Проверьте наблюдения на практике",
+      body: "Используйте рекомендации как материал для разговоров, небольших экспериментов и личного развития.",
     },
   ];
 
@@ -800,7 +772,7 @@ function HowItWorks({
         <div>
           <div className="l-section-head l-reveal" style={{ marginBottom: 0 }}>
             <span className="eyebrow">Простой и понятный процесс</span>
-            <h2>Три шага к глубоким инсайтам</h2>
+          <h2>Три шага к полезной рефлексии</h2>
           </div>
 
           <div className="l-steps-list">
@@ -833,10 +805,10 @@ function HowItWorks({
           className="l-report-visual l-reveal"
           id="report"
           role="img"
-          aria-label="Превью персонального отчёта ORBITA-30 с оценками по шести доменам"
+          aria-label="Демонстрационный пример персонального отчёта T-Skills с оценками по шести доменам"
         >
           <div className="l-rv-cover">
-            <span className="l-rv-eyebrow">Ваш персональный отчёт</span>
+            <span className="l-rv-eyebrow">Пример отчёта · данные вымышлены</span>
             <h3>
               Понимание.
               <br />
@@ -845,16 +817,16 @@ function HowItWorks({
               Развитие.
             </h3>
             <span className="l-rv-tag">
-              «Осознанность сегодня — больше возможностей завтра.»
+              «Материал для собственных наблюдений и разговора.»
             </span>
-            <span className="l-rv-brand">ORBITA-30</span>
+            <span className="l-rv-brand">T-Skills</span>
           </div>
 
           <DomainCard />
 
           <div className="l-rv-quote" aria-hidden="true">
             <div className="quote-mark">&ldquo;</div>
-            <p>Осознанность сегодня — больше возможностей завтра.</p>
+            <p>Материал для собственных наблюдений и разговора.</p>
           </div>
         </div>
       </div>
@@ -903,7 +875,7 @@ function DomainCard() {
 
   return (
     <div className="l-rv-domains" id="domainCard" ref={cardRef}>
-      <h4>Ваши домены</h4>
+      <h4>Пример доменов</h4>
       {DOMAIN_LABELS.map((label, i) => (
         <div className="l-domain-row" data-value={DOMAIN_VALUES[i]} key={label}>
           <div className="dr-top">
@@ -935,10 +907,10 @@ function FinalCta({ onNavigate }: { onNavigate: (view: View) => void }) {
           <div className="l-final-cta-inner">
             <div className="l-final-cta-copy">
               <span className="eyebrow">Готовы узнать больше?</span>
-              <h2>Инвестируйте в лучшее понимание себя</h2>
+              <h2>Используйте результат как отправную точку</h2>
               <p>
-                Тысячи людей используют ORBITA-30, чтобы принимать более осознанные решения и
-                создавать жизнь, которая действительно им подходит.
+                Используйте этот срез как повод для рефлексии и разговора о рабочих условиях —
+                без обещаний диагноза, прогноза или готового решения за вас.
               </p>
               <button
                 className="l-btn l-btn-primary"
@@ -950,11 +922,11 @@ function FinalCta({ onNavigate }: { onNavigate: (view: View) => void }) {
               </button>
             </div>
             <div className="l-final-cta-side">
-              больше осознанности
+              собственные наблюдения
               <br />
-              больше возможностей
+              следующий разговор
               <br />
-              больше вас
+              небольшие шаги
             </div>
           </div>
         </div>
@@ -983,10 +955,10 @@ function LandingFooter({ onNavigate }: { onNavigate: (view: View) => void }) {
           <div className="l-footer-brand">
             <span className="l-logo">
               <LogoMark />
-              ORBITA-30
+              T-Skills
             </span>
             <p>
-              Научно обоснованная оценка сильных сторон для более осознанной работы и жизни.
+              Развивающая оценка для рефлексии и разговора о рабочих условиях.
             </p>
           </div>
           <div className="l-footer-col">
@@ -1033,10 +1005,10 @@ function LandingFooter({ onNavigate }: { onNavigate: (view: View) => void }) {
             <h4>Компания</h4>
             <ul>
               <li>
-                <button type="button">О нас</button>
+                <Link href="/contact">Оператор</Link>
               </li>
               <li>
-                <button type="button">Контакты</button>
+                <Link href="/contact">Контакты</Link>
               </li>
             </ul>
           </div>
@@ -1044,20 +1016,22 @@ function LandingFooter({ onNavigate }: { onNavigate: (view: View) => void }) {
             <h4>Правовое</h4>
             <ul>
               <li>
-                <button onClick={handleNav("privacy")} type="button">
-                  Privacy
-                </button>
+                <Link href="/privacy">Конфиденциальность</Link>
               </li>
               <li>
-                <button onClick={handleNav("terms")} type="button">
-                  Terms
-                </button>
+                <Link href="/terms">Условия использования</Link>
+              </li>
+              <li>
+                <Link href="/cookies">Cookies</Link>
+              </li>
+              <li>
+                <Link href="/refunds">Возвраты</Link>
               </li>
             </ul>
           </div>
         </div>
         <div className="l-footer-bottom">
-          <span>© 2026 ORBITA-30</span>
+          <span>© 2026 T-Skills</span>
           <span>RU / KZ / EN</span>
         </div>
       </div>
@@ -1065,7 +1039,7 @@ function LandingFooter({ onNavigate }: { onNavigate: (view: View) => void }) {
   );
 }
 
-export function useScrollReveal() {
+function useScrollReveal() {
   useEffect(() => {
     const root = document.querySelector(".orbita-landing");
     if (!root) return;

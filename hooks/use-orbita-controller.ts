@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiClientError, apiJson, topLevelNavigate, writePendingResponses } from "@/app/orbita-api";
+import { ApiClientError, apiJson, topLevelNavigate, trackOptionalAnalytics, writePendingResponses } from "@/app/orbita-api";
 import type { AccountOverview, AdminMetrics, AssessmentItem, PendingResponse, Phase, PublicCatalog, ReportPayload, SessionPayload, View } from "@/app/orbita-view-types";
 import {
   buildReport,
@@ -16,7 +16,7 @@ import { ITEM_BANK, type Item } from "@/lib/item-bank";
 import { CORE60_BANK } from "@/lib/v2-item-bank";
 import { fallbackAdaptiveQuestions, type GeneratedAdaptiveQuestion } from "@/lib/mercury-adaptive-provider";
 import { enqueuePending, findPendingItem, pendingForSession } from "@/lib/response-retry-queue";
-import { routeForView } from "@/lib/view-routing";
+import { metadataForView, routeForView, viewStateForPath } from "@/lib/view-routing";
 import { useAssessmentQueue } from "@/hooks/use-assessment-queue";
 
 const LEGACY_CORE_ITEMS = ITEM_BANK.filter((item) => Number(item.id.slice(1)) <= 250);
@@ -125,8 +125,23 @@ export function useOrbitaController({
   };
 
   const go = (next: View, phaseOverride: Phase = phaseRef.current) => {
+    const nextPath = routeForView(next, { sessionId: sessionIdRef.current, reportId: reportIdRef.current, phase: phaseOverride });
+    if (next === "account" || next === "checkout" || next === "admin") {
+      topLevelNavigate(nextPath);
+      return;
+    }
+    const currentRoute = viewStateForPath(window.location.pathname, window.history.state);
+    const phaseChanged = (next === "assessment" || next === "break") && currentRoute?.phase !== phaseOverride;
+    const routeChanged = window.location.pathname !== nextPath || currentRoute?.view !== next || phaseChanged;
+    if (next === "assessment" || next === "break") setPhase(phaseOverride);
+    if (routeChanged) {
+      const currentHistoryState = window.history.state;
+      const nextHistoryState = currentHistoryState && typeof currentHistoryState === "object"
+        ? { ...(currentHistoryState as Record<string, unknown>), orbitaView: next, orbitaPhase: phaseOverride }
+        : { orbitaView: next, orbitaPhase: phaseOverride };
+      window.history.pushState(nextHistoryState, "", nextPath);
+    }
     setView(next);
-    window.history.replaceState({}, "", routeForView(next, { sessionId: sessionIdRef.current, reportId: reportIdRef.current, phase: phaseOverride }));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -173,10 +188,7 @@ export function useOrbitaController({
     setQuestionIndex(coreIndex >= 0 ? coreIndex : currentCoreItems.length - 1);
     const adaptiveIndexFromServer = (payload.adaptive_items ?? []).findIndex((item) => typeof payload.responses[item.questionId] !== "number");
     setAdaptiveIndex(adaptiveIndexFromServer >= 0 ? adaptiveIndexFromServer : 0);
-    void apiJson("/api/telemetry", {
-      method: "POST",
-      body: JSON.stringify({ name: "resume", assessment_id: payload.id, metadata: { status: payload.state, count: Object.keys(payload.responses).length } }),
-    }).catch(() => undefined);
+    trackOptionalAnalytics({ name: "resume", assessment_id: payload.id, metadata: { status: payload.state, count: Object.keys(payload.responses).length } });
   };
 
   const loadReportData = async (id: string, openWhenReady = false) => {
@@ -202,21 +214,61 @@ export function useOrbitaController({
     }
   };
 
-  const loadSessionData = async (id: string) => {
+  const loadSessionData = async (id: string, requestedView: View = initialView) => {
     try {
       const payload = await apiJson<SessionPayload>(`/api/assessments/${encodeURIComponent(id)}`);
       hydrateSession(payload);
       if (payload.report_id) void loadReportData(payload.report_id, initialView === "results");
       if (payload.state === "PAID" || payload.state === "ENTITLED") setView("consent");
-      else if (payload.state === "CONSENTED" || payload.state === "CORE_IN_PROGRESS") setView(initialView === "break" ? "break" : "assessment");
+      else if (payload.state === "CONSENTED" || payload.state === "CORE_IN_PROGRESS") setView(requestedView === "break" ? "break" : "assessment");
       else if (["ADAPTIVE_GENERATING", "ADAPTIVE_PROVIDER_FAILED"].includes(payload.state)) setView("processing");
-      else if (["ADAPTIVE_IN_PROGRESS", "ADAPTIVE_FALLBACK"].includes(payload.state)) setView(initialView === "processing" ? "processing" : "break");
+      else if (["ADAPTIVE_IN_PROGRESS", "ADAPTIVE_FALLBACK"].includes(payload.state)) setView(requestedView === "processing" ? "processing" : "break");
       else if (payload.state === "REPORT_GENERATING" || payload.state === "REPORT_FAILED_RETRYABLE") setView("processing");
-      else if (payload.state === "COMPLETE") setView(initialView === "results" ? "results" : "processing");
+      else if (payload.state === "COMPLETE") setView(requestedView === "results" ? "results" : "processing");
     } catch (error) {
       setRequestError(error instanceof ApiClientError ? error.message : "Не удалось загрузить сессию.");
     }
   };
+
+  useEffect(() => {
+    const syncBrowserRoute = () => {
+      const route = viewStateForPath(window.location.pathname, window.history.state);
+      if (!route) {
+        window.location.reload();
+        return;
+      }
+      const previousSessionId = sessionIdRef.current;
+      const previousReportId = reportIdRef.current;
+      if (route.sessionId) {
+        sessionIdRef.current = route.sessionId;
+        if (route.sessionId !== previousSessionId) void loadSessionData(route.sessionId, route.view);
+      }
+      if (route.reportId) {
+        reportIdRef.current = route.reportId;
+        setReportId(route.reportId);
+        if (route.reportId !== previousReportId) void loadReportData(route.reportId, route.view === "results");
+      }
+      setPhase(route.phase);
+      setView(route.view);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    window.addEventListener("popstate", syncBrowserRoute);
+    return () => window.removeEventListener("popstate", syncBrowserRoute);
+    // The browser listener is intentionally installed once; route data lives in refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const metadata = metadataForView(view, phase);
+    document.title = metadata.title;
+    let description = document.head.querySelector('meta[name="description"]');
+    if (!description) {
+      description = document.createElement("meta");
+      description.setAttribute("name", "description");
+      document.head.appendChild(description);
+    }
+    description.setAttribute("content", metadata.description);
+  }, [view, phase]);
 
   const finishCore = async () => {
     if (!sessionIdRef.current) return;
@@ -229,7 +281,7 @@ export function useOrbitaController({
       setPhase("adaptive");
       setRequestError(undefined);
       go("break", "adaptive");
-      void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "adaptive_selected", assessment_id: sessionIdRef.current, metadata: { count: result.adaptive.selectedItemIds.length } }) }).catch(() => undefined);
+      trackOptionalAnalytics({ name: "adaptive_selected", assessment_id: sessionIdRef.current, metadata: { count: result.adaptive.selectedItemIds.length } });
     } catch (error) {
       setRequestError(error instanceof ApiClientError ? error.message : "Не удалось завершить основной блок.");
     }
@@ -247,7 +299,7 @@ export function useOrbitaController({
       setReport(result.report ?? undefined);
       setProcessingStatus(result.report_status === "COMPLETE" && result.report ? "COMPLETE" : result.report_status === "REPORT_FAILED_RETRYABLE" ? "REPORT_FAILED_RETRYABLE" : "REPORT_GENERATING");
       setReportProvider(undefined);
-      void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "report_viewed", assessment_id: sessionIdRef.current }) }).catch(() => undefined);
+      trackOptionalAnalytics({ name: "report_viewed", assessment_id: sessionIdRef.current });
     } catch (error) {
       setProcessingStatus("REPORT_FAILED_RETRYABLE");
       setRequestError(error instanceof ApiClientError ? error.message : "Не удалось сформировать отчёт.");
@@ -272,6 +324,7 @@ export function useOrbitaController({
       responseTimeMs,
       clientSeq: Object.keys(responses).length + 1,
       idempotencyKey: `${sessionIdRef.current}:${activeItemId}:${crypto.randomUUID()}`,
+      queuedAt: Date.now(),
     };
     pendingRef.current = enqueuePending(pendingRef.current, pending);
     writePendingResponses(pendingRef.current);
@@ -300,7 +353,7 @@ export function useOrbitaController({
       questionStartedAt.current = Date.now();
       setElapsedSeconds(0);
       go("assessment");
-      void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "assessment_started", assessment_id: sessionIdRef.current }) }).catch(() => undefined);
+      trackOptionalAnalytics({ name: "assessment_started", assessment_id: sessionIdRef.current });
     } catch (error) {
       setRequestError(error instanceof ApiClientError ? error.message : "Не удалось сохранить согласия.");
     }
@@ -332,7 +385,7 @@ export function useOrbitaController({
         const v2Pause = coreItems.length === 60 && (nextIndex === 20 || nextIndex === 40);
         if (legacyBlock || v2Pause) {
           const block = coreItems.length === 60 ? nextIndex / 20 : nextIndex / 50;
-          void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "block_completed", assessment_id: sessionIdRef.current, metadata: { block } }) }).catch(() => undefined);
+          trackOptionalAnalytics({ name: "block_completed", assessment_id: sessionIdRef.current, metadata: { block } });
           go("break");
         }
       }
@@ -359,14 +412,14 @@ export function useOrbitaController({
     setCheckoutBusy(true);
     setCheckoutError(undefined);
     try {
-      void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "checkout_started", metadata: { provider: "stripe", mode: "hosted" } }) }).catch(() => undefined);
+      trackOptionalAnalytics({ name: "checkout_started", metadata: { provider: "stripe", mode: "hosted" } });
       const result = await apiJson<{ checkout_url: string }>('/api/checkout', {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ test_id: "orbita30" }),
       });
       if (!result.checkout_url) throw new ApiClientError("CHECKOUT_URL_MISSING", "Платёжная ссылка не была создана.");
-      void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "checkout_redirected" }) }).catch(() => undefined);
+      trackOptionalAnalytics({ name: "checkout_redirected" });
       window.location.assign(result.checkout_url);
     } catch (error) {
       setCheckoutError(error instanceof ApiClientError ? error.message : "Не удалось открыть оплату.");
@@ -389,9 +442,8 @@ export function useOrbitaController({
     if (!window.confirm("Удалить аккаунт и все сохранённые ответы? Это действие нельзя отменить.")) return;
     try {
       await apiJson("/api/account/delete", { method: "POST", body: JSON.stringify({ confirm: "DELETE" }) });
-      topLevelNavigate(publicCatalog?.authProvider === "cloudflare-access"
-        ? "/cdn-cgi/access/logout?returnTo=%2F"
-        : "/signout-with-chatgpt?return_to=%2F");
+      await apiJson("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+      topLevelNavigate("/");
     } catch (error) {
       setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось удалить аккаунт.");
     }
@@ -422,8 +474,7 @@ export function useOrbitaController({
       setResponses({});
       serverSavedRef.current = new Set();
       await loadSessionData(result.id);
-      setView("consent");
-      window.history.replaceState({}, "", `/assessment/${result.id}`);
+      go("consent");
       setAccountActionStatus("сессия готова");
     } catch (error) {
       setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось создать сессию.");
@@ -472,7 +523,7 @@ export function useOrbitaController({
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `orbita-30-${reportIdRef.current}.pdf`;
+      anchor.download = `t-skills-${reportIdRef.current}.pdf`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -534,7 +585,7 @@ export function useOrbitaController({
     webMcpActionsRef.current = {
       start: startAssessmentFromAccount,
       submit: async (value: number) => {
-        if (!activeItem) throw new Error("There is no active ORBITA question.");
+        if (!activeItem) throw new Error("There is no active T-Skills question.");
         if (demoMode) throw new Error("The demo profile cannot accept persisted answers.");
         if (serverSavedRef.current.has(itemKey(activeItem))) throw new Error("The current question is already answered.");
         await saveResponse(value, true);
@@ -573,19 +624,14 @@ export function useOrbitaController({
 
   useEffect(() => {
     if (view !== "catalog" || demoMode) return;
-    void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "catalog_viewed" }) }).catch(() => undefined);
-    void apiJson("/api/telemetry", { method: "POST", body: JSON.stringify({ name: "test_view", metadata: { test_id: "orbita30" } }) }).catch(() => undefined);
+    trackOptionalAnalytics({ name: "catalog_viewed" });
+    trackOptionalAnalytics({ name: "test_view", metadata: { test_id: "orbita30" } });
   }, [view, demoMode]);
 
   useEffect(() => {
     if (view !== "assessment" || demoMode || !sessionIdRef.current) return;
     const onBeforeUnload = () => {
-      const payload = JSON.stringify({ name: "assessment_abandoned", assessment_id: sessionIdRef.current });
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon("/api/telemetry", new Blob([payload], { type: "application/json" }));
-      } else {
-        void apiJson("/api/telemetry", { method: "POST", body: payload }).catch(() => undefined);
-      }
+      trackOptionalAnalytics({ name: "assessment_abandoned", assessment_id: sessionIdRef.current }, { keepalive: true });
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
@@ -658,24 +704,24 @@ export function useOrbitaController({
     const tools = [
       {
         name: "get_orbita_progress",
-        title: "Get ORBITA progress",
-        description: "Read the current ORBITA-30 session state and progress without changing it.",
+        title: "Get T-Skills progress",
+        description: "Read the current T-Skills session state and progress without changing it.",
         inputSchema: { type: "object", properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: true, untrustedContentHint: false },
         execute: async () => ({ ...webMcpStateRef.current, sessionId: webMcpStateRef.current.sessionId ?? null, activeItemId: webMcpStateRef.current.activeItemId ?? null }),
       },
       {
         name: "start_orbita_assessment",
-        title: "Start ORBITA assessment",
-        description: "Create or resume the authenticated user's paid ORBITA-30 assessment session.",
+        title: "Start T-Skills assessment",
+        description: "Create or resume the authenticated user's paid T-Skills assessment session.",
         inputSchema: { type: "object", properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: false, untrustedContentHint: false },
         execute: async () => { await webMcpActionsRef.current.start(); return { sessionId: webMcpStateRef.current.sessionId ?? null, view: "consent" }; },
       },
       {
         name: "submit_orbita_answer",
-        title: "Submit ORBITA answer",
-        description: "Submit one answer for the currently displayed ORBITA-30 question and persist it.",
+        title: "Submit T-Skills answer",
+        description: "Submit one answer for the currently displayed T-Skills question and persist it.",
         inputSchema: { type: "object", properties: { value: { type: "integer", minimum: -2, maximum: 7 } }, required: ["value"], additionalProperties: false },
         annotations: { readOnlyHint: false, untrustedContentHint: false },
         execute: async (input: unknown) => {

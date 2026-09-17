@@ -1,30 +1,11 @@
-export const OPERATIONAL_METRICS = [
-  "assessment_started",
-  "core_completed",
-  "adaptive_started",
-  "adaptive_fallback",
-  "report_completed",
-  "report_failed",
-  "payment_confirmed",
-  "payment_refunded",
-  "payment_disputed",
-  "retention_sweep",
-  "privacy_export",
-  "privacy_delete",
-  "request_completed",
-  "request_failed",
-] as const;
-
-export type OperationalMetric = (typeof OPERATIONAL_METRICS)[number];
-
-export type AlertThresholds = {
+type AlertThresholds = {
   reportFailureRate: number;
   adaptiveFallbackRate: number;
   requestErrorRate: number;
   retentionFailedArtifacts: number;
 };
 
-export const DEFAULT_ALERT_THRESHOLDS: AlertThresholds = {
+const DEFAULT_ALERT_THRESHOLDS: AlertThresholds = {
   reportFailureRate: 0.05,
   adaptiveFallbackRate: 0.2,
   requestErrorRate: 0.02,

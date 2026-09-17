@@ -4,7 +4,7 @@ import { verifyPdfDownloadToken } from "@/lib/pdf-access";
 import { resourceBelongsToViewer } from "@/lib/ownership-policy";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const { id } = await params;
   try {
@@ -28,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       status: 200,
       headers: {
         "Content-Type": object.httpMetadata?.contentType ?? "application/pdf",
-        "Content-Disposition": object.httpMetadata?.contentDisposition ?? ('attachment; filename="orbita-30-' + id + '.pdf"'),
+        "Content-Disposition": object.httpMetadata?.contentDisposition ?? ('attachment; filename="t-skills-' + id + '.pdf"'),
         "Cache-Control": "private, no-store",
         ETag: object.httpEtag,
       },

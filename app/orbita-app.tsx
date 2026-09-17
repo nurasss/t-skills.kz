@@ -27,7 +27,6 @@ export function OrbitaApp(options: OrbitaControllerOptions) {
       {controller.requestError ? <div className="global-error" role="alert">{controller.requestError}<button onClick={controller.dismissRequestError} type="button" aria-label="Закрыть">×</button></div> : null}
       <OrbitaViewRouter controller={controller} />
       {!immersive ? <Footer onNavigate={controller.go} /> : null}
-      {controller.view !== "admin" && !immersive ? <button className="admin-secret" onClick={() => controller.go("admin")} type="button" aria-label="Открыть внутреннюю панель">⌘</button> : null}
     </div>
   );
 }

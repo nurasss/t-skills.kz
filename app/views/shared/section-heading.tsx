@@ -1,8 +1,6 @@
 "use client";
 
-import type { View } from "@/app/orbita-view-types";
-
-export type SectionHeadingProps = {
+type SectionHeadingProps = {
   eyebrow?: string;
   title: string;
   body?: string;
@@ -19,14 +17,6 @@ export function SectionHeading({ eyebrow, title, body, align = "left" }: Section
   );
 }
 
-export function BackLink({ onNavigate, to, label }: { onNavigate: (view: View) => void; to: View; label: string }) {
-  return (
-    <button className="ov-back-link" onClick={() => onNavigate(to)} type="button">
-      ← {label}
-    </button>
-  );
-}
-
 export function ArrowRight({ size = 16 }: { size?: number }) {
   return (
     <svg className="arrow" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -34,8 +24,4 @@ export function ArrowRight({ size = 16 }: { size?: number }) {
       <polyline points="12 5 19 12 12 19" />
     </svg>
   );
-}
-
-export function PageEyebrow({ children }: { children: React.ReactNode }) {
-  return <span className="ov-eyebrow">{children}</span>;
 }

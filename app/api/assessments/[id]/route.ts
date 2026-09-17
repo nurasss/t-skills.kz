@@ -3,14 +3,15 @@ import { NextResponse } from "next/server";
 import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
 import { consumeRateLimit, consentSessionForUser, deleteAssessmentForUser, getConsentsForUser, getSessionForUser, nextItemIdForSession, type ConsentChoices } from "@/lib/durable-store";
 import { CORE60_BANK } from "@/lib/v2-item-bank";
+import { assessmentConsentSchema, assessmentDeleteSchema, parseJsonBody } from "@/lib/request-validation";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const { id } = await params;
   try {
     const session = await getSessionForUser(id, viewer);
-    if (!session) return NextResponse.json({ error: "SESSION_NOT_FOUND" }, { status: 404 });
+    if (!session) return NextResponse.json({ error: "SESSION_NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     const consents = await getConsentsForUser(id, viewer);
     return NextResponse.json({
       id: session.id,
@@ -31,24 +32,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       report_id: session.reportId ?? null,
       consents,
       updated_at: session.updatedAt,
-    });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return errorResponse(error);
   }
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const originError = sameOriginOrResponse(request);
   if (originError) return originError;
   const { id } = await params;
-  let body: { consented?: unknown; consents?: Partial<Record<keyof ConsentChoices, unknown>> };
-  try {
-    body = (await request.json()) as { consented?: unknown; consents?: Partial<Record<keyof ConsentChoices, unknown>> };
-  } catch {
-    return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(request, assessmentConsentSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
   const raw = body.consents;
   const choices: ConsentChoices = raw
     ? {
@@ -58,34 +56,29 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         marketing: raw.marketing === true,
       }
     : { terms: body.consented === true, privacy: body.consented === true, research: false, marketing: false };
-  if (raw && Object.values(raw).some((value) => typeof value !== "boolean")) {
-    return NextResponse.json({ error: "INVALID_CONSENT_PAYLOAD" }, { status: 422 });
-  }
-  if (!choices.terms || !choices.privacy) return NextResponse.json({ error: "CONSENT_REQUIRED" }, { status: 422 });
+  if (!choices.terms || !choices.privacy) return NextResponse.json({ error: "CONSENT_REQUIRED" }, { status: 422, headers: { "Cache-Control": "no-store" } });
   try {
     const rate = await consumeRateLimit({ userId: viewer.userId, scope: "consent", limit: 5, windowMs: 15 * 60 * 1000 });
     if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     const session = await consentSessionForUser(id, viewer, choices);
-    return NextResponse.json({ id: session.id, state: session.state, consents: await getConsentsForUser(id, viewer) });
+    return NextResponse.json({ id: session.id, state: session.state, consents: await getConsentsForUser(id, viewer) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return errorResponse(error);
   }
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const originError = sameOriginOrResponse(request);
   if (originError) return originError;
   const { id } = await params;
   try {
-    const body = (await request.json()) as { confirm?: string };
-    if (body.confirm !== "DELETE_ASSESSMENT") {
-      return NextResponse.json({ error: "ASSESSMENT_DELETE_CONFIRMATION_REQUIRED" }, { status: 422 });
-    }
+    const parsed = await parseJsonBody(request, assessmentDeleteSchema);
+    if (!parsed.ok) return parsed.response;
     const rate = await consumeRateLimit({ userId: viewer.userId, scope: "privacy-assessment-delete", limit: 3, windowMs: 24 * 60 * 60 * 1000 });
     if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
-    return NextResponse.json(await deleteAssessmentForUser(id, viewer));
+    return NextResponse.json(await deleteAssessmentForUser(id, viewer), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return errorResponse(error);
   }

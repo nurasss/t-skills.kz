@@ -73,7 +73,7 @@ export function AdminView({ profile, onNavigate, metrics }: AdminViewProps) {
             <header className="ov-card-header">
               <h3 className="ov-card-title">Core60 Item Bank</h3>
               <p className="ov-card-desc">
-                Новая стандартизированная версия; v1 Q001–Q300 сохранён как legacy.
+                Новая версия с фиксированным набором; v1 Q001–Q300 сохранён как legacy.
               </p>
             </header>
             <div className="ov-admin-table">

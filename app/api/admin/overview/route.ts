@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 
 import { getD1 } from "@/db";
-import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response";
+import { errorResponse, isResponse, rateLimitResponse, viewerOrResponse } from "@/lib/api-response";
 import { isAdmin } from "@/lib/server-auth";
 import { getPilotAnalytics } from "@/lib/pilot-analytics";
+import { consumeRateLimit } from "@/lib/durable-store";
 
 export async function GET(request: Request) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
-  if (!isAdmin(viewer)) return NextResponse.json({ error: "ADMIN_REQUIRED" }, { status: 403 });
+  if (!isAdmin(viewer)) return NextResponse.json({ error: "ADMIN_REQUIRED" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   try {
+    const rate = await consumeRateLimit({ userId: viewer.userId, scope: "admin-overview", limit: 30, windowMs: 60 * 1000 });
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     const database = getD1();
     const [users, orders, assessments, reports, telemetry, pilotAnalytics] = await Promise.all([
       database.prepare(`SELECT COUNT(*) AS count FROM users WHERE deleted_at IS NULL`).first<{ count: number }>(),
@@ -27,7 +30,7 @@ export async function GET(request: Request) {
       reports: reports.results ?? [],
       telemetryLast7Days: telemetry.results ?? [],
       pilotAnalytics,
-    });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return errorResponse(error);
   }

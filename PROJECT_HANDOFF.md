@@ -1,4 +1,6 @@
-# ORBITA—30 project handoff
+# T-Skills project handoff
+
+> Status note (2026-09-17): this handoff contains historical release/deployment evidence from the previous closed-beta identity boundary. The current worktree adds first-party application authentication, versioned legal pages, consent, cookie controls and security hardening. Regenerate the release manifest and deployment evidence after the current worktree is tested and deployed; do not use the historical SHA or Access smoke results as evidence for this source state.
 
 ## Release status
 
@@ -12,7 +14,7 @@ READY_FOR_VALIDATED_CLAIMS=NO
 READY_FOR_NORMATIVE_PERCENTILES=NO
 ```
 
-The current release is ORBITA-30 v2: 60 immutable Core items plus 10–15 new generated/fallback follow-up items. The complete Russian Q001–Q300 bank is preserved only for historical v1 records and is not used by new assessments. Every score carries explicit assessment, item-bank, scoring, adaptive, report and norm version IDs. `normStatus=unvalidated` is the only production-safe norm state; UI/PDF wording is `pilot profile index` and `uncertainty range`, never percentile or population norm.
+The current release is T-Skills v2: 60 immutable Core items plus 10–15 new generated/fallback follow-up items. The complete Russian Q001–Q300 bank is preserved only for historical v1 records and is not used by new assessments. Every score carries explicit assessment, item-bank, scoring, adaptive, report and norm version IDs. `normStatus=unvalidated` is the only production-safe norm state; UI/PDF wording is `pilot profile index` and `uncertainty range`, never percentile or population norm.
 
 ### Current v2 version contract
 
@@ -35,22 +37,22 @@ promptVersion = mercury-adaptive-v1
 - Evidence commit: `see final Git HEAD; source identity is frozen in RELEASE_MANIFEST.json`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
-- Latest migration: `drizzle/0012_adaptive_generation_attempts.sql`
+- Latest migration in the current worktree: `drizzle/0015_steady_thunderbird.sql`
 - Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-d3ea99f.tar.gz`
 - Archive rule: tracked blobs from the exact source SHA; generated release evidence and this handoff are delivered alongside the archive.
 
 ## Deployment
 
-The GitHub + Cloudflare closed-beta track is defined in `.github/workflows/deploy-staging.yml`, `.github/workflows/deploy-production.yml` and `wrangler.jsonc`. It adds Cloudflare Access identity, a non-payment `beta_free` entitlement, an explicit `ENTITLED` assessment state, payments/AI kill switches and isolated staging/production bindings. Staging v2 Mercury E2E is accepted; production Mercury remains off until a separate explicit production approval. Current external completion evidence is recorded in `DEPLOYMENT_EVIDENCE.md`.
+The GitHub + Cloudflare track is defined in `.github/workflows/deploy-staging.yml`, `.github/workflows/deploy-production.yml` and `wrangler.jsonc`. The current source uses first-party application authentication with isolated staging/production bindings, a non-payment `beta_free` entitlement, an explicit `ENTITLED` assessment state and payments/AI kill switches. The previous Cloudflare Access/dispatch-identity deployment is historical and must be redeployed before it can represent this source.
 
 - Production URL: `https://orbita-30.yzh905284.chatgpt.site`
 - Closed-beta staging Worker: `https://orbita-30-staging.bulatulynurasyl22.workers.dev`
 - Closed-beta production Worker: `https://orbita-30-production.bulatulynurasyl22.workers.dev`
 - Hosting project: `.openai/hosting.json` (`appgprj_6aa859a4ac588191b9560deef28958a9`)
 - Source is versioned in Git and published through the Sites `sites` remote.
-- The site remains owner-private. Protected APIs require the Sites/ChatGPT identity boundary; local preview auth is limited to `ORBITA_ENV=development`.
+- The site remains owner-private until operator configuration is supplied. Protected APIs require a verified first-party application session; the development preview header is accepted only when `ORBITA_ENV=development`.
 - D1 binding is `DB`; R2 binding is `BUCKET`. The custom deploy Worker is `worker/index.ts`; its built `dist/server/index.js` exports both HTTP `fetch` and scheduled retention `scheduled`.
-- Cloudflare Access is owner-only for the closed beta. Access protects the Worker destinations at the edge; dynamic application requests verify identity in the Worker, while static assets use asset-first routing. The signed Access JWT fallback is used when the assets router does not provide `ctx.access`.
+- Worker requests strip legacy Cloudflare Access/ChatGPT identity headers before application code sees them. Edge access controls, if retained for operations, are an additional boundary and are not the application authentication mechanism.
 - Cron: `0 2 * * *`. Retention defaults to dry-run until explicitly disabled.
 
 Before any publish, run the Sites build/package/save/deploy workflow and verify the exact full Git SHA. The immutable source archive is source-only and intentionally excludes generated `dist/`; the separate Sites deployment build must contain `dist/server/index.js`, `dist/.openai/hosting.json` and `dist/.openai/drizzle/**`, while excluding dependencies, generated local state and OS artifacts.
@@ -122,11 +124,11 @@ These values cannot be inferred or fabricated:
 1. `ASSESSMENT_PRICE_MINOR` — business-approved price in minor units.
 2. Managed secret `STRIPE_SECRET_KEY`.
 3. Managed secret `STRIPE_WEBHOOK_SECRET`.
-4. Operator/legal values in `.env.example` for entity, support, jurisdiction, purposes, data categories, retention, processors, cross-border processing, rights, security, research and marketing.
+4. Resend sender configuration and operator/legal values in `.env.example` for entity, support, jurisdiction, purposes, data categories, retention, processors, cross-border processing, rights, security, research, marketing, refunds and cookies.
 
 `PDF_SIGNING_SECRET` is a dedicated required managed secret for protected PDF links; the implementation has no fallback to the internal token, and its production presence must be verified by the operator. The default `approved-library` report/adaptive providers are safe without OpenAI. If enabled, `OPENAI_API_KEY` must be a managed secret; missing/error/timeout/schema failure falls back to approved deterministic behavior.
 
-Until the three payment values are configured, `/api/catalog` reports checkout unavailable and the UI cannot redirect to a checkout with an unknown price. Until legal text is approved, the app must remain a controlled pilot. Do not publish percentile, norm, clinical, IQ, employment-selection or other high-stakes claims.
+Until the three payment values are configured, `/api/catalog` reports checkout unavailable and the UI cannot redirect to a checkout with an unknown price. Until email/legal values are configured and approved, the app must remain a controlled pilot. Do not publish percentile, norm, clinical, IQ, employment-selection or other high-stakes claims.
 
 ## Verification commands
 
@@ -147,7 +149,7 @@ npm run security:scan
 npm run check:gates
 npm run package:source
 npm run release:verify
-npm audit --omit=dev --audit-level=high
+npm run audit:check
 ```
 
 The smoke test runs a real local Worker with D1/R2 bindings and exercises the catalog, auth, beta entitlement, versioned consent, all 60 Core items, preliminary scoring, adaptive snapshot/fallback completion, required idempotency keys, server-derived response metadata/export, restart/resume, frozen score, approved report, signed PDF negative paths, ownership, rate limiting, payment races/refund/dispute states and privacy deletion/export paths. Historical v1 fixtures remain covered separately where they explicitly use Q001–Q250.

@@ -9,7 +9,7 @@ const DOMAIN_COLORS = ["sage", "blue", "amber", "coral", "rose", "lavender"];
 function scoreBand(score: number): string {
   if (score >= 75) return "выраженный диапазон";
   if (score >= 55) return "рабочий диапазон";
-  return "менее естественный режим";
+  return "менее выраженный диапазон";
 }
 
 function ScoreRow({ trait, index }: { trait: ScoreProfile["traits"][number]; index: number }) {
@@ -56,7 +56,7 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
             <div>
               <span className="ov-eyebrow">
                 <span className="ov-status-dot" />
-                ORBITA—30 · ваш результат
+                T-Skills · ваш результат
               </span>
               <h1>Карта способа действовать.</h1>
               <p className="ov-results-head-meta">
@@ -80,9 +80,9 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
         <div className="ov-container wide">
           <section className="ov-results-overview">
             <div className="ov-results-overview-card">
-              <span className="ov-eyebrow">Fingerprint</span>
+              <span className="ov-eyebrow">Контур профиля</span>
               <strong className="ov-results-overview-codes">{top.map((trait) => trait.code).join(" · ")}</strong>
-              <small>Ваш уникальный набор лидирующих шкал</small>
+              <small>Текущий набор лидирующих шкал</small>
             </div>
 
             <div className="ov-results-overview-card">
@@ -98,7 +98,7 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
             </div>
 
             <div className="ov-results-overview-card ov-results-overview-quality">
-              <span className="ov-eyebrow">Response quality</span>
+              <span className="ov-eyebrow">Качество ответов</span>
               <strong className="ov-results-overview-rqi">
                 {Math.round(profile.responseQuality.rqi * 100)}<small>%</small>
               </strong>
@@ -111,9 +111,9 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
               <div>
                 <span className="ov-results-section-num">01</span>
                 <h2>Top 5</h2>
-                <p>Наиболее естественные способы действия</p>
+                <p>Наиболее выраженные способы действия в текущем профиле</p>
               </div>
-              <span className="ov-muted">ранги с confidence intervals</span>
+              <span className="ov-muted">ранги и диапазоны неопределённости</span>
             </header>
 
             <div className="ov-results-top-five">
@@ -128,7 +128,7 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
                   <div className="ov-results-top-score">
                     <strong>{trait.standardScore}</strong>
                     <span>
-                      standard score
+                      стандартизированный балл
                       <br />
                       диапазон {trait.uncertaintyRange[0]}—{trait.uncertaintyRange[1]}
                     </span>
@@ -145,7 +145,7 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
                 <h2>Полный профиль 30</h2>
                 <p>Контекст важнее одного места</p>
               </div>
-              <span className="ov-muted">θ + SE + пилотный индекс</span>
+              <span className="ov-muted">балл, неопределённость и пилотный индекс</span>
             </header>
             <div className="ov-results-score-list">
               {profile.traits.map((trait, index) => (
@@ -199,7 +199,7 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
                       ))}
                     </ul>
                     <div className="ov-results-overuse">
-                      <span>Overuse · риск при условиях</span>
+                      <span>Перегрузка · риск в определённых условиях</span>
                       <p>{item.overuseRisk}</p>
                     </div>
                   </article>
@@ -208,7 +208,7 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
 
               <aside className="ov-results-interpretation-side">
                 <article className="ov-card">
-                  <span className="ov-eyebrow">Рабочие среды</span>
+                  <span className="ov-eyebrow">Подходящие рабочие условия</span>
                   <ul className="ov-list ov-results-list-marker">
                     {report.workEnvironments.map((line) => (
                       <li key={line}>
@@ -253,7 +253,7 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
           <article className="ov-results-disclaimer">
             <ShieldIcon />
             <div>
-              <strong>Как читать уверенность</strong>
+              <strong>Как читать диапазон неопределённости</strong>
               <p>{report.confidenceNote}</p>
             </div>
           </article>

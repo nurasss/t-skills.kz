@@ -1,4 +1,4 @@
-/* ORBITA-30 view base design system
+/* T-Skills view base design system
  * Editorial/scientific premium styling for shell-wrapped views
  * Used by: catalog, detail, checkout, consent, account, methodology, admin, info
  *
@@ -11,7 +11,7 @@
   --bg-soft: #F1EEE6;
   --text-primary: #171A18;
   --text-secondary: #5F625E;
-  --text-muted: #898C86;
+  --text-muted: #5F625E;
   --primary: #173D32;
   --primary-hover: #102F27;
   --primary-soft: #E4ECE5;
@@ -643,6 +643,36 @@
   color: var(--text-primary);
 }
 
+.ov-shell-mobile-nav {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 16px 34px rgba(23, 26, 24, .14);
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  position: absolute;
+  right: 20px;
+  top: calc(100% + 8px);
+  width: min(280px, calc(100vw - 40px));
+}
+
+.ov-shell-mobile-nav button,
+.ov-shell-mobile-nav a {
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-primary);
+  display: block;
+  font-family: var(--font-sans);
+  padding: 11px 10px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.ov-shell-mobile-nav button:hover,
+.ov-shell-mobile-nav a:hover { background: var(--bg-soft); }
+
 @media (max-width: 1023px) {
   .ov-shell-mobile-menu {
     display: inline-flex;
@@ -701,7 +731,8 @@
   }
 }
 
-.ov-shell-footer-links button {
+.ov-shell-footer-links button,
+.ov-shell-footer-links a {
   background: none;
   border: none;
   padding: 0;
@@ -710,9 +741,11 @@
   color: var(--text-secondary);
   font-family: var(--font-sans);
   transition: color 0.15s ease;
+  text-decoration: none;
 }
 
-.ov-shell-footer-links button:hover {
+.ov-shell-footer-links button:hover,
+.ov-shell-footer-links a:hover {
   color: var(--text-primary);
 }
 

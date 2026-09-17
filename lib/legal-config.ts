@@ -10,6 +10,8 @@ export function getLegalConfig(): LegalConfig {
   return {
     entityName: value("entityName", runtimeEnv.LEGAL_ENTITY_NAME),
     supportContact: value("supportContact", runtimeEnv.SUPPORT_CONTACT),
+    contactAddress: value("contactAddress", runtimeEnv.LEGAL_CONTACT_ADDRESS),
+    contactPhone: value("contactPhone", runtimeEnv.LEGAL_CONTACT_PHONE),
     jurisdiction: value("jurisdiction", runtimeEnv.LEGAL_JURISDICTION),
     processingPurposes: value("processingPurposes", runtimeEnv.LEGAL_PROCESSING_PURPOSES),
     dataCategories: value("dataCategories", runtimeEnv.LEGAL_DATA_CATEGORIES),
@@ -20,6 +22,8 @@ export function getLegalConfig(): LegalConfig {
     securitySummary: value("securitySummary", runtimeEnv.LEGAL_SECURITY_SUMMARY),
     researchPolicy: value("researchPolicy", runtimeEnv.LEGAL_RESEARCH_POLICY),
     marketingPolicy: value("marketingPolicy", runtimeEnv.LEGAL_MARKETING_POLICY),
+    refundPolicy: value("refundPolicy", runtimeEnv.LEGAL_REFUND_POLICY),
+    cookiePolicy: value("cookiePolicy", runtimeEnv.LEGAL_COOKIE_POLICY),
     reviewStatus: DEFAULT_LEGAL_CONFIG.reviewStatus,
   };
 }

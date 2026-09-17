@@ -40,7 +40,7 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
         <SectionHeading
           eyebrow="Methodology"
           title="Прозрачно — значит проверяемо."
-          body="ORBITA—30 отделяет конструкт, raw responses, scoring, adaptive selection и report layer. Эта версия предназначена для пилота, а не для доказанных межличностных норм."
+          body="T-Skills отделяет конструкт, raw responses, scoring, adaptive selection и report layer. Эта версия предназначена для пилота, а не для доказанных межличностных норм."
         />
 
         <div className="ov-method-layout">
@@ -185,7 +185,7 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
               </header>
               <p>
                 Это не лицензированная реализация CliftonStrengths®, StrengthsFinder® или другого
-                продукта Gallup. ORBITA—30 использует собственную модель, названия, вопросы,
+                продукта Gallup. T-Skills использует собственную модель, названия, вопросы,
                 scoring и визуальный язык. Вся v2 версия — pilot / unvalidated, не clinical и не
                 hiring decision tool; перед production нужен независимый review и юридическое
                 подтверждение.

@@ -9,7 +9,7 @@ This remediation record predates the v2 migration in the implementation rows bel
 ## Invariants preserved
 
 - `lib/item-bank.ts` was not rewritten. The source still contains exactly Q001–Q300, unique IDs and the original taxonomy/text.
-- The existing Next/Vinext + Cloudflare Sites architecture, logical bindings `DB`/`BUCKET`, owner-private deployment and ChatGPT identity boundary remain in place.
+- The existing Next/Vinext + Cloudflare Sites architecture and logical bindings `DB`/`BUCKET` remain in place. The current source uses first-party application authentication; the former dispatch/ChatGPT identity boundary is retained only as historical deployment context.
 - Changes are additive or versioned. Score/report snapshots are normalized at read boundaries so an older stored snapshot cannot leak deprecated display fields.
 
 ## P0 remediation matrix
@@ -57,7 +57,7 @@ npm test
 npm run test:e2e
 npm run build
 npm run package:source
-npm audit --omit=dev --audit-level=high
+npm run audit:check
 ```
 
 The current v2 E2E script applies every checked-in migration to an isolated local D1 state, seeds only a local test entitlement, starts the built custom Worker, verifies catalog/auth/consent, saves 60 Core items, completes adaptive fallback snapshots, validates norm-safe scoring and approved report, obtains/downloads a signed PDF, checks allowlisted telemetry and exports the account artifact. The historical v1 E2E fixture remains separately documented where it explicitly saves Q001–Q250.

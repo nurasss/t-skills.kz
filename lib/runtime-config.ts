@@ -6,11 +6,14 @@ function enabled(value: string | undefined, fallback: boolean) {
 }
 
 export function paymentsEnabled(env: OrbitaRuntimeEnv) {
-  return enabled(env.PAYMENTS_ENABLED, true);
+  // Feature flags are fail-closed: an incomplete deployment must not
+  // accidentally expose checkout or paid access.
+  return enabled(env.PAYMENTS_ENABLED, false);
 }
 
 export function aiEnabled(env: OrbitaRuntimeEnv) {
-  return enabled(env.AI_ENABLED, true);
+  // AI is an optional external integration and must be explicitly enabled.
+  return enabled(env.AI_ENABLED, false);
 }
 
 export function entitlementMode(env: OrbitaRuntimeEnv) {

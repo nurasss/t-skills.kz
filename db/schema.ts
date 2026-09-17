@@ -13,6 +13,8 @@ export const users = sqliteTable(
     id: text("id").primaryKey(),
     email: text("email").notNull(),
     fullName: text("full_name"),
+    role: text("role").notNull().default("user"),
+    status: text("status").notNull().default("active"),
     locale: text("locale").notNull().default("ru"),
     createdAt: integer("created_at", { mode: "number" }).notNull(),
     updatedAt: integer("updated_at", { mode: "number" }).notNull(),
@@ -44,6 +46,64 @@ export const orders = sqliteTable(
     index("orders_user_status_idx").on(table.userId, table.status),
     index("orders_provider_checkout_idx").on(table.providerCheckoutId),
   ],
+);
+
+export const authCredentials = sqliteTable(
+  "auth_credentials",
+  {
+    userId: text("user_id").primaryKey().references(() => users.id),
+    passwordHash: text("password_hash").notNull(),
+    passwordAlgorithm: text("password_algorithm").notNull(),
+    emailVerifiedAt: integer("email_verified_at", { mode: "number" }),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: integer("locked_until", { mode: "number" }),
+    termsAcceptedAt: integer("terms_accepted_at", { mode: "number" }),
+    privacyAcceptedAt: integer("privacy_accepted_at", { mode: "number" }),
+    legalVersion: text("legal_version"),
+    createdAt: integer("created_at", { mode: "number" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => [index("auth_credentials_verified_idx").on(table.emailVerifiedAt)],
+);
+
+export const authSessions = sqliteTable(
+  "auth_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id),
+    createdAt: integer("created_at", { mode: "number" }).notNull(),
+    lastSeenAt: integer("last_seen_at", { mode: "number" }).notNull(),
+    expiresAt: integer("expires_at", { mode: "number" }).notNull(),
+    revokedAt: integer("revoked_at", { mode: "number" }),
+  },
+  (table) => [index("auth_sessions_user_idx").on(table.userId, table.expiresAt)],
+);
+
+export const authTokens = sqliteTable(
+  "auth_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id),
+    type: text("type").notNull(),
+    expiresAt: integer("expires_at", { mode: "number" }).notNull(),
+    createdAt: integer("created_at", { mode: "number" }).notNull(),
+    usedAt: integer("used_at", { mode: "number" }),
+    consumptionNonce: text("consumption_nonce"),
+  },
+  (table) => [index("auth_tokens_user_type_idx").on(table.userId, table.type, table.expiresAt)],
+);
+
+export const authInvites = sqliteTable(
+  "auth_invites",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    email: text("email").notNull(),
+    createdBy: text("created_by").notNull().references(() => users.id),
+    createdAt: integer("created_at", { mode: "number" }).notNull(),
+    expiresAt: integer("expires_at", { mode: "number" }).notNull(),
+    usedAt: integer("used_at", { mode: "number" }),
+  },
+  (table) => [index("auth_invites_email_idx").on(table.email, table.expiresAt)],
 );
 
 export const entitlements = sqliteTable(

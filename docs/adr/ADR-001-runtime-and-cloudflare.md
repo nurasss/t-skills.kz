@@ -2,11 +2,11 @@
 
 - Status: Accepted for pilot
 - Date: 2026-09-15
-- Owners: ORBITA engineering
+- Owners: T-Skills engineering
 
 ## Context
 
-ORBITA-30 is a stateful paid assessment. It needs durable transactional records, private report artifacts, scheduled retention, signed downloads, and one deployable edge boundary. The existing implementation already runs on Next-compatible Vinext in a Cloudflare Worker with D1 and R2. Replacing this stack during hardening would combine a platform migration with changes to scoring, payments, and retention.
+T-Skills is a stateful paid assessment. It needs durable transactional records, private report artifacts, scheduled retention, signed downloads, and one deployable edge boundary. The existing implementation already runs on Next-compatible Vinext in a Cloudflare Worker with D1 and R2. Replacing this stack during hardening would combine a platform migration with changes to scoring, payments, and retention.
 
 ## Decision
 
@@ -28,7 +28,7 @@ The risk is controlled by exact dependency/runtime pins, golden scoring fixtures
 Start a separate migration project if any of these is observed in staging or production:
 
 - a reproducible Vinext incompatibility blocks a security or correctness fix;
-- supported Next APIs needed by ORBITA cannot be implemented without adapter patches;
+- supported Next APIs needed by T-Skills cannot be implemented without adapter patches;
 - measured D1 contention prevents the agreed SLO after query/index remediation;
 - Cloudflare changes the support status of a required primitive;
 - the regression suite fails on an otherwise mandatory runtime upgrade.

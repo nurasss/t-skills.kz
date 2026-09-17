@@ -3,18 +3,20 @@ import { NextResponse } from "next/server";
 import { PaymentProviderError } from "@/lib/payment-provider";
 import { ReportProviderError } from "@/lib/report-provider";
 import { StoreError } from "@/lib/durable-store";
-import { authError, viewerFromRequest, type Viewer } from "@/lib/server-auth";
+import { constantTimeTokenEqual, cookieValue, csrfCookieValue, SECURE_SESSION_COOKIE, SESSION_COOKIE } from "@/lib/app-auth";
+import { EmailDeliveryError } from "@/lib/email";
+import { authError, viewerFromRequestAsync, type Viewer } from "@/lib/server-auth";
 
-export function viewerOrResponse(request: Request): Viewer | NextResponse {
-  const viewer = viewerFromRequest(request);
-  return viewer ?? NextResponse.json(authError(), { status: 401 });
+export async function viewerOrResponse(request: Request): Promise<Viewer | NextResponse> {
+  const viewer = await viewerFromRequestAsync(request);
+  return viewer ?? NextResponse.json(authError(), { status: 401, headers: { "Cache-Control": "no-store" } });
 }
 
 export function isResponse(value: Viewer | NextResponse): value is NextResponse {
   return value instanceof NextResponse;
 }
 
-export function sameOriginOrResponse(request: Request) {
+export function sameOriginOrResponse(request: Request, options: { requireCsrf?: boolean } = {}) {
   const origin = request.headers.get("origin");
   const fetchSite = request.headers.get("sec-fetch-site");
   if (origin) {
@@ -25,6 +27,12 @@ export function sameOriginOrResponse(request: Request) {
     }
   }
   if (fetchSite === "cross-site" || fetchSite === "cross-origin") return csrfResponse();
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+    const csrfCookie = csrfCookieValue(request);
+    const csrfHeader = request.headers.get("x-csrf-token");
+    const hasSession = Boolean(cookieValue(request, SESSION_COOKIE) || cookieValue(request, SECURE_SESSION_COOKIE));
+    if ((options.requireCsrf || hasSession) && !constantTimeTokenEqual(csrfCookie, csrfHeader)) return csrfResponse();
+  }
   return null;
 }
 
@@ -43,15 +51,19 @@ function csrfResponse() {
 }
 
 export function errorResponse(error: unknown) {
+  if (error instanceof EmailDeliveryError) {
+    console.error("email_delivery_failed", { error_code: "EMAIL_DELIVERY_FAILED" });
+    return NextResponse.json({ error: "EMAIL_DELIVERY_FAILED", message: publicMessage("EMAIL_DELIVERY_FAILED") }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
   if (error instanceof StoreError || error instanceof PaymentProviderError || error instanceof ReportProviderError) {
     const status = error instanceof StoreError ? error.status : 503;
-    return NextResponse.json({ error: error.code, message: publicMessage(error.code) }, { status });
+    return NextResponse.json({ error: error.code, message: publicMessage(error.code) }, { status, headers: { "Cache-Control": "no-store" } });
   }
   const code = error && typeof error === "object" && "code" in error && typeof (error as { code?: unknown }).code === "string"
     ? (error as { code: string }).code
     : "INTERNAL_SERVER_ERROR";
   console.error("api_request_failed", { error_code: code });
-  return NextResponse.json({ error: "INTERNAL_SERVER_ERROR", message: "Не удалось выполнить запрос. Попробуйте ещё раз." }, { status: 500 });
+  return NextResponse.json({ error: "INTERNAL_SERVER_ERROR", message: "Не удалось выполнить запрос. Попробуйте ещё раз." }, { status: 500, headers: { "Cache-Control": "no-store" } });
 }
 
 function publicMessage(code: string) {
@@ -103,6 +115,13 @@ function publicMessage(code: string) {
     DELETE_CONFIRMATION_REQUIRED: "Для удаления нужна явная команда подтверждения.",
     ASSESSMENT_DELETE_CONFIRMATION_REQUIRED: "Для удаления оценки нужна явная команда подтверждения.",
     ASSESSMENT_DELETE_FAILED: "Не удалось удалить данные оценки. Запрос отмечен для повторной обработки.",
+    EMAIL_NOT_VERIFIED: "Сначала подтвердите e-mail по ссылке из письма.",
+    EMAIL_DELIVERY_FAILED: "Письмо временно не отправлено. Попробуйте ещё раз позже.",
+    INVITE_REQUIRED: "Для регистрации нужен персональный код приглашения.",
+    INVITE_INVALID: "Код приглашения недействителен.",
+    AUTH_INVALID: "Неверный e-mail или пароль.",
+    PASSWORD_INVALID: "Пароль не соответствует требованиям.",
+    TOKEN_INVALID: "Ссылка недействительна или устарела.",
   };
   return messages[code] ?? "Запрос не выполнен.";
 }

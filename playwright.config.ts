@@ -14,7 +14,7 @@ export default defineConfig({
   webServer: {
     command: "node scripts/browser-test-server.mjs",
     url: "http://127.0.0.1:8790",
-    timeout: 120_000,
+    timeout: 300_000,
     reuseExistingServer: false,
     stdout: "ignore",
     stderr: "pipe",

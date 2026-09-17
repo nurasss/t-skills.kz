@@ -104,7 +104,7 @@ export type ConsentRecord = {
   revokedAt: string | null;
 };
 
-export const CONSENT_TEXT_VERSION = "privacy-2026-09";
+const CONSENT_TEXT_VERSION = "privacy-2026-09";
 
 export class StoreError extends Error {
   constructor(
@@ -1609,7 +1609,7 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
     await bucket.put(pdfKey, pdf, {
       httpMetadata: {
         contentType: "application/pdf",
-        contentDisposition: `attachment; filename="orbita-30-${reportId}.pdf"`,
+        contentDisposition: `attachment; filename="t-skills-${reportId}.pdf"`,
         cacheControl: "private, max-age=300",
       },
       customMetadata: { reportId, userId: viewer.userId, scoreVersion: score.versions.scoring },
@@ -1911,7 +1911,7 @@ export async function requestDataExport(viewer: Viewer) {
     .run();
   try {
     await bucket.put(key, JSON.stringify(payload, null, 2), {
-      httpMetadata: { contentType: "application/json", contentDisposition: `attachment; filename="orbita-data-${requestId}.json"` },
+      httpMetadata: { contentType: "application/json", contentDisposition: `attachment; filename="t-skills-data-${requestId}.json"` },
       customMetadata: { requestId, userId: viewer.userId },
     });
     await database
@@ -1994,7 +1994,11 @@ export async function deleteAccount(viewer: Viewer) {
       database.prepare(`DELETE FROM orders WHERE user_id = ?`).bind(viewer.userId),
       database.prepare(`DELETE FROM telemetry_events WHERE user_id = ?`).bind(viewer.userId),
       database.prepare(`DELETE FROM rate_limits WHERE bucket_key LIKE '%:' || ?`).bind(viewer.userId),
-      database.prepare(`UPDATE users SET email = ?, full_name = NULL, deleted_at = ?, updated_at = ? WHERE id = ?`).bind(`${viewer.userId}@deleted.invalid`, timestamp, timestamp, viewer.userId),
+      database.prepare(`DELETE FROM auth_sessions WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM auth_tokens WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM auth_invites WHERE created_by = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM auth_credentials WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`UPDATE users SET email = ?, full_name = NULL, role = 'user', status = 'deleted', deleted_at = ?, updated_at = ? WHERE id = ?`).bind(`${viewer.userId}@deleted.invalid`, timestamp, timestamp, viewer.userId),
       database.prepare(`UPDATE privacy_requests SET status = 'COMPLETE', completed_at = ? WHERE id = ? AND user_id = ?`).bind(timestamp, requestId, viewer.userId),
     ]);
   } catch {

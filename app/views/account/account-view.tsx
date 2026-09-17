@@ -91,7 +91,7 @@ export function AccountView({
                 </span>
                 <span className="ov-badge ov-badge-outline">orbita30_ru_v2</span>
               </div>
-              <h2 className="ov-card-title">ORBITA—30</h2>
+              <h2 className="ov-card-title">T-Skills</h2>
               <p className="ov-card-desc">
                 {demoMode
                   ? "Демо-профиль · не сохранён на сервере"

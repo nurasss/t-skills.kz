@@ -1,4 +1,4 @@
-# ORBITA-30 Risk-Critical Test Matrix
+# T-Skills Risk-Critical Test Matrix
 
 The matrix is intentionally scenario-based. Line coverage is not used as the release criterion. The local E2E suite uses an isolated Wrangler D1/R2 state directory and only local test secrets.
 
@@ -7,6 +7,7 @@ The matrix is intentionally scenario-based. Line coverage is not used as the rel
 | Frontend architecture | Render a view with injected props | Presentation layer has no network/scoring/payment side effects | `app/orbita-view-router.tsx`, `app/orbita-views.tsx`, `npm run lint`, `npx tsc --noEmit` |
 | Frontend architecture | Execute assessment flow actions through the controller | Flow/network/WebMCP orchestration is isolated from the shell and view components | `hooks/use-orbita-controller.ts`, `app/orbita-app.tsx` |
 | Frontend architecture | Persist/retry a response | Queue remains deterministic and DOM-free | `hooks/use-assessment-queue.ts`, `lib/response-retry-queue.ts`, `tests/retry-queue.test.ts` |
+| Accessibility | Critical text/button color pairs | Solid text pairs meet WCAG AA text contrast target; focus-visible and keyboard paths are covered separately | `scripts/check-contrast.mjs`, `npm run contrast:check`, browser smoke |
 | Scoring | Same response map scored twice | Byte-equivalent deterministic profile | `tests/unit.test.ts` — deterministic scoring |
 | Scoring | Reverse Likert and forced-choice direction | Direction is preserved | `tests/unit.test.ts` |
 | Scoring | Legacy percentile/CI snapshot | Normalized to profile index/uncertainty range; no percentile | `tests/unit.test.ts` |
@@ -27,7 +28,7 @@ The matrix is intentionally scenario-based. Line coverage is not used as the rel
 | Auth/ownership | User B guesses A assessment/report/export ID | 404 and no payload disclosure | `scripts/e2e-smoke.mjs` |
 | Auth/ownership | User B reuses A signed PDF token | 401 | `scripts/e2e-smoke.mjs` |
 | Auth/ownership | Cross-origin mutation | 403 CSRF rejection | `scripts/e2e-smoke.mjs`, `lib/api-response.ts` |
-| Auth/ownership | Public logout/revocation/cross-device session | External gate; not claimed by private Sites identity | `FINAL_ACCEPTANCE.md` |
+| Auth/ownership | Application logout/revocation/cross-device session | Opaque D1-backed session is revoked on logout and rejected after revocation; fresh cross-device/browser evidence remains required | `lib/app-auth.ts`, `app/api/auth/logout/route.ts`, `FINAL_ACCEPTANCE.md` |
 | Lifecycle | Payment/consent gates and invalid state | State machine rejects unsafe transition | `scripts/e2e-smoke.mjs`, `lib/durable-store.ts` |
 | Lifecycle | Same answer idempotency key replay | 200 replay; no duplicate row | `scripts/e2e-smoke.mjs` |
 | Lifecycle | Missing or malformed response idempotency key | 422; no response row is created | `app/api/assessments/[id]/responses/route.ts`, `scripts/e2e-smoke.mjs` |
@@ -47,7 +48,7 @@ The matrix is intentionally scenario-based. Line coverage is not used as the rel
 | Privacy | Real retention purge, crash after artifacts, resume and active exclusion | Persistent purge state machine passes isolated Wrangler E2E; staging drill remains operational | `lib/retention.ts`, `scripts/e2e-smoke.mjs` |
 | Localization | `kz` request | Canonical `kk`, legacy alias, unpublished status | `tests/unit.test.ts`, `scripts/e2e-smoke.mjs` |
 | Localization | `kk`/`en` start | 422 until translations and review are published | `scripts/e2e-smoke.mjs`, `app/api/assessments/route.ts` |
-| Operations | Migration forward path and drift | 0000–0010 apply; generated schema has no drift | `scripts/check-migration-drift.mjs`, `drizzle/` |
+| Operations | Migration forward path and drift | 0000–0015 apply; generated schema has no drift | `scripts/check-migration-drift.mjs`, `drizzle/` |
 | Operations | Backup/restore | Export and restore a seeded row | `scripts/backup-restore-smoke.mjs` |
 | Operations | Rate limit | 429 plus Retry-After at configured boundary | `scripts/e2e-smoke.mjs` |
 | Operations | Request observability | Request ID/security headers and PII-safe structured record | `tests/unit.test.ts`, `lib/observability.ts` |
@@ -72,7 +73,7 @@ npm run test:load
 npm run test:backup
 npm run db:check
 npm run test:retention-plan
-npm audit --omit=dev --audit-level=high
+npm run audit:check
 npm run package:source
 ```
 

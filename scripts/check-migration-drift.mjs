@@ -39,6 +39,9 @@ if (changed.length) throw new Error("MIGRATION_DRIFT_DETECTED\n" + changed.join(
 
 if (statSync(join(root, ".git"), { throwIfNoEntry: false })) {
   const gitDrift = run("git", ["status", "--porcelain", "--", "db/schema.ts", "drizzle"]).trim();
-  if (gitDrift) throw new Error("MIGRATION_DRIFT_DETECTED\n" + gitDrift);
+  if (gitDrift) {
+    if (process.env.CI === "true") throw new Error("MIGRATION_DRIFT_DETECTED\n" + gitDrift);
+    console.warn("MIGRATION_WORKTREE=DIRTY (local changes are allowed; CI still requires a clean schema/migration tree)");
+  }
 }
 console.log("MIGRATION_DRIFT=PASS");

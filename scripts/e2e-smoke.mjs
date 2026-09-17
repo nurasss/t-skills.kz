@@ -64,7 +64,7 @@ function assert(condition, message) {
 
 let output = "";
 function startServer() {
-  const child = spawn(process.execPath, ["--import", "./scripts/sites-env.mjs", "./node_modules/wrangler/bin/wrangler.js", "dev", "--config", configPath, "--local", "--persist-to", stateDir, "--ip", "127.0.0.1", "--inspector-port", "0", "--port", String(port), "--var", "ORBITA_ENV:development", "--var", "PDF_SIGNING_SECRET:e2e-signing", "--var", "ORBITA_INTERNAL_TOKEN:e2e-internal", "--var", "STRIPE_WEBHOOK_SECRET:e2e-webhook", "--var", "ASSESSMENT_PRICE_MINOR:150000"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["--import", "./scripts/sites-env.mjs", "./node_modules/wrangler/bin/wrangler.js", "dev", "--config", configPath, "--local", "--persist-to", stateDir, "--ip", "127.0.0.1", "--inspector-port", "0", "--port", String(port), "--var", "ORBITA_ENV:development", "--var", "PAYMENTS_ENABLED:true", "--var", "ENTITLEMENT_MODE:payment", "--var", "AI_ENABLED:false", "--var", "PDF_SIGNING_SECRET:e2e-signing", "--var", "ORBITA_INTERNAL_TOKEN:e2e-internal", "--var", "STRIPE_WEBHOOK_SECRET:e2e-webhook", "--var", "ASSESSMENT_PRICE_MINOR:150000"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout.on("data", (chunk) => { output += chunk.toString(); });
   child.stderr.on("data", (chunk) => { output += chunk.toString(); });
   return child;
@@ -107,9 +107,12 @@ const wranglerConfig = JSON.parse(readFileSync(configPath, "utf8"));
 assert(workerBundle.includes("scheduled"), "built Worker exports a scheduled handler");
 assert(wranglerConfig.triggers?.crons?.includes("0 2 * * *"), "Worker cron trigger is configured");
 
-for (const migration of readdirSync("drizzle").filter((entry) => /^\d+_.*\.sql$/.test(entry)).sort()) {
-  runWrangler(["d1", "execute", "DB", "--local", "--config", configPath, "--persist-to", stateDir, "--file", `drizzle/${migration}`]);
-}
+const migrationSql = readdirSync("drizzle")
+  .filter((entry) => /^\d+_.*\.sql$/.test(entry))
+  .sort()
+  .map((entry) => readFileSync(`drizzle/${entry}`, "utf8"))
+  .join("\n");
+runWrangler(["d1", "execute", "DB", "--local", "--config", configPath, "--persist-to", stateDir, "--command", migrationSql]);
 
 const timestamp = Date.now();
 const seed = [

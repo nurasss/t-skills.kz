@@ -1,27 +1,24 @@
-export const SESSION_STATES = [
-  "CREATED",
-  "PAYMENT_PENDING",
-  "PAID",
-  "ENTITLED",
-  "CONSENTED",
-  "CORE_IN_PROGRESS",
-  "CORE_COMPLETE",
-  "ADAPTIVE_GENERATING",
-  "ADAPTIVE_SELECTING",
-  "ADAPTIVE_IN_PROGRESS",
-  "ADAPTIVE_PROVIDER_FAILED",
-  "ADAPTIVE_FALLBACK",
-  "SCORING",
-  "REPORT_GENERATING",
-  "COMPLETE",
-  "PAYMENT_FAILED",
-  "EXPIRED",
-  "CANCELLED",
-  "INVALIDATED",
-  "REPORT_FAILED_RETRYABLE",
-] as const;
-
-export type SessionState = (typeof SESSION_STATES)[number];
+export type SessionState =
+  | "CREATED"
+  | "PAYMENT_PENDING"
+  | "PAID"
+  | "ENTITLED"
+  | "CONSENTED"
+  | "CORE_IN_PROGRESS"
+  | "CORE_COMPLETE"
+  | "ADAPTIVE_GENERATING"
+  | "ADAPTIVE_SELECTING"
+  | "ADAPTIVE_IN_PROGRESS"
+  | "ADAPTIVE_PROVIDER_FAILED"
+  | "ADAPTIVE_FALLBACK"
+  | "SCORING"
+  | "REPORT_GENERATING"
+  | "COMPLETE"
+  | "PAYMENT_FAILED"
+  | "EXPIRED"
+  | "CANCELLED"
+  | "INVALIDATED"
+  | "REPORT_FAILED_RETRYABLE";
 
 const ALLOWED_TRANSITIONS: Readonly<Record<SessionState, readonly SessionState[]>> = {
   CREATED: ["PAYMENT_PENDING", "PAID", "ENTITLED", "CANCELLED", "EXPIRED"],
@@ -48,8 +45,4 @@ const ALLOWED_TRANSITIONS: Readonly<Record<SessionState, readonly SessionState[]
 
 export function canSessionTransition(from: SessionState, to: SessionState) {
   return from === to || ALLOWED_TRANSITIONS[from].includes(to);
-}
-
-export function assertSessionTransition(from: SessionState, to: SessionState) {
-  if (!canSessionTransition(from, to)) throw new Error(`INVALID_SESSION_TRANSITION:${from}:${to}`);
 }

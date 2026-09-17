@@ -16,7 +16,7 @@ export function BreakView({ adaptiveReady, onContinue, onExit, selection }: Brea
     <div className="orbita-view ov-break">
       <div className="ov-container ov-container-narrow">
         <div className="ov-break-visual" aria-hidden="true">
-          <BreakOrbita />
+          <BreakMark />
         </div>
 
         <div className="ov-break-copy">
@@ -93,7 +93,7 @@ function BreakSparkle() {
   );
 }
 
-function BreakOrbita() {
+function BreakMark() {
   return (
     <svg viewBox="0 0 220 220" width="180" height="180" aria-hidden="true">
       <defs>
@@ -120,11 +120,8 @@ function BreakOrbita() {
         return <circle key={angle} cx={x} cy={y} r="9" fill={color} opacity="0.85" />;
       })}
       <circle cx="110" cy="110" r="22" fill="#FCFBF8" stroke="rgba(23,26,24,0.18)" />
-      <text x="110" y="107" textAnchor="middle" fontFamily="serif" fontSize="13" fill="#171A18">
-        ORBITA
-      </text>
-      <text x="110" y="123" textAnchor="middle" fontFamily="serif" fontSize="13" fill="#171A18">
-        30
+      <text x="110" y="114" textAnchor="middle" fontFamily="serif" fontSize="11" fill="#171A18">
+        T-Skills
       </text>
     </svg>
   );

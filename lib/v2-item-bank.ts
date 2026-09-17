@@ -1,18 +1,15 @@
 import { TRAITS, type TraitCode } from "@/lib/item-bank";
 
 /**
- * ORBITA-30 v2 standardized item bank.
+ * T-Skills v2 standardized item bank.
  *
  * This is intentionally a separate immutable bank. The legacy Q001-Q300 bank
  * remains available for v1 snapshots and is never truncated or rewritten.
  */
 
-export const V2_ASSESSMENT_VERSION = "orbita30_ru_v2" as const;
 export const V2_ITEM_BANK_VERSION = "core60-v1" as const;
 export const V2_SCORING_VERSION = "mvp-0.5-core60" as const;
 export const V2_ADAPTIVE_VERSION = "mercury-generated-0.1" as const;
-export const V2_REPORT_VERSION = "report-0.4" as const;
-export const V2_NORM_VERSION = "unvalidated-v2" as const;
 export const V2_PROMPT_VERSION = "mercury-adaptive-v1" as const;
 
 export const V2_DOMAINS = [
@@ -24,7 +21,7 @@ export const V2_DOMAINS = [
   { code: "D6", name: "Самоуправление и устойчивость", traits: ["T26", "T27", "T28", "T29", "T30"] as TraitCode[] },
 ] as const;
 
-export type Core60LikertItem = {
+type Core60LikertItem = {
   id: `Q${string}`;
   version: typeof V2_ITEM_BANK_VERSION;
   format: "likert";
@@ -38,7 +35,7 @@ export type Core60LikertItem = {
   semanticCluster: string;
 };
 
-export type Core60ForcedItem = {
+type Core60ForcedItem = {
   id: `Q${string}`;
   version: typeof V2_ITEM_BANK_VERSION;
   format: "forced_choice";
@@ -54,8 +51,6 @@ export type Core60ForcedItem = {
 };
 
 export type Core60Item = Core60LikertItem | Core60ForcedItem;
-
-const traitName = new Map(TRAITS.map((trait) => [trait.code, trait.name]));
 
 const primaryPrompts: Record<TraitCode, string> = {
   T01: "Я стараюсь понять, как отдельные части задачи влияют друг на друга.",
@@ -222,17 +217,3 @@ export const APPROVED_FALLBACK_BANK: readonly FallbackAdaptiveQuestion[] = fallb
 }));
 
 export const CORE60_TRAIT_CODES = TRAITS.map((trait) => trait.code) as TraitCode[];
-
-export function getCore60ItemById(id: string) {
-  return CORE60_BANK.find((item) => item.id === id);
-}
-
-export function getFallbackQuestionById(id: string) {
-  return APPROVED_FALLBACK_BANK.find((item) => item.questionId === id);
-}
-
-export function itemText(question: { prompt: string; optionA?: string; optionB?: string }) {
-  return [question.prompt, question.optionA, question.optionB].filter(Boolean).join(" ");
-}
-
-export { traitName };

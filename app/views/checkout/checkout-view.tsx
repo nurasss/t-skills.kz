@@ -24,7 +24,7 @@ export function CheckoutView({ onNavigate, onCheckout, busy, error, catalog }: C
     <div className="orbita-view ov-checkout">
       <div className="ov-container">
         <button className="ov-back-link" onClick={() => onNavigate("detail")} type="button">
-          ← ORBITA—30
+          ← T-Skills
         </button>
 
         <SectionHeading
@@ -40,7 +40,7 @@ export function CheckoutView({ onNavigate, onCheckout, busy, error, catalog }: C
         <div className="ov-two-col ov-checkout-grid">
           <article className="ov-card ov-checkout-card">
             <header className="ov-card-header">
-              <h2 className="ov-card-title">ORBITA—30</h2>
+              <h2 className="ov-card-title">T-Skills</h2>
               <p className="ov-card-desc">{test?.assessmentVersion ?? "orbita30_ru_v2"} · pilot / unvalidated</p>
             </header>
 
@@ -83,8 +83,8 @@ export function CheckoutView({ onNavigate, onCheckout, busy, error, catalog }: C
 
             <p className="ov-checkout-micro">
               <CheckoutLockIcon /> {betaFree
-                ? "Доступ ограничен allowlist Cloudflare Access. Платёжные данные не требуются."
-                : "Hosted checkout: карточные данные не проходят через backend ORBITA."}
+                ? "Доступ только по приглашению. Платёжные данные не требуются."
+                : "Hosted checkout: карточные данные не проходят через backend T-Skills."}
             </p>
           </article>
 

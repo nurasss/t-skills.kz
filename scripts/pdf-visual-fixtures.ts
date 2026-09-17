@@ -21,6 +21,6 @@ for (const fixture of fixtures) {
     report.stressAndBlindSpots = `${report.stressAndBlindSpots} ${report.stressAndBlindSpots}`;
   }
   const bytes = await buildReportPdf(profile, report);
-  await writeFile(`${outputDirectory}/orbita-30-${fixture.name}.pdf`, bytes);
+  await writeFile(`${outputDirectory}/t-skills-${fixture.name}.pdf`, bytes);
   console.log(`PDF_FIXTURE=${fixture.name} top5=${profile.traits.slice(0, 5).map((trait) => trait.code).join(",")}`);
 }

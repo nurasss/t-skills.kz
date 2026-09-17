@@ -7,13 +7,14 @@ import {
   V2_PROMPT_VERSION,
   type FallbackAdaptiveQuestion,
 } from "@/lib/v2-item-bank";
-import { MERCURY_ADAPTIVE_PROMPT_VERSION, MERCURY_ADAPTIVE_SYSTEM_PROMPT } from "@/lib/prompts/mercury-adaptive-v1";
+import { MERCURY_ADAPTIVE_SYSTEM_PROMPT } from "@/lib/prompts/mercury-adaptive-v1";
 import type { TraitCode } from "@/lib/item-bank";
+import { readBoundedResponseJson } from "@/lib/provider-contract";
 
-export const MERCURY_PROVIDER = "inception-labs" as const;
-export const MERCURY_MODEL = "mercury-2.5" as const;
-export const MERCURY_API_BASE_URL = "https://api.inceptionlabs.ai" as const;
-export const ALLOWED_ADAPTIVE_REASON_CODES = [
+const MERCURY_PROVIDER = "inception-labs" as const;
+const MERCURY_MODEL = "mercury-2.5" as const;
+const MERCURY_API_BASE_URL = "https://api.inceptionlabs.ai" as const;
+const ALLOWED_ADAPTIVE_REASON_CODES = [
   "HIGH_UNCERTAINTY",
   "TOP5_BOUNDARY",
   "TOP10_BOUNDARY",
@@ -23,8 +24,8 @@ export const ALLOWED_ADAPTIVE_REASON_CODES = [
   "HIGH_INFORMATION",
 ] as const;
 
-export type AdaptiveReasonCode = (typeof ALLOWED_ADAPTIVE_REASON_CODES)[number];
-export type GeneratedAdaptiveFormat = "forced_choice" | "likert";
+type AdaptiveReasonCode = (typeof ALLOWED_ADAPTIVE_REASON_CODES)[number];
+type GeneratedAdaptiveFormat = "forced_choice" | "likert";
 
 export type GeneratedAdaptiveQuestion = {
   questionId: `AI-${string}` | `FB-${string}`;
@@ -66,11 +67,11 @@ export type GeneratedAdaptiveSet = {
   fallbackUsed: boolean;
 };
 
-export interface AdaptiveQuestionProvider {
+interface AdaptiveQuestionProvider {
   generateQuestions(context: AdaptiveContext): Promise<GeneratedAdaptiveSet>;
 }
 
-export const MERCURY_RESPONSE_SCHEMA = {
+const MERCURY_RESPONSE_SCHEMA = {
   name: "orbita_adaptive_questions",
   strict: true,
   schema: {
@@ -276,17 +277,17 @@ function providerConfig(env: Partial<OrbitaRuntimeEnv> = {}) {
   const timeoutMs = Math.max(3000, Math.min(60000, Number(env.MERCURY_TIMEOUT_MS ?? 12000)));
   const maxAttempts = Math.max(1, Math.min(2, Number(env.MERCURY_MAX_RETRIES ?? 2)));
   return {
-    enabled: String(env.AI_ENABLED ?? "false").toLowerCase() === "true",
-    provider: (env.ADAPTIVE_PROVIDER ?? "fallback").toLowerCase(),
-    apiKey: env.INCEPTION_API_KEY,
-    model: env.MERCURY_MODEL ?? MERCURY_MODEL,
+    enabled: String(env.AI_ENABLED ?? "false").trim().toLowerCase() === "true",
+    provider: (env.ADAPTIVE_PROVIDER ?? "fallback").trim().toLowerCase(),
+    apiKey: env.INCEPTION_API_KEY?.trim(),
+    model: env.MERCURY_MODEL?.trim() || MERCURY_MODEL,
     timeoutMs,
     maxAttempts,
   };
 }
 
 async function parseProviderJson(response: Response) {
-  const payload = await response.json() as Record<string, unknown>;
+  const payload = await readBoundedResponseJson(response, 128 * 1024) as Record<string, unknown>;
   const choices = Array.isArray(payload.choices) ? payload.choices : [];
   const first = choices[0];
   const message = first && typeof first === "object" ? (first as Record<string, unknown>).message : null;
@@ -441,5 +442,3 @@ export function generatedQuestionToResponseItem(question: GeneratedAdaptiveQuest
     reverse: false,
   } as const;
 }
-
-export { MERCURY_ADAPTIVE_PROMPT_VERSION };

@@ -1,0 +1,14 @@
+{
+  "entry": [
+    "worker/index.ts",
+    "lib/vercel-runtime-env.ts",
+    "scripts/browser-test-server.mjs",
+    "scripts/pnpm-install.mjs"
+  ],
+  "ignoreDependencies": ["cloudflare"],
+  "ignoreBinaries": ["pdftoppm", "flock"],
+  "rules": {
+    "exports": "warn",
+    "types": "warn"
+  }
+}

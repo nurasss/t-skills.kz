@@ -2,7 +2,7 @@ import { errorResponse, isResponse, viewerOrResponse } from "@/lib/api-response"
 import { getExportForUser } from "@/lib/durable-store";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const viewer = viewerOrResponse(request);
+  const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const { id } = await params;
   try {
@@ -11,7 +11,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       status: 200,
       headers: {
         "Content-Type": object.httpMetadata?.contentType ?? "application/json",
-        "Content-Disposition": object.httpMetadata?.contentDisposition ?? ('attachment; filename="orbita-data-' + id + '.json"'),
+        "Content-Disposition": object.httpMetadata?.contentDisposition ?? ('attachment; filename="t-skills-data-' + id + '.json"'),
         "Cache-Control": "private, no-store",
       },
     });

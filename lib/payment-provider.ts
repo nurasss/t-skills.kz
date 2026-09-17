@@ -5,6 +5,9 @@ import { V2_VERSION_IDS } from "@/lib/assessment-engine";
 import { verifyStripeSignature } from "@/lib/stripe-signature";
 import type { Viewer } from "@/lib/server-auth";
 import { paymentsEnabled } from "@/lib/runtime-config";
+import { trustedAppBaseUrl } from "@/lib/app-auth";
+import { readBoundedResponseJson, readBoundedResponseText } from "@/lib/provider-contract";
+import { isHostedStripeCheckoutUrl } from "@/lib/payment-url";
 
 export class PaymentProviderError extends Error {
   constructor(public readonly code: string, message = code) {
@@ -48,11 +51,11 @@ export function getPublicTestConfig(): PublicTestConfig {
   const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
   return {
     id: "orbita30",
-    name: "ORBITA—30",
+    name: "T-Skills",
     assessmentVersion: V2_VERSION_IDS.assessment,
     amountMinor,
     currency: validCurrency ? configuredCurrency : "KZT",
-    availableForCheckout: paymentFlowEnabled && amountMinor !== null && validCurrency && provider === "stripe" && Boolean(runtimeEnv.STRIPE_SECRET_KEY && runtimeEnv.STRIPE_WEBHOOK_SECRET && runtimeEnv.PDF_SIGNING_SECRET),
+    availableForCheckout: paymentFlowEnabled && amountMinor !== null && validCurrency && provider === "stripe" && Boolean(runtimeEnv.STRIPE_SECRET_KEY?.trim() && runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim() && runtimeEnv.PDF_SIGNING_SECRET?.trim()),
     accessMode: paymentFlowEnabled ? "payment" : "beta-free",
     includesPdf: true,
     oneTime: true,
@@ -63,12 +66,12 @@ export function getPublicTestConfig(): PublicTestConfig {
 export async function createCheckout(input: { viewer: Viewer; testId: string; request: Request; idempotencyKey: string }) {
   const runtimeEnv = getRuntimeEnv();
   if (!paymentsEnabled(runtimeEnv)) throw new PaymentProviderError("PAYMENTS_DISABLED");
-  const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").toLowerCase();
+  const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
   if (provider !== "stripe") throw new PaymentProviderError("PAYMENT_PROVIDER_UNSUPPORTED");
-  const secret = runtimeEnv.STRIPE_SECRET_KEY;
+  const secret = runtimeEnv.STRIPE_SECRET_KEY?.trim();
   if (!secret) throw new PaymentProviderError("STRIPE_SECRET_KEY_MISSING");
-  if (!runtimeEnv.STRIPE_WEBHOOK_SECRET) throw new PaymentProviderError("STRIPE_WEBHOOK_SECRET_MISSING");
-  if (!runtimeEnv.PDF_SIGNING_SECRET) throw new PaymentProviderError("PDF_SIGNING_SECRET_MISSING");
+  if (!runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim()) throw new PaymentProviderError("STRIPE_WEBHOOK_SECRET_MISSING");
+  if (!runtimeEnv.PDF_SIGNING_SECRET?.trim()) throw new PaymentProviderError("PDF_SIGNING_SECRET_MISSING");
 
   const amountMinor = requiredAmount();
   const orderResult = await createPendingOrder({
@@ -81,21 +84,22 @@ export async function createCheckout(input: { viewer: Viewer; testId: string; re
   });
   if (orderResult.order.checkoutUrl) return { ...orderResult, checkoutUrl: orderResult.order.checkoutUrl };
 
-  const requestUrl = new URL(input.request.url);
-  const baseUrl = runtimeEnv.APP_BASE_URL?.replace(/\/$/, "") ?? requestUrl.origin;
+  const baseUrl = trustedAppBaseUrl(input.request);
   const form = new URLSearchParams();
   form.set("mode", "payment");
   form.set("line_items[0][price_data][currency]", input.testId === "orbita30" ? currency().toLowerCase() : currency().toLowerCase());
   form.set("line_items[0][price_data][unit_amount]", String(amountMinor));
-  form.set("line_items[0][price_data][product_data][name]", "ORBITA—30");
+  form.set("line_items[0][price_data][product_data][name]", "T-Skills");
   form.set("line_items[0][price_data][product_data][description]", "Развивающий профиль способа действовать");
   form.set("line_items[0][quantity]", "1");
   form.set("client_reference_id", orderResult.order.id);
   form.set("metadata[order_id]", orderResult.order.id);
   form.set("metadata[test_id]", input.testId);
-  form.set("success_url", `${baseUrl}/account?payment=success&order_id=${encodeURIComponent(orderResult.order.id)}`);
+  form.set("success_url", `${baseUrl}/thank-you?order_id=${encodeURIComponent(orderResult.order.id)}`);
   form.set("cancel_url", `${baseUrl}/checkout/${encodeURIComponent(input.testId)}?payment=cancelled`);
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
   let response: Response;
   try {
     response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
@@ -105,21 +109,32 @@ export async function createCheckout(input: { viewer: Viewer; testId: string; re
         "Content-Type": "application/x-www-form-urlencoded",
         "Idempotency-Key": input.idempotencyKey,
       },
+      signal: controller.signal,
       body: form.toString(),
     });
   } catch {
     await markOrderPaymentFailed(orderResult.order.id, "STRIPE_NETWORK_ERROR");
     console.error("stripe_checkout_network_error", { error_code: "STRIPE_NETWORK_ERROR" });
     throw new PaymentProviderError("STRIPE_UNAVAILABLE");
+  } finally {
+    clearTimeout(timer);
   }
   if (!response.ok) {
     await markOrderPaymentFailed(orderResult.order.id, `STRIPE_HTTP_${response.status}`);
+    await readBoundedResponseText(response, 32 * 1024).catch(() => undefined);
     console.error("stripe_checkout_error", { status: response.status });
     throw new PaymentProviderError("STRIPE_CHECKOUT_FAILED");
   }
-  const payload = (await response.json()) as { id?: string; url?: string };
-  if (!payload.id || !payload.url) {
+  let payload: { id?: string; url?: string };
+  try {
+    payload = await readBoundedResponseJson(response, 64 * 1024) as { id?: string; url?: string };
+  } catch {
     await markOrderPaymentFailed(orderResult.order.id, "STRIPE_RESPONSE_INVALID");
+    throw new PaymentProviderError("STRIPE_RESPONSE_INVALID");
+  }
+  if (!payload.id || !payload.url || !isHostedStripeCheckoutUrl(payload.url)) {
+    await markOrderPaymentFailed(orderResult.order.id, "STRIPE_RESPONSE_INVALID");
+    console.error("stripe_checkout_url_invalid", { error_code: "STRIPE_RESPONSE_INVALID" });
     throw new PaymentProviderError("STRIPE_RESPONSE_INVALID");
   }
   await attachCheckoutSession({ viewer: input.viewer, orderId: orderResult.order.id, providerCheckoutId: payload.id, checkoutUrl: payload.url });
@@ -134,8 +149,6 @@ async function sha256(value: string) {
   return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
 }
 
-export { verifyStripeSignature } from "@/lib/stripe-signature";
-
 type StripeEvent = {
   id?: string;
   type?: string;
@@ -143,7 +156,7 @@ type StripeEvent = {
 };
 
 export async function processStripeWebhook(payload: string, signature: string | null) {
-  const secret = getRuntimeEnv().STRIPE_WEBHOOK_SECRET;
+  const secret = getRuntimeEnv().STRIPE_WEBHOOK_SECRET?.trim();
   if (!secret) throw new PaymentProviderError("STRIPE_WEBHOOK_SECRET_MISSING");
   if (!(await verifyStripeSignature(payload, signature, secret))) throw new PaymentProviderError("STRIPE_SIGNATURE_INVALID");
   let event: StripeEvent;

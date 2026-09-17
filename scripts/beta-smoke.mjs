@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -18,9 +18,12 @@ function assert(condition, message) {
 }
 
 execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
-for (const migration of readdirSync("drizzle").filter((entry) => /^\d+_.*\.sql$/.test(entry)).sort()) {
-  runWrangler(["d1", "execute", "DB", "--local", "--config", configPath, "--persist-to", stateDir, "--file", `drizzle/${migration}`]);
-}
+const migrationSql = readdirSync("drizzle")
+  .filter((entry) => /^\d+_.*\.sql$/.test(entry))
+  .sort()
+  .map((entry) => readFileSync(`drizzle/${entry}`, "utf8"))
+  .join("\n");
+runWrangler(["d1", "execute", "DB", "--local", "--config", configPath, "--persist-to", stateDir, "--command", migrationSql]);
 
 let output = "";
 const child = spawn(process.execPath, [

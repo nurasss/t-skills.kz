@@ -1,4 +1,4 @@
-"""Extract the authoritative ORBITA-30 item bank from the supplied DOCX.
+"""Extract the authoritative T-Skills item bank from the supplied DOCX.
 
 This is a build-time/provenance helper, not runtime application code. The
 generated TypeScript keeps the draft item pool traceable to the source TZ.

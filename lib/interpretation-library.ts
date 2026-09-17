@@ -10,7 +10,7 @@ import { TRAITS, type TraitCode } from "@/lib/item-bank";
  */
 export const INTERPRETATION_LIBRARY_VERSION = "approved-interpretation-v1";
 
-export type ApprovedTraitInterpretation = {
+type ApprovedTraitInterpretation = {
   contribution: string;
   manifestations: string[];
   bestConditions: string[];
@@ -18,16 +18,14 @@ export type ApprovedTraitInterpretation = {
   developmentActions: string[];
 };
 
-export type ApprovedCombinationInterpretation = {
+type ApprovedCombinationInterpretation = {
   left: TraitCode;
   right: TraitCode;
   title: string;
   text: string;
 };
 
-const traitMap = new Map(TRAITS.map((trait) => [trait.code, trait]));
-
-export const APPROVED_TRAIT_INTERPRETATIONS: Record<TraitCode, ApprovedTraitInterpretation> = Object.fromEntries(
+const APPROVED_TRAIT_INTERPRETATIONS: Record<TraitCode, ApprovedTraitInterpretation> = Object.fromEntries(
   TRAITS.map((trait) => [
     trait.code,
     {
@@ -66,7 +64,7 @@ const APPROVED_PAIR_INTERPRETATIONS: Array<[TraitCode, TraitCode, string, string
   ["T29", "T30", "Смысл + самостоятельность", "Можно сверять выбор с ценностями и сохранять собственный курс в неопределённости."],
 ];
 
-export const APPROVED_COMBINATIONS: Record<string, ApprovedCombinationInterpretation> = Object.fromEntries(
+const APPROVED_COMBINATIONS: Record<string, ApprovedCombinationInterpretation> = Object.fromEntries(
   APPROVED_PAIR_INTERPRETATIONS.map(([left, right, title, text]) => {
     const item = { left: left as TraitCode, right: right as TraitCode, title, text };
     return [[left, right].sort().join("+"), item];
@@ -88,8 +86,4 @@ export function approvedLibraryPayload(codes: TraitCode[]) {
     combinations: codes.flatMap((left, index) => codes.slice(index + 1).map((right) => getApprovedCombination(left, right)).filter(Boolean)),
     unsupportedCombinationPolicy: "Do not infer a trait property; describe only the observable context and invite user reflection.",
   };
-}
-
-export function traitDisplayName(code: TraitCode) {
-  return traitMap.get(code)?.name ?? code;
 }

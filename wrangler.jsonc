@@ -14,9 +14,11 @@
       "vars": {
         "APP_ENV": "staging",
         "ORBITA_ENV": "staging",
-        "AUTH_PROVIDER": "cloudflare-access",
-        "CF_ACCESS_TEAM_DOMAIN": "https://calm-silence-6ead.cloudflareaccess.com",
-        "CF_ACCESS_AUDIENCE": "99610357344699a1880b9e98bd30922074c9f9b0c4f001a329848d79ab1a21bc",
+        "APP_BASE_URL": "https://orbita-30-staging.bulatulynurasyl22.workers.dev",
+        "PUBLIC_INDEXING_ENABLED": "false",
+        "AUTH_PROVIDER": "app-password",
+        "REGISTRATION_MODE": "hybrid",
+        "PUBLIC_SIGNUP_ENABLED": "false",
         "PAYMENTS_ENABLED": "false",
         "ENTITLEMENT_MODE": "beta-free",
         "AI_ENABLED": "true",
@@ -27,7 +29,7 @@
         "REPORT_PROVIDER": "approved-library",
         "RETENTION_DRY_RUN": "true"
       },
-      "secrets": { "required": ["INCEPTION_API_KEY"] },
+      "secrets": { "required": ["INCEPTION_API_KEY", "RESEND_API_KEY", "AUTH_RATE_LIMIT_SECRET", "PDF_SIGNING_SECRET", "ORBITA_INTERNAL_TOKEN"] },
       "d1_databases": [{
         "binding": "DB",
         "database_name": "orbita30-staging",
@@ -42,9 +44,11 @@
       "vars": {
         "APP_ENV": "production-beta",
         "ORBITA_ENV": "production",
-        "AUTH_PROVIDER": "cloudflare-access",
-        "CF_ACCESS_TEAM_DOMAIN": "https://calm-silence-6ead.cloudflareaccess.com",
-        "CF_ACCESS_AUDIENCE": "99610357344699a1880b9e98bd30922074c9f9b0c4f001a329848d79ab1a21bc",
+        "AUTH_PROVIDER": "app-password",
+        "REGISTRATION_MODE": "hybrid",
+        "PUBLIC_SIGNUP_ENABLED": "false",
+        "APP_BASE_URL": "https://orbita-30.yzh905284.chatgpt.site",
+        "PUBLIC_INDEXING_ENABLED": "false",
         "PAYMENTS_ENABLED": "false",
         "ENTITLEMENT_MODE": "beta-free",
         "AI_ENABLED": "false",
@@ -55,7 +59,7 @@
         "REPORT_PROVIDER": "approved-library",
         "RETENTION_DRY_RUN": "true"
       },
-      "secrets": { "required": ["INCEPTION_API_KEY"] },
+      "secrets": { "required": ["RESEND_API_KEY", "AUTH_RATE_LIMIT_SECRET", "PDF_SIGNING_SECRET", "ORBITA_INTERNAL_TOKEN"] },
       "d1_databases": [{
         "binding": "DB",
         "database_name": "orbita30-production",

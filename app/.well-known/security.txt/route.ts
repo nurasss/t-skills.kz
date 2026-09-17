@@ -7,8 +7,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const env = getRuntimeEnv();
   const contact = env.SECURITY_CONTACT_EMAIL?.trim();
-  if (!contact) {
-    return NextResponse.json({ error: "SECURITY_CONTACT_NOT_CONFIGURED" }, { status: 503 });
+  if (!contact || /[\r\n]/.test(contact) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
+    return new NextResponse("security.txt is not configured.\n", {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+    });
   }
   const canonicalOrigin = env.APP_BASE_URL?.trim().replace(/\/$/, "");
   const expires = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString();

@@ -2,10 +2,9 @@
  * Canonical product locales. `kz` is accepted only as a legacy input alias;
  * it must never be persisted or emitted by a new API response.
  */
-export const LOCALES = ["ru", "kk", "en"] as const;
-export type Locale = (typeof LOCALES)[number];
+export type Locale = "ru" | "kk" | "en";
 
-export const LEGACY_LOCALE_ALIASES = {
+const LEGACY_LOCALE_ALIASES = {
   kz: "kk",
 } as const;
 
@@ -15,7 +14,7 @@ export type LocaleResolution = {
   requested: string | null;
 };
 
-export type TranslationMetadata = {
+type TranslationMetadata = {
   locale: Locale;
   status: "published" | "unpublished";
   sourceVersion: string;
@@ -24,7 +23,7 @@ export type TranslationMetadata = {
   requirements: string[];
 };
 
-export const ITEM_TRANSLATION_POLICY: Record<Locale, TranslationMetadata> = {
+const ITEM_TRANSLATION_POLICY: Record<Locale, TranslationMetadata> = {
   ru: {
     locale: "ru",
     status: "published",
@@ -64,20 +63,6 @@ export function resolveLocaleInput(value: string | null | undefined): LocaleReso
     return { locale: LEGACY_LOCALE_ALIASES.kz, legacyAlias: true, requested: normalized };
   }
   return { locale: "ru", legacyAlias: false, requested: normalized };
-}
-
-export function localeFromAcceptLanguage(value: string | null | undefined): Locale {
-  const candidates = (value ?? "")
-    .split(",")
-    .map((part) => part.split(";")[0]?.trim())
-    .filter(Boolean);
-  for (const candidate of candidates) {
-    const resolved = resolveLocaleInput(candidate);
-    if (resolved.requested === "ru" || resolved.requested === "kk" || resolved.requested === "kz" || resolved.requested === "en") {
-      return resolved.locale;
-    }
-  }
-  return "ru";
 }
 
 export function itemTranslationMetadata(locale: Locale = "ru") {

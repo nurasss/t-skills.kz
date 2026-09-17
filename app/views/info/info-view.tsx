@@ -34,11 +34,11 @@ const SUPPORT_BLOCKS: Array<[string, string]> = [
   ],
   [
     "Контакт",
-    "support@example.com · укажите session ID, локаль и описание шага, на котором остановились.",
+    "Канал поддержки будет указан после настройки оператора. Укажите session ID, локаль и описание шага, на котором остановились.",
   ],
 ];
 
-export type InfoViewKind = "privacy" | "terms" | "faq" | "support";
+type InfoViewKind = "privacy" | "terms" | "faq" | "support";
 
 export type InfoViewProps = {
   kind: InfoViewKind;
@@ -105,28 +105,6 @@ export function InfoView({ kind, onNavigate, title, blocks, version, updatedAt, 
         ) : null}
       </div>
     </div>
-  );
-}
-
-export function InfoViewLegal({
-  kind,
-  onNavigate,
-  title,
-  blocks,
-  version,
-  updatedAt,
-  reviewStatus,
-}: Omit<InfoViewProps, "kind"> & { kind: "privacy" | "terms" }) {
-  return (
-    <InfoView
-      kind={kind}
-      onNavigate={onNavigate}
-      title={title}
-      blocks={blocks}
-      version={version}
-      updatedAt={updatedAt}
-      reviewStatus={reviewStatus}
-    />
   );
 }
 

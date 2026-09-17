@@ -70,7 +70,7 @@ function addHeader(page: PDFPage, font: PDFFont, kicker: string, title: string, 
   const { width, height } = page.getSize();
   page.drawRectangle({ x: 0, y: 0, width, height, color: paper });
   page.drawRectangle({ x: 0, y: height - 12, width, height: 12, color: ink });
-  page.drawText("ORBITA—30", { x: 46, y: height - 52, size: 10, font, color: ink });
+  page.drawText("T-Skills", { x: 46, y: height - 52, size: 10, font, color: ink });
   page.drawText(kicker.toUpperCase(), { x: 46, y: height - 90, size: 9, font, color: coral });
   page.drawText(title, { x: 46, y: height - 139, size: 29, font, color: ink });
   let cursor = height - 174;
@@ -98,7 +98,7 @@ function coverPage(pdf: PDFDocument, font: PDFFont, profile: ScoreProfile, repor
   page.drawCircle({ x: width - 90, y: height - 110, size: 170, color: lime, opacity: 0.92 });
   page.drawCircle({ x: width - 90, y: height - 110, size: 122, color: ink, opacity: 1 });
   page.drawCircle({ x: width - 90, y: height - 110, size: 64, color: cyan, opacity: 0.8 });
-  page.drawText("ORBITA—30", { x: 52, y: height - 78, size: 13, font, color: lime });
+  page.drawText("T-Skills", { x: 52, y: height - 78, size: 13, font, color: lime });
   page.drawText("Карта способа", { x: 52, y: height - 240, size: 39, font, color: white });
   page.drawText("действовать.", { x: 52, y: height - 288, size: 39, font, color: lime });
   drawWrapped(page, report.executiveSummary, font, 52, height - 346, width - 104, 15, rgb(0.83, 0.87, 0.91), 23);
@@ -143,7 +143,7 @@ export async function buildReportPdf(profile: ScoreProfile, report: ReportJSON) 
   const pdf = await PDFDocument.create();
   pdf.setCreationDate(new Date(0));
   pdf.setModificationDate(new Date(0));
-  pdf.setProducer("ORBITA-30 deterministic report generator");
+  pdf.setProducer("T-Skills deterministic report generator");
   pdf.registerFontkit(fontkit);
   const font = await pdf.embedFont(await fontBytes(), { subset: true });
   coverPage(pdf, font, profile, report);
@@ -151,7 +151,7 @@ export async function buildReportPdf(profile: ScoreProfile, report: ReportJSON) 
   pageFromSpec(pdf, font, {
     kicker: "Как читать",
     title: "Сначала смысл, потом число.",
-    lead: "ORBITA—30 описывает предпочтительные режимы действия. Это не ярлык и не рейтинг ценности человека.",
+    lead: "T-Skills описывает предпочтительные режимы действия. Это не ярлык и не рейтинг ценности человека.",
     sections: [
       { label: "Диапазон", body: "Более высокий показатель означает, что такой режим чаще может быть доступен без большого сознательного усилия. Более низкий — что он может требовать поддержки, практики или другого распределения ролей." },
       { label: "Уверенность", body: report.confidenceNote },
@@ -208,7 +208,7 @@ export async function buildReportPdf(profile: ScoreProfile, report: ReportJSON) 
   const coreQuestionCount = report.coreQuestionCount ?? profile.coreAnswered;
   const adaptiveQuestionCount = report.adaptiveQuestionCount ?? profile.adaptiveAnswered;
   pageFromSpec(pdf, font, { kicker: "Методология", title: "Что находится под результатом.", sections: [{ label: "Конструкт", body: `30 оригинальных шкал объединены в 6 доменов. Эта версия использует ${coreQuestionCount} стандартизированных Core-вопросов и ${adaptiveQuestionCount || "10–15"} адаптивных follow-up вопросов.` }, { label: "Scoring", body: "Числа рассчитываются детерминированным engine. Интерпретационный слой не может изменить score JSON, rank, пилотный индекс профиля или диапазоны неопределённости." }, { label: "Статус норм", body: `normStatus: ${profile.normStatus}; нормативная выборка и валидированные популяционные нормы не заявляются.` }, { label: "Качество", body: `RQI ${Math.round(profile.responseQuality.rqi * 100)}%. Флаги качества показываются как повод для осторожного чтения, а не как автоматическое обнуление результата.` }] }, 23);
-  pageFromSpec(pdf, font, { kicker: "Границы", title: "Этот отчёт не решает за вас.", lead: "ORBITA—30 — развивающий инструмент собственного проекта, не лицензированная реализация Gallup/CliftonStrengths и не научное заключение.", sections: [{ label: "Нельзя использовать", body: "Для диагностики, оценки здоровья или интеллекта, автоматического найма/увольнения, кредита, страхования, допуска к образованию или другого решения, где цена ошибки высока." }, { label: "Можно использовать", body: "Для рефлексии, подготовки к разговору, распределения ролей и небольших экспериментов развития." }, { label: "Следующий шаг", body: "Сверьте выводы с собственными наблюдениями и обратной связью людей, которым вы доверяете. Если они расходятся, это повод исследовать контекст, а не выбрать «правильную» версию себя." }] }, 24);
+  pageFromSpec(pdf, font, { kicker: "Границы", title: "Этот отчёт не решает за вас.", lead: "T-Skills — развивающий инструмент собственного проекта, не лицензированная реализация Gallup/CliftonStrengths и не научное заключение.", sections: [{ label: "Нельзя использовать", body: "Для диагностики, оценки здоровья или интеллекта, автоматического найма/увольнения, кредита, страхования, допуска к образованию или другого решения, где цена ошибки высока." }, { label: "Можно использовать", body: "Для рефлексии, подготовки к разговору, распределения ролей и небольших экспериментов развития." }, { label: "Следующий шаг", body: "Сверьте выводы с собственными наблюдениями и обратной связью людей, которым вы доверяете. Если они расходятся, это повод исследовать контекст, а не выбрать «правильную» версию себя." }] }, 24);
 
   return pdf.save({ useObjectStreams: true });
 }

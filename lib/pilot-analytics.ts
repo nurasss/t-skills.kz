@@ -1,4 +1,4 @@
-export const MIN_PILOT_SAMPLE = 200;
+const MIN_PILOT_SAMPLE = 200;
 
 type D1Like = Pick<D1Database, "prepare">;
 
@@ -28,7 +28,7 @@ function safeJson(value: string | null | undefined) {
   try { return JSON.parse(value) as Record<string, unknown>; } catch { return null; }
 }
 
-export function bucketStandardScore(value: number) {
+function bucketStandardScore(value: number) {
   if (value < 35) return "1-34";
   if (value < 50) return "35-49";
   if (value < 65) return "50-64";
@@ -36,7 +36,7 @@ export function bucketStandardScore(value: number) {
   return "80-99";
 }
 
-export function aggregatePilotScores(rows: Array<{ score: number }>) {
+function aggregatePilotScores(rows: Array<{ score: number }>) {
   const buckets = new Map<string, number>();
   for (const row of rows) {
     const key = bucketStandardScore(row.score);
@@ -45,7 +45,7 @@ export function aggregatePilotScores(rows: Array<{ score: number }>) {
   return [...buckets.entries()].map(([bucket, sample]) => ({ bucket, sample }));
 }
 
-export function aggregateAdaptiveExposure(rows: AdaptiveIdsRow[]) {
+function aggregateAdaptiveExposure(rows: AdaptiveIdsRow[]) {
   const exposure = new Map<string, number>();
   for (const row of rows) {
     let ids: unknown = [];

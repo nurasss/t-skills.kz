@@ -1,6 +1,5 @@
 import handler from "vinext/server/fetch-handler";
 
-import { identityFromAccessToken } from "@/lib/cloudflare-access";
 import { runRetentionSweep } from "@/lib/retention";
 import { applySecurityHeaders, contentSecurityPolicy, createCspNonce, requestIdFrom } from "@/lib/security-headers";
 import { logRequest } from "@/lib/observability";
@@ -10,22 +9,15 @@ const worker = {
     const requestId = requestIdFrom(request);
     const nonce = createCspNonce();
     const requestHeaders = new Headers(request.headers);
-    requestHeaders.delete("x-orbita-access-sub");
-    requestHeaders.delete("x-orbita-access-email");
-    requestHeaders.delete("x-orbita-access-name");
-    if (env.AUTH_PROVIDER === "cloudflare-access") {
-      const access = (ctx as ExecutionContext & {
-        access?: { getIdentity(): Promise<{ sub?: string; email?: string; name?: string; commonName?: string } | null> };
-      }).access;
-      const identity = (access ? await access.getIdentity() : null) ?? await identityFromAccessToken(request, env);
-      const subject = identity?.sub?.trim() || identity?.commonName?.trim();
-      const email = identity?.email?.trim().toLowerCase()
-        || (identity?.commonName ? `${identity.commonName.replace(/[^a-zA-Z0-9._-]/g, "_")}@service.invalid` : "");
-      if (!subject || !email) return applySecurityHeaders(new Response("Access identity required", { status: 401 }), requestId, nonce);
-      requestHeaders.set("x-orbita-access-sub", subject);
-      requestHeaders.set("x-orbita-access-email", email);
-      if (identity?.name) requestHeaders.set("x-orbita-access-name", identity.name);
-    }
+    for (const header of [
+      "x-orbita-access-sub",
+      "x-orbita-access-email",
+      "x-orbita-access-name",
+      "oai-authenticated-user-id",
+      "oai-authenticated-user-email",
+      "oai-authenticated-user-full-name",
+      "oai-authenticated-user-full-name-encoding",
+    ]) requestHeaders.delete(header);
     requestHeaders.set("Content-Security-Policy", contentSecurityPolicy(nonce));
     const securedRequest = new Request(request, { headers: requestHeaders });
     const startedAt = Date.now();

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("strict CSP permits hydration and checkout redirect without application script violations", async ({ page }) => {
+test("strict CSP permits hydration and protects checkout without application script violations", async ({ page }) => {
   const violations: Array<{ directive: string; blocked: string }> = [];
   const pageErrors: string[] = [];
   await page.exposeFunction("recordCspViolation", (violation: { directive: string; blocked: string }) => {
@@ -22,7 +22,7 @@ test("strict CSP permits hydration and checkout redirect without application scr
         supportContact: null,
         test: {
           id: "orbita30",
-          name: "ORBITA—30",
+          name: "T-Skills",
           assessmentVersion: "orbita30_ru_v2",
           amountMinor: 150000,
           currency: "KZT",
@@ -34,21 +34,6 @@ test("strict CSP permits hydration and checkout redirect without application scr
       }),
     });
   });
-  await page.route("**/api/checkout", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ checkout_url: "http://127.0.0.1:8790/checkout-redirect-probe" }),
-    });
-  });
-  await page.route("**/checkout-redirect-probe", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "text/html",
-      body: "<!doctype html><title>Checkout redirect probe</title><h1>Checkout redirect probe</h1>",
-    });
-  });
-
   const response = await page.goto("/");
   const csp = response?.headers()["content-security-policy"] ?? "";
   const scriptSrc = csp
@@ -58,17 +43,23 @@ test("strict CSP permits hydration and checkout redirect without application scr
   expect(scriptSrc).toMatch(/^script-src 'self' 'nonce-[A-Za-z0-9+/]+={0,2}'$/);
   expect(scriptSrc).not.toContain("'unsafe-inline'");
   expect(scriptSrc).not.toContain("'unsafe-eval'");
-  await expect(page.getByRole("heading", { name: /Увидеть свой/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Исследуйте свои способы действовать/ })).toBeVisible();
 
-  await page.getByRole("button", { name: /Начать оценку/ }).click();
-  await expect(page).toHaveURL(/\/tests\/orbita30$/);
+  await page.locator("#start").click();
+  await expect(page).toHaveURL(/\/tests\/t-skills$/);
   await page.getByRole("button", { name: /Перейти к оформлению/ }).click();
-  await expect(page).toHaveURL(/\/checkout\/orbita30$/);
-  await expect(page.getByRole("button", { name: /Перейти к защищённой оплате/ })).toBeEnabled();
-  await Promise.all([
-    page.waitForURL(/\/checkout-redirect-probe$/),
-    page.getByRole("button", { name: /Перейти к защищённой оплате/ }).click(),
-  ]);
+  await expect(page).toHaveURL(/\/auth\?return_to=%2Fcheckout%2Ft-skills$/);
+  await expect(page.getByRole("heading", { name: "С возвращением" })).toBeVisible();
+
+  const missingCsrfStatus = await page.evaluate(async () => {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "attacker@example.invalid", password: "not-a-real-password" }),
+    });
+    return response.status;
+  });
+  expect(missingCsrfStatus).toBe(403);
 
   expect(pageErrors).toEqual([]);
   expect(violations.filter((item) => item.directive.startsWith("script-src"))).toEqual([]);

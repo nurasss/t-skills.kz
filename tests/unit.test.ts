@@ -21,13 +21,15 @@ import { isRetentionCandidate, retentionDaysFrom, RETENTION_ACTIVE_STATES } from
 import { applySecurityHeaders, REQUEST_ID_HEADER, SECURITY_HEADERS } from "@/lib/security-headers";
 import { buildRequestLog } from "@/lib/observability";
 import { validateReportSafety } from "@/lib/report-safety";
-import { parseStrictJsonProviderOutput, providerFailureReason } from "@/lib/provider-contract";
+import { parseStrictJsonProviderOutput, providerFailureReason, ProviderResponseTooLargeError, readBoundedResponseJson } from "@/lib/provider-contract";
 import { nextPaymentStatus } from "@/lib/payment-event-policy";
 import { evaluateOperationalAlerts, latencyBucket } from "@/lib/ops-monitoring";
 import { selectionFromPayload } from "@/lib/adaptive-contract";
 import { validatePdfGrantClaims } from "@/lib/pdf-token-policy";
 import { aiEnabled, entitlementMode, isBetaFreeMode, paymentsEnabled } from "@/lib/runtime-config";
+import { COOKIE_PREFERENCE_KEY, readCookiePreference } from "@/lib/client-analytics";
 import { canSessionTransition } from "@/lib/assessment-state-machine";
+import { isHostedStripeCheckoutUrl } from "@/lib/payment-url";
 import type { OrbitaRuntimeEnv } from "@/db";
 
 test("item bank and taxonomy remain the complete 300-item Russian source", () => {
@@ -150,9 +152,21 @@ test("AI provider contract rejects empty, malformed, and injected non-JSON outpu
   assert.deepEqual(parseStrictJsonProviderOutput({ output_text: "Here is JSON: {\"ok\":true}" }), { ok: false, reason: "MALFORMED_JSON" });
   assert.equal(providerFailureReason(new DOMException("aborted", "AbortError"), "REPORT"), "OPENAI_TIMEOUT");
   assert.equal(providerFailureReason(new Error("ADAPTIVE_OPENAI_HTTP_503"), "ADAPTIVE"), "ADAPTIVE_OPENAI_HTTP_503");
+  assert.equal(providerFailureReason(new Error("OPENAI_ENDPOINT_INVALID"), "REPORT"), "OPENAI_ENDPOINT_INVALID");
   assert.equal(providerFailureReason(new Error("SCHEMA_INVALID"), "REPORT"), "OPENAI_SCHEMA_INVALID");
   assert.throws(() => selectionFromPayload({ selected_item_ids: [], target_count: 10, score: 99 }), /ADAPTIVE_SCHEMA_INVALID/);
   assert.throws(() => selectionFromPayload({ selected_item_ids: [], target_count: "10" }), /ADAPTIVE_OUTPUT_INVALID/);
+});
+
+test("provider response readers enforce bounded JSON bodies", async () => {
+  assert.deepEqual(
+    await readBoundedResponseJson(new Response(JSON.stringify({ ok: true })), 1024),
+    { ok: true },
+  );
+  await assert.rejects(
+    readBoundedResponseJson(new Response("x".repeat(1025)), 1024),
+    ProviderResponseTooLargeError,
+  );
 });
 
 test("payment integrity requires exact order/event snapshot", () => {
@@ -163,6 +177,14 @@ test("payment integrity requires exact order/event snapshot", () => {
   assert.equal(validatePaymentSnapshot(order, { ...event, providerCheckoutId: "cs_other" }), false);
   assert.equal(validatePaymentSnapshot(order, { ...event, paymentStatus: "unpaid" }), false);
   assert.equal(validatePaymentSnapshot(order, { ...event, testId: "other" }), false);
+});
+
+test("Stripe checkout redirects accept only the official hosted URL", () => {
+  assert.equal(isHostedStripeCheckoutUrl("https://checkout.stripe.com/c/pay/cs_test_123#fragment"), true);
+  assert.equal(isHostedStripeCheckoutUrl("https://checkout.stripe.com/c/pay/"), false);
+  assert.equal(isHostedStripeCheckoutUrl("https://evil.example/c/pay/cs_test_123"), false);
+  assert.equal(isHostedStripeCheckoutUrl("javascript:alert(1)"), false);
+  assert.equal(isHostedStripeCheckoutUrl("https://checkout.stripe.com/account/cs_test_123"), false);
 });
 
 test("payment operational state is monotonic across retries, refunds, and disputes", () => {
@@ -219,8 +241,19 @@ test("closed beta flags disable payments and AI without mutating paid-mode defau
   assert.equal(aiEnabled(beta), false);
   assert.equal(entitlementMode(beta), "beta-free");
   assert.equal(isBetaFreeMode(beta), true);
-  assert.equal(paymentsEnabled({} as OrbitaRuntimeEnv), true);
-  assert.equal(aiEnabled({} as OrbitaRuntimeEnv), true);
+  assert.equal(paymentsEnabled({} as OrbitaRuntimeEnv), false);
+  assert.equal(aiEnabled({} as OrbitaRuntimeEnv), false);
+  assert.equal(entitlementMode({} as OrbitaRuntimeEnv), "beta-free");
+});
+
+test("optional analytics requires an explicit valid preference", () => {
+  const values = new Map<string, string>([[COOKIE_PREFERENCE_KEY, "analytics"]]);
+  const storage = { getItem: (key: string) => values.get(key) ?? null };
+  assert.equal(readCookiePreference(storage), "analytics");
+  values.set(COOKIE_PREFERENCE_KEY, "necessary");
+  assert.equal(readCookiePreference(storage), "necessary");
+  values.set(COOKIE_PREFERENCE_KEY, "unexpected");
+  assert.equal(readCookiePreference(storage), null);
 });
 
 test("beta entitlement state can enter consent without payment state", () => {

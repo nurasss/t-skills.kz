@@ -103,7 +103,7 @@ function hasForbiddenKeys(value: unknown): boolean {
   return false;
 }
 
-export function validateReportSourceKeys(report: ReportJSON, profile: ScoreProfile) {
+function validateReportSourceKeys(report: ReportJSON, profile: ScoreProfile) {
   const expected = buildReportSourceKeys(profile);
   if (!report.sourceKeys || typeof report.sourceKeys !== "object") return false;
   const sections = report.sourceKeys as Record<string, unknown>;
@@ -126,8 +126,4 @@ export function validateReportSafety(report: ReportJSON, profile: ScoreProfile) 
   if (!validateReportSourceKeys(report, profile)) return false;
   if (hasForbiddenKeys(report)) return false;
   return everyNarrativeString(report).every((text) => !FORBIDDEN_NARRATIVE_PATTERNS.some((pattern) => pattern.test(text)));
-}
-
-export function validateReportShape(value: unknown): value is ReportJSON {
-  return Boolean(value && typeof value === "object" && "sourceKeys" in value);
 }

@@ -7,8 +7,8 @@ import type { View } from "@/app/orbita-view-types";
 
 const FEATURES: Array<[string, string, string]> = [
   ["01", "6 доменов", "Осмысление, создание, исполнение, влияние, связи и самоуправление."],
-  ["02", "60 + 10–15", "Стандартизированный baseline и адаптивное уточнение по uncertainty."],
-  ["03", "Top 5 и профиль 30", "Сначала естественный вклад, затем полный контекст и интервалы."],
+  ["02", "60 + 10–15", "Единый baseline и адаптивное уточнение зон неопределённости."],
+  ["03", "Top 5 и профиль 30", "Сначала наиболее выраженные шкалы текущего профиля, затем полный контекст и диапазоны."],
   ["04", "Отчёт на языке фактов", "Без диагнозов и карьерных предсказаний; числа берутся из score JSON."],
 ];
 
@@ -36,8 +36,8 @@ export function DetailView({ onNavigate, onDemo }: DetailViewProps) {
 
         <header className="ov-detail-hero">
           <div className="ov-detail-hero-copy">
-            <span className="ov-eyebrow">Оценка сильных сторон</span>
-            <h1>ORBITA—30</h1>
+            <span className="ov-eyebrow">Тест сильных сторон</span>
+            <h1>Тест T-Skills</h1>
             <p>
               Профиль предпочтительного способа действовать: как вы понимаете сложность, создаёте
               варианты, доводите работу, влияете и восстанавливаетесь.
@@ -53,7 +53,7 @@ export function DetailView({ onNavigate, onDemo }: DetailViewProps) {
             </div>
           </div>
           <div className="ov-detail-hero-visual">
-            <DetailOrbitaGraphic />
+            <DetailMarkGraphic />
           </div>
         </header>
 
@@ -129,7 +129,7 @@ function DetailCheck() {
   );
 }
 
-function DetailOrbitaGraphic() {
+function DetailMarkGraphic() {
   const ref = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -181,9 +181,9 @@ function DetailOrbitaGraphic() {
     label.setAttribute("y", String(cy + 4));
     label.setAttribute("text-anchor", "middle");
     label.setAttribute("font-family", "'Instrument Serif', serif");
-    label.setAttribute("font-size", "14");
+    label.setAttribute("font-size", "11");
     label.setAttribute("fill", "#171A18");
-    label.textContent = "ORBITA";
+    label.textContent = "T-Skills";
     frag.appendChild(label);
 
     svg.appendChild(frag);

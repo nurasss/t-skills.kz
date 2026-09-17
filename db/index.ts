@@ -1,6 +1,4 @@
 import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
-import * as schema from "./schema";
 
 export type OrbitaRuntimeEnv = {
   DB?: D1Database;
@@ -15,9 +13,17 @@ export type OrbitaRuntimeEnv = {
   ENTITLEMENT_MODE?: string;
   AI_ENABLED?: string;
   AUTH_PROVIDER?: string;
+  REGISTRATION_MODE?: string;
+  PUBLIC_SIGNUP_ENABLED?: string;
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
+  EMAIL_REPLY_TO?: string;
+  AUTH_SESSION_TTL_SECONDS?: string;
+  AUTH_RATE_LIMIT_SECRET?: string;
   ASSESSMENT_PRICE_MINOR?: string;
   ASSESSMENT_CURRENCY?: string;
   APP_BASE_URL?: string;
+  PUBLIC_INDEXING_ENABLED?: string;
   APP_ENV?: string;
   REPORT_PROVIDER?: string;
   REPORT_MODEL?: string;
@@ -34,9 +40,10 @@ export type OrbitaRuntimeEnv = {
   ORBITA_ENV?: string;
   ORBITA_ADMIN_USER_IDS?: string;
   ORBITA_INTERNAL_TOKEN?: string;
-  CRON_SECRET?: string;
-  SUPPORT_CONTACT?: string;
   SECURITY_CONTACT_EMAIL?: string;
+  SUPPORT_CONTACT?: string;
+  LEGAL_CONTACT_ADDRESS?: string;
+  LEGAL_CONTACT_PHONE?: string;
   LEGAL_ENTITY_NAME?: string;
   LEGAL_JURISDICTION?: string;
   LEGAL_PROCESSING_PURPOSES?: string;
@@ -48,6 +55,8 @@ export type OrbitaRuntimeEnv = {
   LEGAL_SECURITY_SUMMARY?: string;
   LEGAL_RESEARCH_POLICY?: string;
   LEGAL_MARKETING_POLICY?: string;
+  LEGAL_REFUND_POLICY?: string;
+  LEGAL_COOKIE_POLICY?: string;
   RETENTION_DRY_RUN?: string;
 };
 
@@ -73,8 +82,4 @@ export function getR2() {
     );
   }
   return bucket;
-}
-
-export function getDb() {
-  return drizzle(getD1(), { schema });
 }

@@ -6,6 +6,10 @@ import type { AssessmentItem, Phase } from "@/app/orbita-view-types";
 const RESPONSE_LABELS = ["Сильно левое", "Скорее левое", "Одинаково", "Скорее правое", "Сильно правое"];
 const LIKERT_LABELS = ["1", "2", "3", "4", "5", "6", "7"];
 
+function assessmentItemKey(item: AssessmentItem) {
+  return "questionId" in item ? item.questionId : item.id;
+}
+
 function isForced(item: AssessmentItem): boolean {
   return (
     ("type" in item && (item.type === "forced" || item.type === "adaptive_forced")) ||
@@ -37,17 +41,14 @@ function QuestionScale({ item, value, onChange }: { item: AssessmentItem; value?
         </div>
         <div className="ov-assessment-scale ov-assessment-scale-forced" role="radiogroup" aria-label="Выберите, какое утверждение чаще про вас">
           {[-2, -1, 0, 1, 2].map((option, index) => (
-            <button
-              aria-checked={value === option}
+            <label
               className={`ov-scale-option${value === option ? " selected" : ""}`}
               key={option}
-              onClick={() => onChange(option)}
-              role="radio"
-              type="button"
             >
+              <input className="ov-radio-input" type="radio" name={`forced-${assessmentItemKey(item)}`} value={option} checked={value === option} onChange={() => onChange(option)} />
               <span className="ov-scale-dot" />
               <small>{RESPONSE_LABELS[index]}</small>
-            </button>
+            </label>
           ))}
         </div>
       </div>
@@ -65,16 +66,13 @@ function QuestionScale({ item, value, onChange }: { item: AssessmentItem; value?
         {LIKERT_LABELS.map((label, index) => {
           const option = index + 1;
           return (
-            <button
-              aria-checked={value === option}
+            <label
               className={`ov-likert-option${value === option ? " selected" : ""}`}
               key={label}
-              onClick={() => onChange(option)}
-              role="radio"
-              type="button"
             >
+              <input className="ov-radio-input" type="radio" name={`likert-${assessmentItemKey(item)}`} value={option} checked={value === option} onChange={() => onChange(option)} />
               <span>{label}</span>
-            </button>
+            </label>
           );
         })}
       </div>
