@@ -29,6 +29,13 @@ docker compose -f deploy/vps/docker-compose.yml logs -f app
 Open `https://t-skills.kz` and check: landing shows T-Skills, `/api/catalog`
 returns the test, `/tests/orbita30` redirects (308) to `/tests/t-skills`.
 
+> Shared-proxy caveat: if the front proxy bind-mounts its config file
+> (e.g. `-v /opt/site/Caddyfile:/etc/caddy/Caddyfile:ro`), never edit it
+> with tools that replace the file (`sed -i`, `fmt --overwrite`): the
+> container keeps seeing the old inode. Either rewrite in place
+> (`cat new-content | sudo tee <file>`) or restart the proxy container
+> after editing.
+
 ## 3. Retention cron (host side)
 
 The in-app sweep is exposed at `POST /internal/retention` (token-gated).
