@@ -10,7 +10,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const dbFlag = process.argv.findIndex((arg) => arg === "--db");
 const dbPath = resolve(
-  process.argv[dbFlag + 1] ?? process.env.SQLITE_DB_PATH ?? "./data/app.db",
+  dbFlag === -1 ? (process.env.SQLITE_DB_PATH ?? "./data/app.db") : process.argv[dbFlag + 1],
 );
 mkdirSync(dirname(dbPath), { recursive: true });
 
