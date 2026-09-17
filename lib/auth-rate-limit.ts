@@ -15,10 +15,24 @@ function rateLimitSecret() {
   throw new Error("AUTH_RATE_LIMIT_SECRET_MISSING");
 }
 
-async function rateLimitIdentity(request: Request, scope: string, account?: string) {
+function clientAddress(request: Request): string {
   // Only Cloudflare's edge-set address is trusted. User-controlled forwarding
   // headers would let a caller rotate the apparent IP and evade the limit.
-  const forwarded = request.headers.get("CF-Connecting-IP")?.trim() || "unknown";
+  const edge = request.headers.get("CF-Connecting-IP")?.trim();
+  if (edge) return edge;
+  // VPS deployments sit behind exactly one trusted reverse proxy (Caddy),
+  // which appends the real client address to X-Forwarded-For. Trust it only
+  // when the operator explicitly enabled TRUST_PROXY; otherwise an attacker
+  // could spoof the header directly.
+  if (getRuntimeEnv().TRUST_PROXY?.trim().toLowerCase() === "true") {
+    const forwarded = request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim();
+    if (forwarded) return forwarded;
+  }
+  return "unknown";
+}
+
+async function rateLimitIdentity(request: Request, scope: string, account?: string) {
+  const forwarded = clientAddress(request);
   const secret = rateLimitSecret();
   return `rate:${scope}:${await digest(`${secret}:${forwarded}:${account ?? ""}`)}`;
 }

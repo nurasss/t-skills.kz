@@ -1,0 +1,12 @@
+# Caddy terminates TLS (automatic Let's Encrypt) and proxies to the app.
+# The app trusts X-Forwarded-For only because TRUST_PROXY=true is set and
+# exactly one proxy sits in front of it. Do not add another proxy/CDN in
+# front without revisiting rate-limit identity (lib/auth-rate-limit.ts).
+t-skills.kz {
+	reverse_proxy app:3000
+	encode gzip
+	log {
+		output stdout
+		format console
+	}
+}

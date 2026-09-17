@@ -2,6 +2,9 @@
   "entry": [
     "worker/index.ts",
     "lib/vercel-runtime-env.ts",
+    "lib/node-runtime-env.ts",
+    "lib/node-store-node.ts",
+    "nitro/plugins/vps-security.ts",
     "scripts/browser-test-server.mjs",
     "scripts/pnpm-install.mjs"
   ],

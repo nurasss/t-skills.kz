@@ -43,6 +43,13 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 /dist/
+# Nitro node-server (VPS) build output.
+.output/
+# VPS runtime state: SQLite database and file bucket live here.
+/data/
+*.db
+*.db-wal
+*.db-shm
 *.tsbuildinfo
 /.wrangler/
 # Checkout-local execution profile and tool state; never publish them.

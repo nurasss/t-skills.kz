@@ -58,6 +58,9 @@ export type OrbitaRuntimeEnv = {
   LEGAL_REFUND_POLICY?: string;
   LEGAL_COOKIE_POLICY?: string;
   RETENTION_DRY_RUN?: string;
+  TRUST_PROXY?: string;
+  SQLITE_DB_PATH?: string;
+  VPS_FILE_DIR?: string;
 };
 
 export function getRuntimeEnv() {

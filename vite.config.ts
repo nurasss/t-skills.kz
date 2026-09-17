@@ -14,6 +14,13 @@ const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
 const isVercelTarget = process.env.ORBITA_DEPLOY_TARGET === "vercel";
+const isNodeTarget = process.env.ORBITA_DEPLOY_TARGET === "node";
+const isNitroTarget = isVercelTarget || isNodeTarget;
+const runtimeAlias: Record<string, string> | undefined = isVercelTarget
+  ? { "cloudflare:workers": resolve(process.cwd(), "lib/vercel-runtime-env.ts") }
+  : isNodeTarget
+    ? { "cloudflare:workers": resolve(process.cwd(), "lib/node-runtime-env.ts") }
+    : undefined;
 
 const localBindingConfig = {
   // Keep the application router behind the custom Worker so scheduled
@@ -52,10 +59,20 @@ export default defineConfig(async () => {
   process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
 
   const plugins = [...vinext()];
-  if (isVercelTarget) {
+  if (isNitroTarget) {
     const { nitro } = await import("nitro/vite");
     const { default: tailwindcss } = await import("@tailwindcss/vite");
-    plugins.push(tailwindcss(), ...nitro());
+    plugins.push(
+      tailwindcss(),
+      ...nitro(
+        isNodeTarget
+          ? {
+              preset: "node-server",
+              plugins: ["./nitro/plugins/vps-security.ts"],
+            }
+          : undefined,
+      ),
+    );
   } else {
     // Wrangler snapshots its log path while the Cloudflare plugin is imported.
     const { cloudflare } = await import("@cloudflare/vite-plugin");
@@ -74,9 +91,7 @@ export default defineConfig(async () => {
       ...(managedLinux ? { host: "0.0.0.0", allowedHosts: ["terminal.local"] } : {}),
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
     },
-    resolve: isVercelTarget
-      ? { alias: { "cloudflare:workers": resolve(process.cwd(), "lib/vercel-runtime-env.ts") } }
-      : undefined,
+    resolve: runtimeAlias ? { alias: runtimeAlias } : undefined,
     plugins,
   };
 });
