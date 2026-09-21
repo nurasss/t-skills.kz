@@ -164,10 +164,12 @@ test("full teen pipeline on real v1 bundle", async () => {
   const pattern = [2, 1, -1, -2, 2, -2];
   const answers: Record<string, number> = {};
   content.items75.forEach((item, i) => { answers[item.id] = pattern[i % pattern.length]; });
-  let { totals, contributions } = scoreTeenStage1(
+  const stage1Result = scoreTeenStage1(
     content.items75.map((item) => ({ id: item.id, leftTraitId: item.leftTraitId, rightTraitId: item.rightTraitId })),
     answers,
   );
+  let totals = stage1Result.totals;
+  const contributions = stage1Result.contributions;
   assert.equal(TEEN_TRAIT_IDS.reduce((sum, id) => sum + totals[id], 0), 0);
   const selected = selectTeenStage2(totals, contributions);
   assert.ok(selected.length >= 5 && selected.length <= 15);
@@ -189,4 +191,38 @@ test("full teen pipeline on real v1 bundle", async () => {
   assert.equal(report.topTraits.length, 5);
   assert.ok(report.traits[0].normalized >= report.traits[report.traits.length - 1].normalized);
   assert.equal(report.topValues.length, 3);
+});
+
+test("teen routing: /teen maps both ways with metadata", async () => {
+  const { routeForView, viewStateForPath, metadataForView } = await import("@/lib/view-routing");
+  assert.equal(routeForView("teen", { phase: "core" }), "/teen");
+  assert.deepEqual(viewStateForPath("/teen"), { view: "teen", phase: "core" });
+  assert.equal(metadataForView("teen").title, "Тест для подростков · T-Skills");
+});
+
+test("teen pdf validates payload and renders bytes", async () => {
+  const { validateTeenReportPayload, renderTeenPdf } = await import("@/lib/teen-pdf");
+  const { TEEN_VERSION_IDS, TEEN_TRAIT_IDS } = await import("@/lib/t-skills/teen/taxonomy");
+  type TeenReport = import("@/lib/t-skills/teen/report").TeenReport;
+  assert.throws(() => validateTeenReportPayload(null), /TEEN_PDF:shape/);
+  assert.throws(() => validateTeenReportPayload({ versions: {}, careers: [], traits: [] }), /TEEN_PDF:version/);
+  const report: TeenReport = {
+    versions: { ...TEEN_VERSION_IDS },
+    contentStatus: "DRAFT-UNAPPROVED",
+    traits: TEEN_TRAIT_IDS.map((traitId, i) => ({ traitId, name: traitId, total: 10 - i, normalized: (10 - i) / 12 })),
+    topTraits: [],
+    careers: [{ professionId: "p1", title: "Тестовая профессия", sphere: "Сфера", klimovType: "", education: "", description: "Описание.", totalScore: 1, traitScore: 1, valueBonus: 0, subjectBonus: 0 }],
+    topValues: [],
+    subjects: [],
+  };
+  report.topTraits = report.traits.slice(0, 5);
+  const validate: (value: unknown) => void = validateTeenReportPayload;
+  validate(report);
+  const bytes = await renderTeenPdf(report, {
+    sans: new Uint8Array((await import("node:fs")).readFileSync("node_modules/@expo-google-fonts/roboto/400Regular/Roboto_400Regular.ttf")),
+    sansBold: new Uint8Array((await import("node:fs")).readFileSync("node_modules/@expo-google-fonts/roboto/700Bold/Roboto_700Bold.ttf")),
+    serif: new Uint8Array((await import("node:fs")).readFileSync("node_modules/@expo-google-fonts/lora/400Regular/Lora_400Regular.ttf")),
+  });
+  assert.ok(bytes.length > 1000);
+  assert.equal(Buffer.from(bytes.subarray(0, 4)).toString(), "%PDF");
 });

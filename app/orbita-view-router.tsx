@@ -26,7 +26,7 @@ function getInfoContent(kind: "privacy" | "terms" | "faq" | "support", supportCo
     return {
       title: "Вопросы, которые обычно задают.",
       blocks: [
-        { title: "Сколько длится тест?", body: "60 основных вопросов. После предварительного профиля система задаёт ещё 10–15 персональных уточняющих вопросов. Между частями можно делать паузы." },
+        { title: "Сколько длится тест?", body: "67 основных вопросов. После предварительного профиля система задаёт до 8 коротких карьерных вопросов с вариантами A/B/C/D. Между частями можно делать паузы." },
         { title: "Что если я закрою браузер?", body: "Введённый ответ сохраняется сразу, а session продолжает с последнего подтверждённого item. Уже принятые adaptive-вопросы не меняются при reload." },
         { title: "Почему вопросы разные?", body: "В тесте нет хороших и плохих сильных сторон. Mercury уточняет зоны неопределённости, а сервер проверяет каждый новый вопрос и оставляет scoring детерминированным." },
         { title: "Можно ли сравнивать людей?", body: "В MVP нет. Пилотный индекс профиля и ранг предназначены для чтения собственного среза и не являются межличностной шкалой." },
@@ -55,9 +55,9 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
     activeItem,
     activeValue,
     questionIndex,
+    adaptiveIndex,
     coreItemCount,
     adaptiveItems,
-    selection,
     profile,
     report,
     reportProvider,
@@ -70,6 +70,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
     accountOverview,
     accountLoading,
     accountActionStatus,
+    requestError,
     adminMetrics,
     demoMode,
     processingStatus,
@@ -78,15 +79,18 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
     startCheckout,
     setConsent,
     beginAssessment,
+    saveOnboarding,
+    onboarding,
+    onboardingBusy,
     saveResponse,
     nextQuestion,
-    continueFromBreak,
     retryReport,
     downloadReport,
     openReport,
     startAssessmentFromAccount,
     exportAccountData,
     deleteAccountData,
+    logout,
     deleteAssessmentData,
   } = controller;
 
@@ -103,7 +107,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
         onNavigate={go}
         onCheckout={startCheckout}
         busy={checkoutBusy}
-        error={checkoutError}
+        error={checkoutError ?? requestError}
         catalog={publicCatalog}
       />
     );
@@ -119,28 +123,33 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
       />
     );
   }
+  if (view === "onboarding") {
+    return <LazyOnboarding initial={onboarding} busy={onboardingBusy} error={controller.requestError} onSubmit={saveOnboarding} onBack={() => go("account")} />;
+  }
+  if (view === "teen") {
+    return <LazyTeenFlow onHome={() => go("home")} />;
+  }
   if (view === "assessment") {
     return (
       <LazyAssessment
         phase={phase}
         item={activeItem}
-        currentIndex={questionIndex}
+        currentIndex={phase === "core" ? questionIndex : adaptiveIndex}
         total={phase === "core" ? coreItemCount : adaptiveItems.length}
+        overallTotal={coreItemCount === T_SKILLS_STATIC_ITEM_COUNT ? T_SKILLS_TOTAL_QUESTION_COUNT : phase === "core" ? coreItemCount : coreItemCount + adaptiveItems.length}
+        questionOffset={coreItemCount === T_SKILLS_STATIC_ITEM_COUNT && phase === "adaptive" ? T_SKILLS_STATIC_ITEM_COUNT : 0}
         blockNumber={Math.floor(questionIndex / (coreItemCount === 60 ? 20 : 50)) + 1}
         selectedValue={activeValue}
         onAnswer={saveResponse}
         onNext={nextQuestion}
-        onPause={() => go("break")}
+        onPause={() => go("account")}
         autosaveStatus={autosaveStatus}
         elapsedSeconds={elapsedSeconds}
       />
     );
   }
-  if (view === "break") {
-    return <LazyBreak adaptiveReady={phase === "adaptive"} selection={selection} onContinue={continueFromBreak} onExit={go} />;
-  }
   if (view === "processing") {
-    return <LazyProcessing status={processingStatus} onOpenResults={() => go("results")} onRetry={retryReport} profile={profile} />;
+    return <LazyProcessing status={processingStatus} onOpenResults={() => go("results")} onRetry={retryReport} profile={profile} coreCount={coreItemCount} />;
   }
   if (view === "results" && profile && report) {
     return (
@@ -167,6 +176,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
         onOpenReport={(id) => void openReport(id)}
         onExport={exportAccountData}
         onDelete={deleteAccountData}
+        onLogout={() => void logout()}
         onDeleteAssessment={(id) => void deleteAssessmentData(id)}
       />
     );
@@ -204,15 +214,18 @@ import { CatalogView } from "@/app/views/catalog/catalog-view";
 import { DetailView } from "@/app/views/detail/detail-view";
 import { CheckoutView } from "@/app/views/checkout/checkout-view";
 import { ConsentView } from "@/app/views/consent/consent-view";
+import { OnboardingView } from "@/app/views/onboarding/onboarding-view";
 import { AssessmentView } from "@/app/views/assessment/assessment-view";
-import { BreakView } from "@/app/views/assessment/break-view";
 import { ProcessingView } from "@/app/views/assessment/processing-view";
 import { ResultsView } from "@/app/views/results/results-view";
 import { AccountView } from "@/app/views/account/account-view";
 import { MethodologyView } from "@/app/views/methodology/methodology-view";
 import { AdminView } from "@/app/views/admin/admin-view";
+import { TeenFlowView } from "@/app/views/teen/teen-flow-view";
 import type { AccountOverview, AdminMetrics, AssessmentItem, Phase, PublicCatalog, View } from "@/app/orbita-view-types";
-import type { AdaptiveSelection, ReportJSON, ScoreProfile } from "@/lib/assessment-engine";
+import type { ReportJSON, ScoreProfile } from "@/lib/assessment-engine";
+import type { OnboardingContext } from "@/lib/t-skills/contracts";
+import { T_SKILLS_STATIC_ITEM_COUNT, T_SKILLS_TOTAL_QUESTION_COUNT } from "@/lib/t-skills/versions";
 
 function LazyCatalog(props: { onNavigate: (view: View) => void }) {
   return <CatalogView {...props} />;
@@ -247,6 +260,8 @@ function LazyAssessment(props: {
   item?: AssessmentItem;
   currentIndex: number;
   total: number;
+  overallTotal: number;
+  questionOffset: number;
   blockNumber: number;
   selectedValue?: number;
   onAnswer: (value: number) => void;
@@ -258,13 +273,8 @@ function LazyAssessment(props: {
   return <AssessmentView {...props} />;
 }
 
-function LazyBreak(props: {
-  adaptiveReady: boolean;
-  selection?: AdaptiveSelection;
-  onContinue: () => void;
-  onExit: (view: View) => void;
-}) {
-  return <BreakView {...props} />;
+function LazyOnboarding(props: { initial?: OnboardingContext | null; busy?: boolean; error?: string; onSubmit: (value: OnboardingContext) => Promise<void>; onBack: () => void }) {
+  return <OnboardingView {...props} />;
 }
 
 function LazyProcessing(props: {
@@ -272,6 +282,7 @@ function LazyProcessing(props: {
   onOpenResults: () => void;
   onRetry: () => void;
   profile?: ScoreProfile;
+  coreCount?: number;
 }) {
   return <ProcessingView {...props} />;
 }
@@ -298,6 +309,7 @@ function LazyAccount(props: {
   onOpenReport: (reportId: string) => void;
   onExport: () => void;
   onDelete: () => void;
+  onLogout: () => void;
   onDeleteAssessment: (assessmentId: string) => void;
 }) {
   return <AccountView {...props} />;
@@ -305,6 +317,10 @@ function LazyAccount(props: {
 
 function LazyMethodology(props: { onNavigate: (view: View) => void }) {
   return <MethodologyView {...props} />;
+}
+
+function LazyTeenFlow(props: { onHome: () => void }) {
+  return <TeenFlowView {...props} />;
 }
 
 function LazyAdmin(props: { profile?: ScoreProfile; onNavigate: (view: View) => void; metrics?: AdminMetrics }) {

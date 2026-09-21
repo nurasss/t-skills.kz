@@ -6,8 +6,9 @@ import type {
 import type { GeneratedAdaptiveQuestion } from "@/lib/mercury-adaptive-provider";
 import type { Item } from "@/lib/item-bank";
 import type { Core60Item } from "@/lib/v2-item-bank";
+import type { AdaptiveQuestion, OnboardingContext, PairwiseItem } from "@/lib/t-skills/contracts";
 
-export type AssessmentItem = Item | Core60Item | GeneratedAdaptiveQuestion;
+export type AssessmentItem = Item | Core60Item | PairwiseItem | GeneratedAdaptiveQuestion | AdaptiveQuestion;
 
 export type View =
   | "home"
@@ -15,8 +16,8 @@ export type View =
   | "detail"
   | "checkout"
   | "consent"
+  | "onboarding"
   | "assessment"
-  | "break"
   | "processing"
   | "results"
   | "account"
@@ -25,7 +26,8 @@ export type View =
   | "terms"
   | "faq"
   | "support"
-  | "admin";
+  | "admin"
+  | "teen";
 
 export type Phase = "core" | "adaptive";
 
@@ -47,6 +49,7 @@ type AccountAssessment = {
   locale?: "ru" | "kk" | "en";
   clientSeq: number;
   adaptiveCount: number;
+  versions: Record<string, string>;
   reportId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -77,7 +80,7 @@ export type SessionPayload = {
   next_item_id: string | null;
   core_answered: number;
   adaptive_item_ids: string[];
-  adaptive_items: GeneratedAdaptiveQuestion[];
+  adaptive_items: Array<GeneratedAdaptiveQuestion | AdaptiveQuestion>;
   adaptive_generation_status?: string;
   adaptive_fallback_used?: boolean;
   response_count: number;
@@ -92,6 +95,7 @@ export type SessionPayload = {
     decidedAt: string;
     revokedAt: string | null;
   }>;
+  onboarding?: OnboardingContext | null;
   updated_at: string;
 };
 
@@ -138,7 +142,7 @@ export type PublicCatalog = {
     translationVersion: string | null;
   };
   test: {
-    id: "orbita30";
+    id: "t-skills" | "orbita30";
     name: string;
     assessmentVersion: string;
     amountMinor: number | null;

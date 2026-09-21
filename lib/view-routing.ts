@@ -18,8 +18,8 @@ const VIEW_VALUES = new Set<View>([
   "detail",
   "checkout",
   "consent",
+  "onboarding",
   "assessment",
-  "break",
   "processing",
   "results",
   "account",
@@ -74,8 +74,7 @@ export function routeForView(view: View, context: { sessionId?: string; reportId
   if (view === "catalog") return "/tests";
   if (view === "detail") return `/tests/${TEST_DETAIL_SLUG}`;
   if (view === "checkout") return `/checkout/${CHECKOUT_SLUG}`;
-  if ((view === "consent" || view === "assessment") && context.sessionId) return `/assessment/${encodeRoutePart(context.sessionId)}`;
-  if (view === "break" && context.sessionId) return context.phase === "adaptive" ? `/assessment/${encodeRoutePart(context.sessionId)}/adaptive` : `/assessment/${encodeRoutePart(context.sessionId)}/break`;
+  if ((view === "consent" || view === "onboarding" || view === "assessment") && context.sessionId) return `/assessment/${encodeRoutePart(context.sessionId)}`;
   if (view === "processing" && context.sessionId) return `/assessment/${encodeRoutePart(context.sessionId)}/processing`;
   if (view === "results" && context.reportId) return `/results/${encodeRoutePart(context.reportId)}`;
   if (view === "account") return "/account";
@@ -85,6 +84,7 @@ export function routeForView(view: View, context: { sessionId?: string; reportId
   if (view === "faq") return "/faq";
   if (view === "support") return "/support";
   if (view === "admin") return "/admin";
+  if (view === "teen") return "/teen";
   return "/";
 }
 
@@ -108,14 +108,16 @@ export function viewStateForPath(pathname: string, state?: unknown): ViewRouteSt
   if (segments.length === 1 && segments[0] === "terms") return { view: "terms", phase: "core" };
   if (segments.length === 1 && segments[0] === "faq") return { view: "faq", phase: "core" };
   if (segments.length === 1 && segments[0] === "support") return { view: "support", phase: "core" };
+  if (segments.length === 1 && segments[0] === "teen") return { view: "teen", phase: "core" };
   if (segments.length === 2 && segments[0] === "assessment") {
     const preferredView = historyView(state);
-    const view = preferredView === "consent" || preferredView === "assessment" ? preferredView : "consent";
+    const view = preferredView === "consent" || preferredView === "onboarding" || preferredView === "assessment" ? preferredView : "consent";
     return { view, phase: historyPhase(state) ?? "core", sessionId: segments[1] };
   }
   if (segments.length === 3 && segments[0] === "assessment") {
-    if (segments[2] === "break") return { view: "break", phase: "core", sessionId: segments[1] };
-    if (segments[2] === "adaptive") return { view: "break", phase: "adaptive", sessionId: segments[1] };
+    // Исторические /break и /adaptive ведут на непрерывный экран вопросов.
+    if (segments[2] === "break") return { view: "assessment", phase: "core", sessionId: segments[1] };
+    if (segments[2] === "adaptive") return { view: "assessment", phase: "adaptive", sessionId: segments[1] };
     if (segments[2] === "processing") return { view: "processing", phase: "adaptive", sessionId: segments[1] };
     return null;
   }
@@ -144,13 +146,13 @@ const VIEW_METADATA: Record<View, ViewMetadata> = {
     title: "Перед началом · T-Skills",
     description: "Ознакомьтесь с условиями и политикой конфиденциальности перед началом оценки.",
   },
+  onboarding: {
+    title: "Короткая анкета · T-Skills",
+    description: "Короткий контекст для карьерного уточнения T-Skills.",
+  },
   assessment: {
     title: "Оценка · T-Skills",
     description: "Продолжение защищённой сессии развивающей оценки T-Skills.",
-  },
-  break: {
-    title: "Пауза · T-Skills",
-    description: "Пауза в вашей сессии T-Skills.",
   },
   processing: {
     title: "Формирование отчёта · T-Skills",
@@ -188,14 +190,13 @@ const VIEW_METADATA: Record<View, ViewMetadata> = {
     title: "Администрирование · T-Skills",
     description: "Защищённая панель операционных метрик T-Skills.",
   },
+  teen: {
+    title: "Тест для подростков · T-Skills",
+    description: "Развивающая оценка для подростков: 75 сравнений, уточнение и подбор направлений.",
+  },
 };
 
-export function metadataForView(view: View, phase: Phase = "core") {
-  if (view === "break" && phase === "adaptive") {
-    return {
-      title: "Уточняющие вопросы · T-Skills",
-      description: "Пауза перед персональными уточняющими вопросами T-Skills.",
-    };
-  }
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- фаза оставлена в сигнатуре для совместимости вызовов.
+export function metadataForView(view: View, _phase: Phase = "core") {
   return VIEW_METADATA[view];
 }
