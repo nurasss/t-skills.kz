@@ -4,10 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { readCookiePreference, saveCookiePreference, type CookiePreference } from "@/lib/client-analytics";
+import { useSiteLang } from "@/lib/site-lang";
+import { COOKIE_STRINGS } from "@/lib/site-strings";
 
 import "./cookie-banner.css";
 
 export function CookieBanner() {
+  const [lang] = useSiteLang();
+  const t = COOKIE_STRINGS[lang];
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -29,22 +33,20 @@ export function CookieBanner() {
   };
 
   return (
-    <aside className="cookie-banner" aria-label="Настройки файлов cookie">
+    <aside className="cookie-banner" aria-label={t.aria}>
       <div className="cookie-banner-copy">
-        <strong>Файлы cookie</strong>
+        <strong>{t.title}</strong>
         <p>
-          T-Skills использует необходимые cookies для входа и защиты запросов. Необязательная
-          first-party аналитика отправляет только ограниченные события после отдельного выбора;
-          сторонние рекламные трекеры не подключены.
+          {t.body}
         </p>
-        <Link href="/cookies">Подробнее о cookies</Link>
+        <Link href="/cookies">{t.more}</Link>
       </div>
       <div className="cookie-banner-actions">
         <button type="button" className="cookie-banner-secondary" onClick={() => choose("necessary")}>
-          Только необходимые
+          {t.necessary}
         </button>
         <button type="button" className="cookie-banner-primary" onClick={() => choose("analytics")}>
-          Разрешить аналитику
+          {t.allow}
         </button>
       </div>
     </aside>
@@ -52,6 +54,8 @@ export function CookieBanner() {
 }
 
 export function CookiePreferences() {
+  const [lang] = useSiteLang();
+  const t = COOKIE_STRINGS[lang];
   const [preference, setPreference] = useState<CookiePreference | null>(null);
 
   useEffect(() => {
@@ -72,22 +76,20 @@ export function CookiePreferences() {
 
   return (
     <section className="cookie-preferences" aria-labelledby="cookie-preferences-title">
-      <h2 id="cookie-preferences-title">Настройки cookies</h2>
+      <h2 id="cookie-preferences-title">{t.prefTitle}</h2>
       <p>
-        Выбор хранится только на этом устройстве. Сторонние cookies и рекламная аналитика не
-        подключены. При разрешении first-party аналитики отправляются ограниченные события
-        продукта без сырых ответов.
+        {t.prefBody}
       </p>
       <div className="cookie-preferences-actions">
         <button type="button" className="cookie-banner-secondary" onClick={() => choose("necessary")}>
-          Только необходимые
+          {t.necessary}
         </button>
         <button type="button" className="cookie-banner-primary" onClick={() => choose("analytics")}>
-          Разрешить аналитику
+          {t.allow}
         </button>
       </div>
       <p className="cookie-preferences-status" role="status">
-        {preference ? `Текущий выбор: ${preference === "necessary" ? "только необходимые" : "аналитика разрешена"}.` : "Выбор ещё не сделан."}
+        {preference ? `${t.statusPrefix}: ${preference === "necessary" ? t.statusOff : t.statusOn}.` : t.statusNone}
       </p>
     </section>
   );

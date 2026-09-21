@@ -10,6 +10,6 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function TermsPage() {
-  return <LegalDocumentPage kind="terms" />;
+export default function TermsPage({ searchParams }: { searchParams?: { lang?: string } }) {
+  return <LegalDocumentPage kind="terms" searchParams={searchParams} />;
 }

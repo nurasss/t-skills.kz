@@ -11,10 +11,10 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function CookiesPage() {
+export default function CookiesPage({ searchParams }: { searchParams?: { lang?: string } }) {
   return (
     <>
-      <LegalDocumentPage kind="cookies" />
+      <LegalDocumentPage kind="cookies" searchParams={searchParams} />
       <CookiePreferences />
     </>
   );

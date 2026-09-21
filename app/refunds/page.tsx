@@ -10,6 +10,6 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function RefundsPage() {
-  return <LegalDocumentPage kind="refunds" />;
+export default function RefundsPage({ searchParams }: { searchParams?: { lang?: string } }) {
+  return <LegalDocumentPage kind="refunds" searchParams={searchParams} />;
 }

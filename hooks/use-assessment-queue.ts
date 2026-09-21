@@ -6,9 +6,10 @@ import { apiJson, readPendingResponses, writePendingResponses } from "@/app/orbi
 import type { PendingResponse } from "@/app/orbita-view-types";
 import { removePending } from "@/lib/response-retry-queue";
 
-export function useAssessmentQueue({ onStatus }: { onStatus: (status: string) => void }) {
+export function useAssessmentQueue({ onStatus, savedText, offlineText }: { onStatus: (status: string) => void; savedText?: string; offlineText?: string }) {
   const pendingRef = useRef<PendingResponse[]>([]);
   const pendingPromisesRef = useRef(new Map<string, Promise<void>>());
+  const laneTailsRef = useRef(new Map<string, Promise<void>>());
   const serverSavedRef = useRef(new Set<string>());
 
   const sendPendingResponse = async (pending: PendingResponse) => {
@@ -26,9 +27,9 @@ export function useAssessmentQueue({ onStatus }: { onStatus: (status: string) =>
       serverSavedRef.current.add(pending.itemId);
       pendingRef.current = removePending(pendingRef.current, pending.idempotencyKey);
       writePendingResponses(pendingRef.current);
-      onStatus("ответ сохранён");
+      onStatus(savedText ?? "ответ сохранён");
     } catch (error) {
-      onStatus("ожидает соединения");
+      onStatus(offlineText ?? "ожидает соединения");
       throw error;
     }
   };
@@ -36,10 +37,18 @@ export function useAssessmentQueue({ onStatus }: { onStatus: (status: string) =>
   const persistPendingResponse = (pending: PendingResponse) => {
     const existing = pendingPromisesRef.current.get(pending.idempotencyKey);
     if (existing) return existing;
-    const request = sendPendingResponse(pending).finally(() => {
-      pendingPromisesRef.current.delete(pending.idempotencyKey);
-    });
+    // Сериализация по вопросу: передумывание A→B уходит на сервер строго по порядку.
+    const lane = `${pending.sessionId}:${pending.itemId}`;
+    const previous = laneTailsRef.current.get(lane) ?? Promise.resolve();
+    const request = previous
+      .catch(() => undefined)
+      .then(() => sendPendingResponse(pending))
+      .finally(() => {
+        pendingPromisesRef.current.delete(pending.idempotencyKey);
+        if (laneTailsRef.current.get(lane) === request) laneTailsRef.current.delete(lane);
+      });
     pendingPromisesRef.current.set(pending.idempotencyKey, request);
+    laneTailsRef.current.set(lane, request);
     return request;
   };
 

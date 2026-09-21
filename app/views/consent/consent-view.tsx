@@ -1,6 +1,8 @@
 "use client";
 
 import { ArrowRight, SectionHeading } from "@/app/views/shared/section-heading";
+import { useSiteLang, SiteLangToggle } from "@/lib/site-lang";
+import { CONSENT_STRINGS } from "@/lib/site-strings";
 
 type ConsentRow = {
   key: "terms" | "privacy" | "research" | "marketing";
@@ -19,57 +21,38 @@ export type ConsentViewProps = {
 };
 
 export function ConsentView({ consents, onConsentChange, onBegin, onBack, onPrivacy }: ConsentViewProps) {
+  const [lang, setLang] = useSiteLang();
+  const t = CONSENT_STRINGS[lang];
   const required = consents.terms && consents.privacy;
 
   const rows: ConsentRow[] = [
-    {
-      key: "terms",
-      title: "Условия использования",
-      description: "Я принимаю Terms и понимаю ограничения развивающего продукта.",
-      required: true,
-      checked: consents.terms,
-    },
-    {
-      key: "privacy",
-      title: "Обработка данных",
-      description: "Я принимаю Privacy и минимизацию response data.",
-      required: true,
-      checked: consents.privacy,
-    },
-    {
-      key: "research",
-      title: "Research opt-in",
-      description: "Разрешить использовать обезличенные данные для пилота.",
-      required: false,
-      checked: consents.research,
-    },
-    {
-      key: "marketing",
-      title: "Новости продукта",
-      description: "Получать редкие обновления о новых версиях и исследованиях.",
-      required: false,
-      checked: consents.marketing,
-    },
+    { key: "terms", title: t.terms, description: t.termsD, required: true, checked: consents.terms },
+    { key: "privacy", title: t.privacy, description: t.privacyD, required: true, checked: consents.privacy },
+    { key: "research", title: t.research, description: t.researchD, required: false, checked: consents.research },
+    { key: "marketing", title: t.marketing, description: t.marketingD, required: false, checked: consents.marketing },
   ];
 
   return (
     <div className="orbita-view ov-consent">
       <div className="ov-container">
-        <button className="ov-back-link" onClick={onBack} type="button">
-          ← Вернуться
-        </button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button className="ov-back-link" onClick={onBack} type="button">
+            {t.back}
+          </button>
+          <SiteLangToggle lang={lang} onLang={setLang} />
+        </div>
 
         <SectionHeading
-          eyebrow="Перед началом"
-          title="Сначала — правила игры."
-          body="Прочитайте, как используется оценка, и выберите отдельные согласия. Исследовательское и маркетинговое согласие не нужны для покупки."
+          eyebrow={t.eyebrow}
+          title={t.title}
+          body={t.body}
         />
 
         <div className="ov-two-col ov-consent-grid">
           <article className="ov-card ov-consent-card">
             <header className="ov-card-header">
-              <h2 className="ov-card-title">Согласия</h2>
-              <p className="ov-card-desc">Версия текста: privacy-2026-09</p>
+              <h2 className="ov-card-title">{t.cardTitle}</h2>
+              <p className="ov-card-desc">{t.version}</p>
             </header>
 
             <div className="ov-consent-list">
@@ -85,7 +68,7 @@ export function ConsentView({ consents, onConsentChange, onBegin, onBack, onPriv
                     <p>{row.description}</p>
                   </div>
                   <span className={`ov-badge ${row.required ? "ov-badge-primary" : "ov-badge-outline"}`}>
-                    {row.required ? "обязательно" : "необязательно"}
+                    {row.required ? t.required : t.optional}
                   </span>
                 </div>
               ))}
@@ -97,24 +80,23 @@ export function ConsentView({ consents, onConsentChange, onBegin, onBack, onPriv
               onClick={onBegin}
               type="button"
             >
-              Открыть первый блок
+              {t.begin}
               <ArrowRight />
             </button>
 
             {!required ? (
-              <p className="ov-note">Отметьте два обязательных согласия, чтобы продолжить.</p>
+              <p className="ov-note">{t.needBoth}</p>
             ) : null}
           </article>
 
           <aside className="ov-consent-side">
             <span className="ov-catalog-note-num">01</span>
-            <h3>Ваш профиль строится из ответов, а не из догадок.</h3>
+            <h3>{t.sideTitle}</h3>
             <p>
-              Имена, контакты и payment refs не передаются adaptive/report engine. После завершения
-              доступен запрос на экспорт или удаление.
+              {t.sideBody}
             </p>
             <button className="ov-link" onClick={onPrivacy} type="button">
-              Открыть Privacy
+              {t.openPrivacy}
               <ArrowRight size={14} />
             </button>
           </aside>

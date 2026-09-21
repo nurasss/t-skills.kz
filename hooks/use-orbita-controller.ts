@@ -15,7 +15,12 @@ import { buildAdaptiveContext, buildV2DemoResponses, scoreCore60 } from "@/lib/o
 import { ITEM_BANK, type Item } from "@/lib/item-bank";
 import { CORE60_BANK } from "@/lib/v2-item-bank";
 import { fallbackAdaptiveQuestions, type GeneratedAdaptiveQuestion } from "@/lib/mercury-adaptive-provider";
-import { enqueuePending, findPendingItem, pendingForSession } from "@/lib/response-retry-queue";
+import { T_SKILLS_PAIRWISE_BANK_V1 } from "@/lib/t-skills/content-v4";
+import { T_SKILLS_VERSION_IDS, T_SKILLS_TEST_ID } from "@/lib/t-skills/versions";
+import { useSiteLang } from "@/lib/site-lang";
+import { CTRL_STRINGS } from "@/lib/site-strings";
+import type { AdaptiveQuestion, OnboardingContext } from "@/lib/t-skills/contracts";
+import { findPendingItem, pendingForSession, replacePending } from "@/lib/response-retry-queue";
 import { metadataForView, routeForView, viewStateForPath } from "@/lib/view-routing";
 import { useAssessmentQueue } from "@/hooks/use-assessment-queue";
 
@@ -55,21 +60,24 @@ export type OrbitaController = {
   elapsedSeconds: number;
   processingStatus: "ADAPTIVE_GENERATING" | "ADAPTIVE_PROVIDER_FAILED" | "SCORING" | "REPORT_GENERATING" | "REPORT_FAILED_RETRYABLE" | "COMPLETE";
   consents: { terms: boolean; privacy: boolean; research: boolean; marketing: boolean };
+  onboarding?: OnboardingContext | null;
+  onboardingBusy: boolean;
   go: (next: View, phaseOverride?: Phase) => void;
   dismissRequestError: () => void;
   openDemo: () => void;
   startCheckout: () => Promise<void>;
   setConsent: (key: "terms" | "privacy" | "research" | "marketing", value: boolean) => void;
   beginAssessment: () => Promise<void>;
+  saveOnboarding: (value: OnboardingContext) => Promise<void>;
   saveResponse: (value: number, waitForServer?: boolean) => void | Promise<void>;
   nextQuestion: (responseOverride?: number) => Promise<void>;
-  continueFromBreak: () => void;
   retryReport: () => Promise<void>;
   downloadReport: () => Promise<void>;
   openReport: (id: string) => Promise<void>;
   startAssessmentFromAccount: () => Promise<void>;
   exportAccountData: () => Promise<void>;
   deleteAccountData: () => Promise<void>;
+  logout: () => Promise<void>;
   deleteAssessmentData: (assessmentId: string) => Promise<void>;
 };
 
@@ -88,14 +96,16 @@ export function useOrbitaController({
   const [reportId, setReportId] = useState<string | undefined>(initialReportId);
   const [responses, setResponses] = useState<ResponseMap>({});
   const [coreItems, setCoreItems] = useState<AssessmentItem[]>([...CORE60_BANK]);
-  const [adaptiveQuestionSnapshots, setAdaptiveQuestionSnapshots] = useState<GeneratedAdaptiveQuestion[]>([]);
+  const [adaptiveQuestionSnapshots, setAdaptiveQuestionSnapshots] = useState<Array<GeneratedAdaptiveQuestion | AdaptiveQuestion>>([]);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [adaptiveIndex, setAdaptiveIndex] = useState(0);
   const [selection, setSelection] = useState<AdaptiveSelection>();
   const [profile, setProfile] = useState<ScoreProfile>();
   const [report, setReport] = useState<ReportJSON>();
   const [reportProvider, setReportProvider] = useState<string>();
-  const [autosaveStatus, setAutosaveStatus] = useState("готово");
+  const [siteLang] = useSiteLang();
+  const st = CTRL_STRINGS[siteLang];
+  const [autosaveStatus, setAutosaveStatus] = useState(st.ready);
   const [requestError, setRequestError] = useState<string>();
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string>();
@@ -108,12 +118,14 @@ export function useOrbitaController({
   const questionStartedAt = useRef(0);
   const sessionIdRef = useRef(initialSessionId);
   const reportIdRef = useRef(initialReportId);
-  const { pendingRef, serverSavedRef, persistPendingResponse } = useAssessmentQueue({ onStatus: setAutosaveStatus });
+  const { pendingRef, serverSavedRef, persistPendingResponse } = useAssessmentQueue({ onStatus: setAutosaveStatus, savedText: st.saved, offlineText: st.offline });
   const webMcpStateRef = useRef({ sessionId: undefined as string | undefined, phase, view, answered: 0, coreAnswered: 0, adaptiveCount: 0, activeItemId: undefined as string | undefined });
   const webMcpActionsRef = useRef<{ start: () => Promise<void>; submit: (value: number) => Promise<void> }>({ start: async () => undefined, submit: async () => undefined });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [processingStatus, setProcessingStatus] = useState<"ADAPTIVE_GENERATING" | "ADAPTIVE_PROVIDER_FAILED" | "SCORING" | "REPORT_GENERATING" | "REPORT_FAILED_RETRYABLE" | "COMPLETE">("SCORING");
   const [consents, setConsents] = useState({ terms: false, privacy: false, research: false, marketing: false });
+  const [onboarding, setOnboarding] = useState<OnboardingContext | null>(null);
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
 
   const activateSession = (id?: string) => {
     sessionIdRef.current = id;
@@ -131,9 +143,9 @@ export function useOrbitaController({
       return;
     }
     const currentRoute = viewStateForPath(window.location.pathname, window.history.state);
-    const phaseChanged = (next === "assessment" || next === "break") && currentRoute?.phase !== phaseOverride;
+    const phaseChanged = next === "assessment" && currentRoute?.phase !== phaseOverride;
     const routeChanged = window.location.pathname !== nextPath || currentRoute?.view !== next || phaseChanged;
-    if (next === "assessment" || next === "break") setPhase(phaseOverride);
+    if (next === "assessment") setPhase(phaseOverride);
     if (routeChanged) {
       const currentHistoryState = window.history.state;
       const nextHistoryState = currentHistoryState && typeof currentHistoryState === "object"
@@ -160,7 +172,8 @@ export function useOrbitaController({
     const pendingResponses = Object.fromEntries(pending.map((item) => [item.itemId, item.response])) as ResponseMap;
     serverSavedRef.current = new Set(Object.keys(payload.responses));
     setResponses({ ...payload.responses, ...pendingResponses });
-    setCoreItems(payload.versions.assessment === "orbita30_ru_v2" ? [...CORE60_BANK] : [...LEGACY_CORE_ITEMS]);
+    setOnboarding(payload.onboarding ?? null);
+    setCoreItems(payload.versions.assessment === T_SKILLS_VERSION_IDS.assessment ? [...T_SKILLS_PAIRWISE_BANK_V1] : payload.versions.assessment === "orbita30_ru_v2" ? [...CORE60_BANK] : [...LEGACY_CORE_ITEMS]);
     setAdaptiveQuestionSnapshots(payload.adaptive_items ?? []);
     if (payload.consents?.length) {
       setConsents((current) => payload.consents!.reduce((next, consent) => ({ ...next, [consent.consentType]: consent.granted }), current));
@@ -183,10 +196,10 @@ export function useOrbitaController({
     else if (payload.state === "REPORT_GENERATING") setProcessingStatus("REPORT_GENERATING");
     else if (payload.state === "REPORT_FAILED_RETRYABLE") setProcessingStatus("REPORT_FAILED_RETRYABLE");
     else if (payload.state === "COMPLETE") setProcessingStatus("COMPLETE");
-    const currentCoreItems = payload.versions.assessment === "orbita30_ru_v2" ? CORE60_BANK : LEGACY_CORE_ITEMS;
+    const currentCoreItems = payload.versions.assessment === T_SKILLS_VERSION_IDS.assessment ? T_SKILLS_PAIRWISE_BANK_V1 : payload.versions.assessment === "orbita30_ru_v2" ? CORE60_BANK : LEGACY_CORE_ITEMS;
     const coreIndex = currentCoreItems.findIndex((item) => typeof payload.responses[item.id] !== "number");
     setQuestionIndex(coreIndex >= 0 ? coreIndex : currentCoreItems.length - 1);
-    const adaptiveIndexFromServer = (payload.adaptive_items ?? []).findIndex((item) => typeof payload.responses[item.questionId] !== "number");
+    const adaptiveIndexFromServer = (payload.adaptive_items ?? []).findIndex((item) => typeof payload.responses[itemKey(item)] !== "number");
     setAdaptiveIndex(adaptiveIndexFromServer >= 0 ? adaptiveIndexFromServer : 0);
     trackOptionalAnalytics({ name: "resume", assessment_id: payload.id, metadata: { status: payload.state, count: Object.keys(payload.responses).length } });
   };
@@ -210,23 +223,30 @@ export function useOrbitaController({
         setProcessingStatus("REPORT_GENERATING");
       }
     } catch (error) {
-      setRequestError(error instanceof ApiClientError ? error.message : "Не удалось загрузить отчёт.");
+      setRequestError(error instanceof ApiClientError ? error.message : st.errReport);
     }
   };
 
-  const loadSessionData = async (id: string, requestedView: View = initialView) => {
+  const loadSessionData = async (id: string, requestedView: View = initialView): Promise<View | undefined> => {
     try {
       const payload = await apiJson<SessionPayload>(`/api/assessments/${encodeURIComponent(id)}`);
       hydrateSession(payload);
       if (payload.report_id) void loadReportData(payload.report_id, initialView === "results");
-      if (payload.state === "PAID" || payload.state === "ENTITLED") setView("consent");
-      else if (payload.state === "CONSENTED" || payload.state === "CORE_IN_PROGRESS") setView(requestedView === "break" ? "break" : "assessment");
-      else if (["ADAPTIVE_GENERATING", "ADAPTIVE_PROVIDER_FAILED"].includes(payload.state)) setView("processing");
-      else if (["ADAPTIVE_IN_PROGRESS", "ADAPTIVE_FALLBACK"].includes(payload.state)) setView(requestedView === "processing" ? "processing" : "break");
-      else if (payload.state === "REPORT_GENERATING" || payload.state === "REPORT_FAILED_RETRYABLE") setView("processing");
-      else if (payload.state === "COMPLETE") setView(requestedView === "results" ? "results" : "processing");
+      let nextView: View | undefined;
+      if (payload.state === "PAID" || payload.state === "ENTITLED") nextView = "consent";
+      else if (payload.state === "CONSENTED" || payload.state === "CORE_IN_PROGRESS") {
+        const needsOnboarding = payload.versions.assessment === T_SKILLS_VERSION_IDS.assessment && !payload.onboarding;
+        nextView = needsOnboarding ? "onboarding" : "assessment";
+      }
+      else if (["ADAPTIVE_GENERATING", "ADAPTIVE_PROVIDER_FAILED"].includes(payload.state)) nextView = "processing";
+      else if (["ADAPTIVE_IN_PROGRESS", "ADAPTIVE_FALLBACK"].includes(payload.state)) nextView = requestedView === "processing" ? "processing" : "assessment";
+      else if (payload.state === "REPORT_GENERATING" || payload.state === "REPORT_FAILED_RETRYABLE") nextView = "processing";
+      else if (payload.state === "COMPLETE") nextView = requestedView === "results" ? "results" : "processing";
+      if (nextView) setView(nextView);
+      return nextView;
     } catch (error) {
-      setRequestError(error instanceof ApiClientError ? error.message : "Не удалось загрузить сессию.");
+      setRequestError(error instanceof ApiClientError ? error.message : st.errSession);
+      return undefined;
     }
   };
 
@@ -272,18 +292,20 @@ export function useOrbitaController({
 
   const finishCore = async () => {
     if (!sessionIdRef.current) return;
-    setAutosaveStatus("считаем основной сигнал…");
+    setAutosaveStatus(st.scoring);
     try {
-      const result = await apiJson<{ state: string; preliminary_score: ScoreProfile; adaptive: AdaptiveSelection; adaptive_items?: GeneratedAdaptiveQuestion[] }>(`/api/assessments/${encodeURIComponent(sessionIdRef.current)}/complete-core`, { method: "POST" });
+      const result = await apiJson<{ state: string; preliminary_score: ScoreProfile; adaptive: AdaptiveSelection; adaptive_items?: Array<GeneratedAdaptiveQuestion | AdaptiveQuestion> }>(`/api/assessments/${encodeURIComponent(sessionIdRef.current)}/complete-core`, { method: "POST" });
       setProfile(result.preliminary_score);
       setSelection(result.adaptive);
       setAdaptiveQuestionSnapshots(result.adaptive_items ?? []);
       setPhase("adaptive");
+      setAdaptiveIndex(0);
       setRequestError(undefined);
-      go("break", "adaptive");
+      // Без экрана перерыва: сразу к уточняющим вопросам.
+      go("assessment", "adaptive");
       trackOptionalAnalytics({ name: "adaptive_selected", assessment_id: sessionIdRef.current, metadata: { count: result.adaptive.selectedItemIds.length } });
     } catch (error) {
-      setRequestError(error instanceof ApiClientError ? error.message : "Не удалось завершить основной блок.");
+      setRequestError(error instanceof ApiClientError ? error.message : st.errBlock);
     }
   };
 
@@ -302,18 +324,19 @@ export function useOrbitaController({
       trackOptionalAnalytics({ name: "report_viewed", assessment_id: sessionIdRef.current });
     } catch (error) {
       setProcessingStatus("REPORT_FAILED_RETRYABLE");
-      setRequestError(error instanceof ApiClientError ? error.message : "Не удалось сформировать отчёт.");
+      setRequestError(error instanceof ApiClientError ? error.message : st.errReportGen);
     }
   };
 
   const saveResponse = (value: number, waitForServer = false) => {
     if (!activeItem || !sessionIdRef.current || demoMode) return;
     const activeItemId = itemKey(activeItem);
-    if (serverSavedRef.current.has(activeItemId)) return;
-    const alreadyPending = findPendingItem(pendingRef.current, sessionIdRef.current, activeItemId);
-    if (alreadyPending) {
-      setAutosaveStatus("сохраняем первый выбор…");
-      if (waitForServer) return persistPendingResponse(alreadyPending);
+    // Передумывание до «Продолжить»: новое значение заменяет предыдущее
+    // (сервер разрешает правку внутри своей фазы).
+    if (responses[activeItemId] === value) {
+      const existing = findPendingItem(pendingRef.current, sessionIdRef.current, activeItemId);
+      if (existing) setAutosaveStatus(st.saving);
+      if (waitForServer && existing) return persistPendingResponse(existing);
       return;
     }
     const responseTimeMs = Math.max(0, Date.now() - questionStartedAt.current);
@@ -326,10 +349,10 @@ export function useOrbitaController({
       idempotencyKey: `${sessionIdRef.current}:${activeItemId}:${crypto.randomUUID()}`,
       queuedAt: Date.now(),
     };
-    pendingRef.current = enqueuePending(pendingRef.current, pending);
+    pendingRef.current = replacePending(pendingRef.current, pending);
     writePendingResponses(pendingRef.current);
     setResponses((current) => ({ ...current, [activeItemId]: value }));
-    setAutosaveStatus("сохраняем…");
+    setAutosaveStatus(st.saving);
     const request = persistPendingResponse(pending);
     if (waitForServer) return request;
     void request.catch(() => undefined);
@@ -337,7 +360,7 @@ export function useOrbitaController({
 
   const beginAssessment = async () => {
     if (!sessionIdRef.current) {
-      setRequestError("Сначала создайте оплаченный доступ в личном кабинете.");
+      setRequestError(st.errAccess);
       return;
     }
     if (!(consents.terms && consents.privacy)) return;
@@ -346,16 +369,52 @@ export function useOrbitaController({
         method: "PATCH",
         body: JSON.stringify({ consented: true, consents }),
       });
+      if (isTSkillsSessionVersion()) {
+        setRequestError(undefined);
+        go("onboarding");
+        trackOptionalAnalytics({ name: "assessment_started", assessment_id: sessionIdRef.current });
+        return;
+      }
       setPhase("core");
       setQuestionIndex(firstUnansweredCore >= 0 ? firstUnansweredCore : 0);
       setAdaptiveIndex(0);
       setRequestError(undefined);
-      questionStartedAt.current = Date.now();
       setElapsedSeconds(0);
       go("assessment");
       trackOptionalAnalytics({ name: "assessment_started", assessment_id: sessionIdRef.current });
     } catch (error) {
-      setRequestError(error instanceof ApiClientError ? error.message : "Не удалось сохранить согласия.");
+      setRequestError(error instanceof ApiClientError ? error.message : st.errConsents);
+    }
+  };
+
+  const isTSkillsSessionVersion = () => {
+    const current = coreItems[0];
+    return Boolean(current && "leftTraitId" in current && current.version === T_SKILLS_VERSION_IDS.itemBank);
+  };
+
+  const saveOnboarding = async (value: OnboardingContext) => {
+    if (!sessionIdRef.current) return;
+    setOnboardingBusy(true);
+    setRequestError(undefined);
+    try {
+      const result = await apiJson<{ onboarding: OnboardingContext }>(`/api/assessments/${encodeURIComponent(sessionIdRef.current)}/onboarding`, {
+        method: "PUT",
+        body: JSON.stringify({
+          age: value.age,
+          education_level: value.educationLevel,
+          favorite_subjects: value.favoriteSubjects,
+        }),
+      });
+      setOnboarding(result.onboarding);
+      setPhase("core");
+      setQuestionIndex(firstUnansweredCore >= 0 ? firstUnansweredCore : 0);
+      setAdaptiveIndex(0);
+      setElapsedSeconds(0);
+      go("assessment", "core");
+    } catch (error) {
+      setRequestError(error instanceof ApiClientError ? error.message : st.errOnboarding);
+    } finally {
+      setOnboardingBusy(false);
     }
   };
 
@@ -368,7 +427,7 @@ export function useOrbitaController({
       try {
         await persistPendingResponse(pending);
       } catch (error) {
-        setRequestError(error instanceof ApiClientError ? error.message : "Ответ ещё не подтверждён сервером.");
+        setRequestError(error instanceof ApiClientError ? error.message : st.errUnconfirmed);
         return;
       }
     }
@@ -381,12 +440,10 @@ export function useOrbitaController({
         questionStartedAt.current = Date.now();
         setElapsedSeconds(0);
         setQuestionIndex(nextIndex);
-        const legacyBlock = coreItems.length > 60 && nextIndex % 50 === 0;
-        const v2Pause = coreItems.length === 60 && (nextIndex === 20 || nextIndex === 40);
-        if (legacyBlock || v2Pause) {
-          const block = coreItems.length === 60 ? nextIndex / 20 : nextIndex / 50;
+        // Без промежуточных пауз: непрерывный поток вопросов.
+        const block = coreItems.length === 60 ? nextIndex / 20 : coreItems.length === 67 ? nextIndex / 20 : nextIndex / 50;
+        if (Number.isInteger(block)) {
           trackOptionalAnalytics({ name: "block_completed", assessment_id: sessionIdRef.current, metadata: { block } });
-          go("break");
         }
       }
     } else {
@@ -406,7 +463,7 @@ export function useOrbitaController({
       return;
     }
     if (!publicCatalog?.test.availableForCheckout) {
-      setCheckoutError("Оплата пока недоступна: цена или Stripe ещё не настроены.");
+      setCheckoutError(st.errCheckoutOff);
       return;
     }
     setCheckoutBusy(true);
@@ -416,13 +473,13 @@ export function useOrbitaController({
       const result = await apiJson<{ checkout_url: string }>('/api/checkout', {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ test_id: "orbita30" }),
+        body: JSON.stringify({ test_id: T_SKILLS_TEST_ID }),
       });
       if (!result.checkout_url) throw new ApiClientError("CHECKOUT_URL_MISSING", "Платёжная ссылка не была создана.");
       trackOptionalAnalytics({ name: "checkout_redirected" });
       window.location.assign(result.checkout_url);
     } catch (error) {
-      setCheckoutError(error instanceof ApiClientError ? error.message : "Не удалось открыть оплату.");
+      setCheckoutError(error instanceof ApiClientError ? error.message : st.errCheckout);
     } finally {
       setCheckoutBusy(false);
     }
@@ -431,10 +488,10 @@ export function useOrbitaController({
   const exportAccountData = async () => {
     try {
       const result = await apiJson<{ downloadPath: string }>("/api/account/export", { method: "POST" });
-      setAccountActionStatus("экспорт готов");
+      setAccountActionStatus(st.exportReady);
       topLevelNavigate(result.downloadPath);
     } catch (error) {
-      setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось подготовить экспорт.");
+      setAccountActionStatus(error instanceof ApiClientError ? error.message : st.errExport);
     }
   };
 
@@ -445,39 +502,52 @@ export function useOrbitaController({
       await apiJson("/api/auth/logout", { method: "POST" }).catch(() => undefined);
       topLevelNavigate("/");
     } catch (error) {
-      setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось удалить аккаунт.");
+      setAccountActionStatus(error instanceof ApiClientError ? error.message : st.errDelAcc);
     }
+  };
+
+  const logout = async () => {
+    setAccountActionStatus(st.loggingOut);
+    try {
+      await apiJson("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Сессия уже недействительна — всё равно уходим на главную.
+    }
+    topLevelNavigate("/");
   };
 
   const deleteAssessmentData = async (assessmentId: string) => {
     if (!window.confirm("Удалить эту оценку, ответы и PDF? Это действие нельзя отменить.")) return;
     try {
       await apiJson(`/api/assessments/${encodeURIComponent(assessmentId)}`, { method: "DELETE", body: JSON.stringify({ confirm: "DELETE_ASSESSMENT" }) });
-      setAccountActionStatus("оценка удалена");
+      setAccountActionStatus(st.assessDeleted);
       const refreshed = await apiJson<AccountOverview>("/api/account");
       setAccountOverview(refreshed);
     } catch (error) {
-      setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось удалить оценку.");
+      setAccountActionStatus(error instanceof ApiClientError ? error.message : st.errDelAssess);
     }
   };
   const startAssessmentFromAccount = async () => {
-    setAccountActionStatus("создаём сессию…");
+    setAccountActionStatus(st.creatingSession);
+    setRequestError(undefined);
     try {
-      const result = await apiJson<{ id: string }>("/api/assessments", { method: "POST", body: JSON.stringify({ test_id: "orbita30" }) });
+      const result = await apiJson<{ id: string }>("/api/assessments", { method: "POST", body: JSON.stringify({ test_id: T_SKILLS_TEST_ID }) });
       activateSession(result.id);
       setDemoMode(false);
       setProfile(undefined);
       setReport(undefined);
       setSelection(undefined);
-      setCoreItems([...CORE60_BANK]);
+      setCoreItems([...T_SKILLS_PAIRWISE_BANK_V1]);
       setAdaptiveQuestionSnapshots([]);
       setResponses({});
       serverSavedRef.current = new Set();
-      await loadSessionData(result.id);
-      go("consent");
-      setAccountActionStatus("сессия готова");
+      const nextView = await loadSessionData(result.id);
+      if (nextView) go(nextView, nextView === "assessment" ? phaseRef.current : undefined);
+      setAccountActionStatus(st.sessionReady);
     } catch (error) {
-      setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось создать сессию.");
+      const message = error instanceof ApiClientError ? error.message : "Не удалось создать сессию.";
+      setAccountActionStatus(message);
+      setRequestError(message);
     }
   };
 
@@ -561,17 +631,6 @@ export function useOrbitaController({
     setConsents((current) => ({ ...current, [key]: value }));
   };
 
-  const continueFromBreak = () => {
-    if (phase === "core") {
-      setQuestionIndex(firstUnansweredCore >= 0 ? firstUnansweredCore : 0);
-      go("assessment");
-    } else {
-      const nextAdaptive = adaptiveItems.findIndex((item) => typeof responses[itemKey(item)] !== "number");
-      setAdaptiveIndex(nextAdaptive >= 0 ? nextAdaptive : 0);
-      go("assessment");
-    }
-  };
-
   useEffect(() => {
     webMcpStateRef.current = {
       sessionId: sessionIdRef.current,
@@ -625,7 +684,7 @@ export function useOrbitaController({
   useEffect(() => {
     if (view !== "catalog" || demoMode) return;
     trackOptionalAnalytics({ name: "catalog_viewed" });
-    trackOptionalAnalytics({ name: "test_view", metadata: { test_id: "orbita30" } });
+    trackOptionalAnalytics({ name: "test_view", metadata: { test_id: T_SKILLS_TEST_ID } });
   }, [view, demoMode]);
 
   useEffect(() => {
@@ -639,6 +698,7 @@ export function useOrbitaController({
 
   useEffect(() => {
     if (view !== "account") return;
+    const errAccount = st.errAccount;
     let cancelled = false;
     let timer: number | undefined;
     const load = async () => {
@@ -647,7 +707,7 @@ export function useOrbitaController({
         const payload = await apiJson<AccountOverview>("/api/account");
         if (!cancelled) setAccountOverview(payload);
       } catch (error) {
-        if (!cancelled) setAccountActionStatus(error instanceof ApiClientError ? error.message : "Не удалось загрузить кабинет.");
+        if (!cancelled) setAccountActionStatus(error instanceof ApiClientError ? error.message : errAccount);
       } finally {
         if (!cancelled) setAccountLoading(false);
       }
@@ -658,7 +718,7 @@ export function useOrbitaController({
       cancelled = true;
       if (timer) window.clearInterval(timer);
     };
-  }, [view]);
+  }, [view, st.errAccount]);
 
   useEffect(() => {
     if (view !== "admin") return;
@@ -771,21 +831,24 @@ export function useOrbitaController({
     elapsedSeconds,
     processingStatus,
     consents,
+    onboarding,
+    onboardingBusy,
     go,
     dismissRequestError: () => setRequestError(undefined),
     openDemo,
     startCheckout,
     setConsent,
     beginAssessment,
+    saveOnboarding,
     saveResponse,
     nextQuestion,
-    continueFromBreak,
     retryReport: retryProcessing,
     downloadReport,
     openReport,
     startAssessmentFromAccount,
     exportAccountData,
     deleteAccountData,
+    logout,
     deleteAssessmentData,
   };
 }

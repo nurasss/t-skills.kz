@@ -7,6 +7,7 @@ import { checkAuthRateLimit } from "@/lib/auth-rate-limit";
 import { EmailDeliveryError, sendTransactionalEmail } from "@/lib/email";
 import { parseJsonBody, verificationRequestSchema } from "@/lib/request-validation";
 import { buildAuthActionUrl } from "@/lib/auth-links";
+import { EMAIL_STRINGS, resolveEmailLocale } from "@/lib/site-strings";
 
 const GENERIC_MESSAGE = "Если аккаунт с таким адресом существует и ещё не подтверждён, мы отправили новое письмо.";
 
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
   const parsed = await parseJsonBody(request, verificationRequestSchema);
   if (!parsed.ok) return parsed.response;
   const { email } = parsed.data;
+  const em = EMAIL_STRINGS[resolveEmailLocale((parsed.data as { locale?: unknown }).locale)];
   const rate = await checkAuthRateLimit(request, "verification-request", 5, 15 * 60 * 1000, email);
   if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
@@ -29,9 +31,9 @@ export async function POST(request: Request) {
       try {
         await sendTransactionalEmail({
           to: email,
-          subject: "Подтвердите e-mail для T-Skills",
-          text: "Подтвердите адрес электронной почты, чтобы войти в T-Skills. Ссылка действует 24 часа.",
-          actionLabel: "Подтвердить e-mail",
+          subject: em.verifySubject,
+          text: em.verifyText,
+          actionLabel: em.verifyAction,
           actionUrl: buildAuthActionUrl(trustedAppBaseUrl(request), "verify", token),
         });
       } catch (error) {

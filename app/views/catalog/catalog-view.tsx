@@ -3,54 +3,62 @@
 import { ArrowRight } from "@/app/views/shared/section-heading";
 import { SectionHeading } from "@/app/views/shared/section-heading";
 import type { View } from "@/app/orbita-view-types";
+import { useSiteLang, SiteLangToggle } from "@/lib/site-lang";
+import { CATALOG_STRINGS } from "@/lib/site-strings";
 
 export type CatalogViewProps = {
   onNavigate: (view: View) => void;
 };
 
 export function CatalogView({ onNavigate }: CatalogViewProps) {
+  const [lang, setLang] = useSiteLang();
+  const t = CATALOG_STRINGS[lang];
   return (
     <div className="orbita-view ov-catalog">
       <div className="ov-container wide">
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <SiteLangToggle lang={lang} onLang={setLang} />
+        </div>
         <SectionHeading
-          eyebrow="КАТАЛОГ"
-          title="Один тест. Рабочая карта."
-          body="Выберите оценку, которая может стать поводом заметить устойчивые способы действовать — в работе и повседневных ситуациях."
+          eyebrow={t.eyebrow}
+          title={t.title}
+          body={t.body}
+          level={1}
         />
 
         <div className="ov-catalog-grid">
           <article className="ov-catalog-card ov-catalog-featured">
             <header className="ov-catalog-card-head">
               <div className="ov-catalog-tags">
-                <span className="ov-badge ov-badge-primary">Основной тест</span>
-                <span className="ov-badge ov-badge-outline">orbita30_ru_v2</span>
+                <span className="ov-badge ov-badge-primary">{t.mainTest}</span>
+                <span className="ov-badge ov-badge-outline">t-skills_pairwise_v1</span>
               </div>
               <h3>T-Skills</h3>
-              <p>Профиль ваших сильных сторон</p>
+              <p>{t.profile}</p>
             </header>
 
             <div className="ov-catalog-visual">
               <CatalogMarkGraphic />
               <div className="ov-catalog-stats">
                 <div>
-                  <strong>30</strong>
-                  <span>шкал<br />в профиле</span>
+                  <strong>25</strong>
+                  <span dangerouslySetInnerHTML={{ __html: t.statTraits }} />
                 </div>
                 <div>
-                  <strong>6</strong>
-                  <span>доменов<br />действия</span>
+                  <strong>67 + 8</strong>
+                  <span dangerouslySetInnerHTML={{ __html: t.statQuestions }} />
                 </div>
               </div>
             </div>
 
             <ul className="ov-catalog-meta">
-              <li><CatalogIcon name="time" /> 35–50 минут с паузами</li>
-              <li><CatalogIcon name="doc" /> интерактивный отчёт + PDF</li>
-              <li><CatalogIcon name="shield" /> развивающий формат</li>
+              <li><CatalogIcon name="time" /> {t.time}</li>
+              <li><CatalogIcon name="doc" /> {t.report}</li>
+              <li><CatalogIcon name="shield" /> {t.format}</li>
             </ul>
 
             <button className="ov-btn ov-btn-primary ov-btn-block" onClick={() => onNavigate("detail")} type="button">
-              Открыть тест
+              {t.open}
               <ArrowRight />
             </button>
           </article>
@@ -58,25 +66,23 @@ export function CatalogView({ onNavigate }: CatalogViewProps) {
           <aside className="ov-catalog-notes">
             <article className="ov-catalog-note ov-reveal">
               <span className="ov-catalog-note-num">01</span>
-              <h4>Сейчас доступна одна версия</h4>
+              <h4>{t.note1t}</h4>
               <p>
-                Она помечена как draft for pilot. Психометрическая валидация и нормы публикуются
-                отдельными версиями.
+                {t.note1b}
               </p>
             </article>
             <article className="ov-catalog-note ov-reveal">
               <span className="ov-catalog-note-num">02</span>
-              <h4>Цена фиксируется в заказе</h4>
+              <h4>{t.note2t}</h4>
               <p>
-                Изменение цены теста не изменит уже созданный order или entitlement.
+                {t.note2b}
               </p>
             </article>
             <article className="ov-catalog-note ov-reveal">
               <span className="ov-catalog-note-num">03</span>
-              <h4>Доступ — одноразовый</h4>
+              <h4>{t.note3t}</h4>
               <p>
-                Каждый entitlement привязан к одному assessment, к одной версии и к одному
-                пользователю.
+                {t.note3b}
               </p>
             </article>
           </aside>
@@ -108,13 +114,13 @@ function CatalogMarkGraphic() {
     <svg viewBox="0 0 200 200" width="180" height="180" aria-hidden="true">
       <defs>
         <radialGradient id="catalogGradient" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#FCFBF8" />
-          <stop offset="100%" stopColor="#F1EEE6" />
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#f6f6f6" />
         </radialGradient>
       </defs>
-      <circle cx="100" cy="100" r="92" fill="url(#catalogGradient)" stroke="rgba(23,26,24,0.12)" />
+      <circle cx="100" cy="100" r="92" fill="url(#catalogGradient)" stroke="rgba(17,17,17,0.12)" />
       {[68, 88].map((r, i) => (
-        <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="rgba(23,26,24,0.12)" strokeDasharray={i === 0 ? "3 4" : "none"} />
+        <circle key={r} cx="100" cy="100" r={r} fill="none" stroke="rgba(17,17,17,0.12)" strokeDasharray={i === 0 ? "3 4" : "none"} />
       ))}
       {[
         { angle: 0, color: "#8FA888", label: "T01" },
@@ -130,8 +136,8 @@ function CatalogMarkGraphic() {
         const y = 100 + r * Math.sin(rad);
         return <circle key={label} cx={x} cy={y} r="10" fill={color} opacity="0.85" />;
       })}
-      <circle cx="100" cy="100" r="22" fill="#FCFBF8" stroke="rgba(23,26,24,0.18)" />
-      <text x="100" y="104" textAnchor="middle" fontFamily="serif" fontSize="11" fill="#171A18">
+      <circle cx="100" cy="100" r="22" fill="#ffffff" stroke="rgba(17,17,17,0.18)" />
+      <text x="100" y="104" textAnchor="middle" fontFamily="serif" fontSize="11" fill="#111111">
         T-Skills
       </text>
     </svg>

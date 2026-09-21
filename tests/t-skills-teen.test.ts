@@ -294,3 +294,33 @@ test("onboarding validation speaks kk when asked", async () => {
   assert.equal(validateTeenOnboarding({ valueRanking: defaultTeenValueRanking(), subjects: ["math"] }, "kk"), "2–3 сүйікті пән таңда.");
   assert.equal(validateTeenOnboarding({ valueRanking: defaultTeenValueRanking(), subjects: ["math", "physics"] }, "kk"), null);
 });
+
+test("adult kk overlay localizes display texts without touching ids", async () => {
+  const { localizeAssessmentItem, legacyTraitKk } = await import("@/lib/adult-kk");
+  const { T_SKILLS_PAIRWISE_BANK_V1 } = await import("@/lib/t-skills/content-v4");
+  const first = T_SKILLS_PAIRWISE_BANK_V1[0];
+  const ru = localizeAssessmentItem(first, "ru");
+  assert.equal(ru.leftText, first.leftText);
+  const kk = localizeAssessmentItem(first, "kk") as typeof first;
+  assert.equal(kk.id, first.id);
+  assert.equal(kk.leftTraitId, first.leftTraitId);
+  assert.notEqual(kk.leftText, first.leftText);
+  assert.ok(kk.leftText.length > 0);
+  const fb = localizeAssessmentItem(
+    { questionId: "FB-01", format: "forced_choice", options: [{ id: "A", text: "x" }, { id: "B", text: "y" }] } as never,
+    "kk",
+  ) as { prompt: string; options: { text: string }[] };
+  assert.ok(fb.prompt.length > 0 && fb.prompt !== "В этой рабочей ситуации что вам обычно ближе?");
+  assert.notEqual(fb.options[0].text, "x");
+  const t01 = legacyTraitKk("T01");
+  assert.ok(t01 && t01.name.length > 0 && t01.definition.length > 0);
+  assert.equal(legacyTraitKk("T99"), null);
+});
+
+test("approved library speaks kk when asked", async () => {
+  const { getApprovedTraitInterpretation } = await import("@/lib/interpretation-library");
+  const ru = getApprovedTraitInterpretation("T01");
+  const kk = getApprovedTraitInterpretation("T01", "kk");
+  assert.notEqual(kk.contribution, ru.contribution);
+  assert.ok(kk.overuseRisk.length > 0);
+});

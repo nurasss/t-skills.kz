@@ -10,6 +10,6 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function PrivacyPage() {
-  return <LegalDocumentPage kind="privacy" />;
+export default function PrivacyPage({ searchParams }: { searchParams?: { lang?: string } }) {
+  return <LegalDocumentPage kind="privacy" searchParams={searchParams} />;
 }

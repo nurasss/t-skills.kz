@@ -2,30 +2,10 @@
 
 import { ArrowRight, SectionHeading } from "@/app/views/shared/section-heading";
 import type { View } from "@/app/orbita-view-types";
-import { TRAITS } from "@/lib/item-bank";
-
-const SCORING_FORMULA: Array<[string, string, string]> = [
-  ["Primary evidence", "1 Likert / trait", "базовое измерение"],
-  ["Discrimination", "30 forced-choice", "по два cross-trait сигнала"],
-  ["Adaptive", "bounded correction", "только refinement и снижение uncertainty"],
-];
-
-const QUALITY_LIST: Array<[string, string]> = [
-  ["Attention check", "В v2 используются только проверки, совместимые с Core60 scoring."],
-  ["Too fast", "Исследовательский threshold до пилотной калибровки."],
-  ["Straight-lining", "Модальная частота одинаковых Likert ответов, а не только первый ответ."],
-  ["Contradiction", "Дополнительный приоритет адаптивным уточнениям."],
-  ["Legacy v1 markers", "Q243/Q246/Q249/Q250 сохранены только для исторических v1 snapshots и не входят в v2 trait score."],
-];
-
-const VALIDATION_LIST = [
-  "Экспертный review и cognitive interviews",
-  "Pilot ≈500+ и item analysis",
-  "EFA/CFA и reliability / SE",
-  "Measurement invariance и DIF",
-  "Нормы 1500–3000+ и cross-validation",
-  "Visual regression PDF и accessibility e2e",
-];
+import { useSiteLang, SiteLangToggle } from "@/lib/site-lang";
+import { METHOD_STRINGS } from "@/lib/site-strings";
+import { T_SKILLS_WORKING_TAXONOMY } from "@/lib/t-skills/content-v4";
+import { T_SKILLS_ADAPTIVE_MAX_QUESTIONS, T_SKILLS_STATIC_ITEM_COUNT, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 
 const DOMAIN_COLORS = ["sage", "blue", "amber", "coral", "rose", "lavender"];
 
@@ -34,25 +14,32 @@ export type MethodologyViewProps = {
 };
 
 export function MethodologyView({ onNavigate }: MethodologyViewProps) {
+  const [lang, setLang] = useSiteLang();
+  const t = METHOD_STRINGS[lang];
+  const traits = lang === "kk" ? t.traits : T_SKILLS_WORKING_TAXONOMY.map((trait) => [trait.name, trait.shortDescription] as [string, string]);
   return (
     <div className="orbita-view ov-method">
       <div className="ov-container wide">
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <SiteLangToggle lang={lang} onLang={setLang} />
+        </div>
         <SectionHeading
-          eyebrow="Methodology"
-          title="Прозрачно — значит проверяемо."
-          body="T-Skills отделяет конструкт, raw responses, scoring, adaptive selection и report layer. Эта версия предназначена для пилота, а не для доказанных межличностных норм."
+          eyebrow={t.eyebrow}
+          title={t.title}
+          body={t.body}
+          level={1}
         />
 
         <div className="ov-method-layout">
           <aside className="ov-method-index">
-            <span className="ov-eyebrow">Содержание</span>
+            <span className="ov-eyebrow">{t.toc}</span>
             <nav>
-              <a href="#model">Модель</a>
-              <a href="#scoring">Scoring</a>
-              <a href="#adaptive">Adaptive</a>
-              <a href="#quality">Quality</a>
-              <a href="#validation">Валидация</a>
-              <a href="#limits">Ограничения</a>
+              <a href="#model">{t.tocModel}</a>
+              <a href="#scoring">{t.tocScoring}</a>
+              <a href="#adaptive">{t.tocAdaptive}</a>
+              <a href="#quality">{t.tocQuality}</a>
+              <a href="#validation">{t.tocValid}</a>
+              <a href="#limits">{t.tocLimits}</a>
             </nav>
           </aside>
 
@@ -60,18 +47,19 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
             <section className="ov-method-block" id="model">
               <header className="ov-method-block-head">
                 <span className="ov-method-num">01</span>
-                <h2>Модель конструкта</h2>
+                <h2>{t.b1t}</h2>
               </header>
               <p>
-                Шесть доменов, по пять оригинальных шкал в каждом. Шкалы описывают предпочтительный
-                способ действия; низкое значение не является дефектом.
+                {lang === "kk"
+                  ? `Жаңартылатын таксономия ${T_SKILLS_WORKING_TAXONOMY.length} қасиет, нұсқа ${T_SKILLS_VERSION_IDS.traitTaxonomy}. ${t.b1b}`
+                  : `Живая таксономия ${T_SKILLS_WORKING_TAXONOMY.length} качеств версии ${T_SKILLS_VERSION_IDS.traitTaxonomy}. ${t.b1b}`}
               </p>
               <div className="ov-method-traits">
-                {TRAITS.map((trait, index) => (
-                  <article className="ov-method-trait" key={trait.code}>
-                    <span className={`ov-method-trait-code ov-tag-${DOMAIN_COLORS[Math.floor(index / 5)]}`}>{trait.code}</span>
-                    <strong>{trait.name}</strong>
-                    <p>{trait.definition}</p>
+                {traits.map((trait, index) => (
+                  <article className="ov-method-trait" key={trait[0]}>
+                    <span className={`ov-method-trait-code ov-tag-${DOMAIN_COLORS[Math.floor(index / 5)]}`}>{String(index + 1).padStart(2, "0")}</span>
+                    <strong>{trait[0]}</strong>
+                    <p>{trait[1]}</p>
                   </article>
                 ))}
               </div>
@@ -80,14 +68,13 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
             <section className="ov-method-block" id="scoring">
               <header className="ov-method-block-head">
                 <span className="ov-method-num">02</span>
-                <h2>Детерминированный scoring</h2>
+                <h2>{t.b2t}</h2>
               </header>
               <p>
-                Одинаковый набор raw responses при одинаковых версиях даёт одинаковый score JSON.
-                Mercury не имеет права менять баллы, веса, ранги или Top 5.
+                {t.b2b}
               </p>
               <div className="ov-method-formula">
-                {SCORING_FORMULA.map(([label, value, hint]) => (
+                {t.formula.map(([label, value, hint]) => (
                   <div key={label}>
                     <span>{label}</span>
                     <strong>{value}</strong>
@@ -96,47 +83,44 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
                 ))}
               </div>
               <div className="ov-method-versions">
-                <span className="ov-badge ov-badge-outline">assessment orbita30_ru_v2</span>
-                <span className="ov-badge ov-badge-outline">items core60-v1</span>
-                <span className="ov-badge ov-badge-outline">scoring mvp-0.5-core60</span>
-                <span className="ov-badge ov-badge-outline">norm unvalidated-v2</span>
+                <span className="ov-badge ov-badge-outline">assessment {T_SKILLS_VERSION_IDS.assessment}</span>
+                <span className="ov-badge ov-badge-outline">items {T_SKILLS_VERSION_IDS.itemBank}</span>
+                <span className="ov-badge ov-badge-outline">scoring {T_SKILLS_VERSION_IDS.scoring}</span>
+                <span className="ov-badge ov-badge-outline">norm {T_SKILLS_VERSION_IDS.norms}</span>
               </div>
               <p className="ov-method-warning">
-                Статус normStatus: unvalidated. Пилотный индекс профиля не является долей людей и не
-                используется для межличностного сравнения.
+                {t.normWarn}
               </p>
             </section>
 
             <section className="ov-method-block" id="adaptive">
               <header className="ov-method-block-head">
                 <span className="ov-method-num">03</span>
-                <h2>Mercury 2.5 adaptive</h2>
+                <h2>{t.b3t}</h2>
               </header>
               <p>
-                После Core60 backend отправляет Mercury только обезличенный AdaptiveContext. Mercury
-                создаёт новые вопросы, а server-side validator проверяет traits, reason codes, формат,
-                safety, дубли и лимит 10–15. При timeout работает approved fallback bank.
+                {t.b3pre} {T_SKILLS_ADAPTIVE_MAX_QUESTIONS} {t.b3b}
               </p>
               <div className="ov-method-adaptive">
                 <div>
-                  <span>Core</span>
-                  <strong>60</strong>
-                  <small>30 primary · 30 discrimination</small>
+                  <span>{t.adStatic}</span>
+                  <strong>{T_SKILLS_STATIC_ITEM_COUNT}</strong>
+                  <small>{t.adStaticV}</small>
                 </div>
                 <div>
-                  <span>Цель</span>
-                  <strong>10–15</strong>
-                  <small>по uncertainty</small>
+                  <span>{t.adGoal}</span>
+                  <strong>до {T_SKILLS_ADAPTIVE_MAX_QUESTIONS}</strong>
+                  <small>{t.adGoalV(T_SKILLS_ADAPTIVE_MAX_QUESTIONS)}</small>
                 </div>
                 <div>
-                  <span>Quota</span>
-                  <strong>≤ 3</strong>
-                  <small>на trait</small>
+                  <span>{t.adFormat}</span>
+                  <strong>A–D</strong>
+                  <small>{t.adFormatV}</small>
                 </div>
                 <div>
-                  <span>Provider</span>
-                  <strong>Mercury 2.5</strong>
-                  <small>server-only / validated</small>
+                  <span>{t.adScoring}</span>
+                  <strong>frozen</strong>
+                  <small>{t.adScoringV}</small>
                 </div>
               </div>
             </section>
@@ -144,14 +128,13 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
             <section className="ov-method-block" id="quality">
               <header className="ov-method-block-head">
                 <span className="ov-method-num">04</span>
-                <h2>Response quality</h2>
+                <h2>{t.b4t}</h2>
               </header>
               <p>
-                Флаги качества не обнуляют результат. Они формируют RQI и при необходимости
-                предупреждение для внутренней аналитики и отчёта.
+                {t.b4b}
               </p>
               <div className="ov-method-quality">
-                {QUALITY_LIST.map(([title, body]) => (
+                {t.quality.map(([title, body]) => (
                   <div key={title}>
                     <MethodCheck />
                     <div>
@@ -166,10 +149,10 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
             <section className="ov-method-block" id="validation">
               <header className="ov-method-block-head">
                 <span className="ov-method-num">05</span>
-                <h2>Что должно быть проверено до launch</h2>
+                <h2>{t.b5t}</h2>
               </header>
               <div className="ov-method-validation">
-                {VALIDATION_LIST.map((item, index) => (
+                {t.validation.map((item, index) => (
                   <article key={item}>
                     <span>{String(index + 1).padStart(2, "0")}</span>
                     <p>{item}</p>
@@ -181,17 +164,13 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
             <section className="ov-method-block ov-method-limits" id="limits">
               <header className="ov-method-block-head">
                 <span className="ov-method-num">06</span>
-                <h2>Ограничения</h2>
+                <h2>{t.b6t}</h2>
               </header>
               <p>
-                Это не лицензированная реализация CliftonStrengths®, StrengthsFinder® или другого
-                продукта Gallup. T-Skills использует собственную модель, названия, вопросы,
-                scoring и визуальный язык. Вся v2 версия — pilot / unvalidated, не clinical и не
-                hiring decision tool; перед production нужен независимый review и юридическое
-                подтверждение.
+                {t.b6b}
               </p>
               <button className="ov-link" onClick={() => onNavigate("privacy")} type="button">
-                Privacy &amp; data rights
+                {t.privacyLink}
                 <ArrowRight size={14} />
               </button>
             </section>

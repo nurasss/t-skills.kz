@@ -2,6 +2,8 @@
 
 import { ArrowRight } from "@/app/views/shared/section-heading";
 import type { ScoreProfile } from "@/lib/assessment-engine";
+import { useSiteLang } from "@/lib/site-lang";
+import { PROC_STRINGS } from "@/lib/site-strings";
 
 type ProcessingStatus =
   | "ADAPTIVE_GENERATING"
@@ -11,33 +13,40 @@ type ProcessingStatus =
   | "REPORT_FAILED_RETRYABLE"
   | "COMPLETE";
 
-const STAGES: Array<[string, string]> = [
-  ["CORE_COMPLETE", "60 основных ответов зафиксированы"],
-  ["ADAPTIVE_GENERATING", "Готовим персональные уточнения"],
-  ["ADAPTIVE_PROVIDER_FAILED", "Провайдер временно недоступен — доступен повтор"],
-  ["SCORING", "Детерминированный score engine"],
-  ["REPORT_GENERATING", "Структурированный отчёт"],
-  ["COMPLETE", "Результат готов"],
-];
+
 
 export type ProcessingViewProps = {
   status: ProcessingStatus;
   onOpenResults: () => void;
   onRetry: () => void;
   profile?: ScoreProfile;
+  coreCount?: number;
 };
 
-export function ProcessingView({ status, onOpenResults, onRetry, profile }: ProcessingViewProps) {
+export function ProcessingView({ status, onOpenResults, onRetry, profile, coreCount = 60 }: ProcessingViewProps) {
+  const [lang] = useSiteLang();
+  const t = PROC_STRINGS[lang];
+  const base: Array<[string, string]> = [
+    ["CORE_COMPLETE", t.coreDone(coreCount)],
+    ["ADAPTIVE_GENERATING", t.gen],
+    ["SCORING", t.scoring],
+    ["REPORT_GENERATING", t.report],
+    ["COMPLETE", t.complete],
+  ];
+  // Строка сбоя показывается только пока она актуальна, а не как пройденный этап.
+  const stages = status === "ADAPTIVE_PROVIDER_FAILED"
+    ? [base[0], base[1], ["ADAPTIVE_PROVIDER_FAILED", t.failed], base[2], base[3], base[4]]
+    : base;
   const activeIndex =
     status === "ADAPTIVE_GENERATING"
       ? 1
       : status === "ADAPTIVE_PROVIDER_FAILED"
         ? 2
         : status === "SCORING"
-          ? 3
+          ? stages.indexOf(base[2])
           : status === "REPORT_GENERATING"
-            ? 4
-            : 5;
+            ? stages.indexOf(base[3])
+            : stages.indexOf(base[4]);
 
   return (
     <div className="orbita-view ov-processing">
@@ -53,14 +62,13 @@ export function ProcessingView({ status, onOpenResults, onRetry, profile }: Proc
               <span className="ov-status-dot" />
               Job status · {status}
             </span>
-            <h1>Собираем вашу карту.</h1>
+            <h1>{t.title}</h1>
             <p>
-              Баллы считает versioned engine. Report layer получает уже рассчитанные данные и не
-              может изменить числа.
+              {t.body}
             </p>
 
             <ol className="ov-processing-timeline">
-              {STAGES.map(([name, body], index) => (
+              {stages.map(([name, body], index) => (
                 <li className={index <= activeIndex ? "done" : ""} key={name}>
                   <span className="ov-processing-marker">
                     {index < activeIndex ? <ProcCheck /> : index === activeIndex ? <span className="ov-processing-spinner" /> : null}
@@ -75,19 +83,19 @@ export function ProcessingView({ status, onOpenResults, onRetry, profile }: Proc
 
             {status === "COMPLETE" ? (
               <button className="ov-btn ov-btn-primary" onClick={onOpenResults} type="button">
-                Открыть результат
+                {t.open}
                 <ArrowRight />
               </button>
             ) : status === "REPORT_FAILED_RETRYABLE" ? (
               <button className="ov-btn ov-btn-primary" onClick={onRetry} type="button">
-                Повторить генерацию отчёта
+                {t.retryReport}
               </button>
             ) : status === "ADAPTIVE_PROVIDER_FAILED" ? (
               <button className="ov-btn ov-btn-primary" onClick={onRetry} type="button">
-                Повторить adaptive generation
+                {t.retryAdaptive}
               </button>
             ) : (
-              <span className="ov-processing-wait">Статус обновляется автоматически</span>
+              <span className="ov-processing-wait">{t.waiting}</span>
             )}
 
             {profile ? (
@@ -115,12 +123,12 @@ function BreakMarkAnimated() {
     <svg viewBox="0 0 220 220" width="200" height="200" aria-hidden="true">
       <defs>
         <radialGradient id="procGrad" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#FCFBF8" />
-          <stop offset="100%" stopColor="#F1EEE6" />
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#f6f6f6" />
         </radialGradient>
       </defs>
-      <circle cx="110" cy="110" r="100" fill="url(#procGrad)" stroke="rgba(23,26,24,0.12)" />
-      <circle className="ov-processing-ring" cx="110" cy="110" r="78" fill="none" stroke="rgba(23,26,24,0.20)" strokeDasharray="3 6" />
+      <circle cx="110" cy="110" r="100" fill="url(#procGrad)" stroke="rgba(17,17,17,0.12)" />
+      <circle className="ov-processing-ring" cx="110" cy="110" r="78" fill="none" stroke="rgba(17,17,17,0.20)" strokeDasharray="3 6" />
       {[
         { angle: 0, color: "#8FA888" },
         { angle: 60, color: "#7C93A8" },
@@ -135,8 +143,8 @@ function BreakMarkAnimated() {
         const y = 110 + r * Math.sin(rad);
         return <circle key={angle} cx={x} cy={y} r="9" fill={color} opacity="0.85" />;
       })}
-      <circle cx="110" cy="110" r="22" fill="#FCFBF8" stroke="rgba(23,26,24,0.18)" />
-      <text x="110" y="114" textAnchor="middle" fontFamily="serif" fontSize="11" fill="#171A18">
+      <circle cx="110" cy="110" r="22" fill="#ffffff" stroke="rgba(17,17,17,0.18)" />
+      <text x="110" y="114" textAnchor="middle" fontFamily="serif" fontSize="11" fill="#111111">
         T-Skills
       </text>
     </svg>

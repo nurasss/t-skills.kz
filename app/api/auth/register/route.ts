@@ -8,6 +8,7 @@ import { EmailDeliveryError, sendTransactionalEmail } from "@/lib/email";
 import { hashPassword, validatePassword } from "@/lib/password";
 import { authRegisterSchema, parseJsonBody } from "@/lib/request-validation";
 import { PRIVACY_DOCUMENT_VERSION, TERMS_DOCUMENT_VERSION } from "@/lib/legal-documents";
+import { EMAIL_STRINGS, resolveEmailLocale } from "@/lib/site-strings";
 import { buildAuthActionUrl } from "@/lib/auth-links";
 
 export async function POST(request: Request) {
@@ -64,11 +65,12 @@ export async function POST(request: Request) {
     const verifyUrl = buildAuthActionUrl(trustedAppBaseUrl(request), "verify", token);
     let delivery = { delivered: false };
     try {
+      const em = EMAIL_STRINGS[resolveEmailLocale((parsed.data as { locale?: unknown }).locale)];
       delivery = await sendTransactionalEmail({
         to: email,
-        subject: "Подтвердите e-mail для T-Skills",
-        text: "Подтвердите адрес электронной почты, чтобы войти в T-Skills. Ссылка действует 24 часа.",
-        actionLabel: "Подтвердить e-mail",
+        subject: em.verifySubject,
+        text: em.verifyText,
+        actionLabel: em.verifyAction,
         actionUrl: verifyUrl,
       });
     } catch (error) {

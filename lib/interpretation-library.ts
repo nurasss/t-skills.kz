@@ -1,4 +1,5 @@
 import { TRAITS, type TraitCode } from "@/lib/item-bank";
+import { legacyTraitKk } from "@/lib/adult-kk";
 
 /**
  * Versioned, reviewed semantic source for the report layer.
@@ -71,18 +72,36 @@ const APPROVED_COMBINATIONS: Record<string, ApprovedCombinationInterpretation> =
   }),
 );
 
-export function getApprovedTraitInterpretation(code: TraitCode) {
-  return APPROVED_TRAIT_INTERPRETATIONS[code];
+export function getApprovedTraitInterpretation(code: TraitCode, locale: "ru" | "kk" = "ru") {
+  if (locale !== "kk") return APPROVED_TRAIT_INTERPRETATIONS[code];
+  const kk = legacyTraitKk(code);
+  if (!kk) return APPROVED_TRAIT_INTERPRETATIONS[code];
+  return {
+    contribution: `${kk.definition} қолдау көрсетуі мүмкін`,
+    manifestations: [
+      `Нақты мәнмәтінде әрекет қажет болғанда «${kk.name}» сүйену жиірек болуы мүмкін.`,
+      "Режим өз әрекет тәсіліне кеңістік және нәтиже бойынша кері байланыс бар жерде елеулірек.",
+    ],
+    bestConditions: [
+      "түсінікті мақсат және қозғалу тәсілін таңдау құқығы",
+      "жеке баға емес, бақыланерлік нәтиже бойынша кері байланыс",
+    ],
+    overuseRisk: kk.overuseRisk,
+    developmentActions: [
+      `Маңызды шешім алдында «${kk.name}» тапсырмаға қалай көмектесетінін және қайда баяулатуы мүмкін екенін атау.`,
+      "Әріптестен жалпы баға емес, бақыланерлік мінезді сипаттауды сұрау.",
+    ],
+  } satisfies ApprovedTraitInterpretation;
 }
 
 export function getApprovedCombination(left: TraitCode, right: TraitCode) {
   return APPROVED_COMBINATIONS[[left, right].sort().join("+")] ?? null;
 }
 
-export function approvedLibraryPayload(codes: TraitCode[]) {
+export function approvedLibraryPayload(codes: TraitCode[], locale: "ru" | "kk" = "ru") {
   return {
     version: INTERPRETATION_LIBRARY_VERSION,
-    traits: codes.map((code) => ({ code, ...getApprovedTraitInterpretation(code) })),
+    traits: codes.map((code) => ({ code, ...getApprovedTraitInterpretation(code, locale) })),
     combinations: codes.flatMap((left, index) => codes.slice(index + 1).map((right) => getApprovedCombination(left, right)).filter(Boolean)),
     unsupportedCombinationPolicy: "Do not infer a trait property; describe only the observable context and invite user reflection.",
   };

@@ -44,6 +44,7 @@ export const authRegisterSchema = z.object({
   privacy_consent: z.boolean().refine((value) => value, "Подтвердите ознакомление с политикой конфиденциальности."),
   invite_token: z.string().trim().max(256).optional(),
   return_to: z.string().trim().max(512).optional(),
+  locale: z.enum(["ru", "kk"]).optional(),
 }).strict().superRefine((value, context) => {
   if (value.password !== value.password_confirmation) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["password_confirmation"], message: "Пароли не совпадают." });
@@ -58,10 +59,12 @@ export const authLoginSchema = z.object({
 
 export const passwordResetRequestSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
+  locale: z.enum(["ru", "kk"]).optional(),
 }).strict();
 
 export const verificationRequestSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
+  locale: z.enum(["ru", "kk"]).optional(),
 }).strict();
 
 export const emailVerificationSchema = z.object({
@@ -80,6 +83,7 @@ export const passwordResetSchema = z.object({
 
 export const adminInviteSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
+  locale: z.enum(["ru", "kk"]).optional(),
 }).strict();
 
 export const assessmentCreateSchema = z.object({
@@ -95,6 +99,20 @@ export const assessmentConsentSchema = z.object({
     research: z.boolean(),
     marketing: z.boolean(),
   }).strict().optional(),
+}).strict();
+
+const onboardingList = z.array(z.string().trim().min(1).max(160)).max(20);
+
+export const assessmentOnboardingSchema = z.object({
+  age: z.number().int().min(10).max(100),
+  education_level: z.string().trim().min(1).max(160),
+  favorite_subjects: onboardingList.min(1),
+  interests: onboardingList.optional(),
+  hobbies: onboardingList.optional(),
+  preferred_activities: onboardingList.optional(),
+  country: z.string().trim().min(1).max(160).optional(),
+  language: z.string().trim().min(1).max(160).optional(),
+  planned_education_path: z.string().trim().min(1).max(160).optional(),
 }).strict();
 
 export const assessmentDeleteSchema = z.object({ confirm: z.literal("DELETE_ASSESSMENT") }).strict();

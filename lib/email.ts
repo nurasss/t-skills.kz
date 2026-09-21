@@ -46,9 +46,19 @@ export async function sendTransactionalEmail(input: {
       throw new EmailDeliveryError("Transactional email action URL has an invalid origin.");
     }
   }
-  const apiKey = env.RESEND_API_KEY?.trim();
   const from = env.EMAIL_FROM?.trim();
-  if (!apiKey || !from) {
+  if (!from) {
+    if ((env.ORBITA_ENV ?? "").toLowerCase() === "development") return { delivered: false };
+    throw new EmailDeliveryError("Transactional email is not configured.");
+  }
+  const provider = (env.EMAIL_PROVIDER ?? "resend").trim().toLowerCase();
+  const textBody = `${input.text}\n\n${input.actionLabel}: ${actionUrl.toString()}`;
+  const htmlBody = `<p>${escapeHtml(input.text).replaceAll("\n", "<br />")}</p><p><a href="${escapeHtml(actionUrl.toString())}">${escapeHtml(input.actionLabel)}</a></p>`;
+  if (provider === "smtp") {
+    return sendViaSmtp({ from, replyTo: env.EMAIL_REPLY_TO?.trim() || undefined, ...input, textBody, htmlBody });
+  }
+  const apiKey = env.RESEND_API_KEY?.trim();
+  if (!apiKey) {
     if ((env.ORBITA_ENV ?? "").toLowerCase() === "development") return { delivered: false };
     throw new EmailDeliveryError("Transactional email is not configured.");
   }
@@ -69,8 +79,8 @@ export async function sendTransactionalEmail(input: {
         to: [input.to],
         reply_to: env.EMAIL_REPLY_TO?.trim() || undefined,
         subject: input.subject,
-        text: `${input.text}\n\n${input.actionLabel}: ${actionUrl.toString()}`,
-        html: `<p>${escapeHtml(input.text).replaceAll("\n", "<br />")}</p><p><a href="${escapeHtml(actionUrl.toString())}">${escapeHtml(input.actionLabel)}</a></p>`,
+        text: textBody,
+        html: htmlBody,
       }),
     });
   } catch {
@@ -81,6 +91,44 @@ export async function sendTransactionalEmail(input: {
   if (!response.ok) {
     await response.text().catch(() => undefined);
     throw new EmailDeliveryError();
+  }
+  return { delivered: true };
+}
+
+async function sendViaSmtp(input: {
+  from: string;
+  replyTo?: string;
+  to: string;
+  subject: string;
+  textBody: string;
+  htmlBody: string;
+}) {
+  const env = getRuntimeEnv();
+  const { default: nodemailer } = await import("nodemailer");
+  const transporter = nodemailer.createTransport({
+    host: env.SMTP_HOST?.trim() || "127.0.0.1",
+    port: Number(env.SMTP_PORT ?? 25),
+    secure: false,
+    // Локальный relay (loopback/docker-bridge) со snakeoil-сертификатом:
+    // шифрование оппортунистическое, проверку имени отключаем только здесь.
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+  });
+  try {
+    await transporter.sendMail({
+      from: input.from,
+      to: input.to,
+      replyTo: input.replyTo,
+      subject: input.subject,
+      text: input.textBody,
+      html: input.htmlBody,
+    });
+  } catch {
+    throw new EmailDeliveryError();
+  } finally {
+    transporter.close();
   }
   return { delivered: true };
 }

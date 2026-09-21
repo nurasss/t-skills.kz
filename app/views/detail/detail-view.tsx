@@ -4,22 +4,10 @@ import { useEffect, useRef } from "react";
 import { ArrowRight } from "@/app/views/shared/section-heading";
 import { SectionHeading } from "@/app/views/shared/section-heading";
 import type { View } from "@/app/orbita-view-types";
+import { useSiteLang, SiteLangToggle } from "@/lib/site-lang";
+import { DETAIL_STRINGS } from "@/lib/site-strings";
 
-const FEATURES: Array<[string, string, string]> = [
-  ["01", "6 доменов", "Осмысление, создание, исполнение, влияние, связи и самоуправление."],
-  ["02", "60 + 10–15", "Единый baseline и адаптивное уточнение зон неопределённости."],
-  ["03", "Top 5 и профиль 30", "Сначала наиболее выраженные шкалы текущего профиля, затем полный контекст и диапазоны."],
-  ["04", "Отчёт на языке фактов", "Без диагнозов и карьерных предсказаний; числа берутся из score JSON."],
-];
-
-const DOMAINS: Array<[string, string, string, string]> = [
-  ["D1", "Осмысление и анализ", "Как человек понимает сложность, данные и закономерности.", "sage"],
-  ["D2", "Создание и адаптация", "Как человек генерирует варианты и действует в неопределённости.", "blue"],
-  ["D3", "Исполнение и качество", "Как человек превращает намерения в устойчивый результат.", "amber"],
-  ["D4", "Влияние и движение", "Как человек инициирует, убеждает и мобилизует других.", "coral"],
-  ["D5", "Связи и сотрудничество", "Как человек понимает людей и строит продуктивные отношения.", "rose"],
-  ["D6", "Самоуправление и устойчивость", "Как человек регулирует себя и держит внутренний курс.", "lavender"],
-];
+const DOMAIN_COLORS = ["sage", "blue", "amber", "coral", "rose", "lavender"];
 
 export type DetailViewProps = {
   onNavigate: (view: View) => void;
@@ -27,28 +15,32 @@ export type DetailViewProps = {
 };
 
 export function DetailView({ onNavigate, onDemo }: DetailViewProps) {
+  const [lang, setLang] = useSiteLang();
+  const t = DETAIL_STRINGS[lang];
   return (
     <div className="orbita-view ov-detail">
       <div className="ov-container wide">
-        <button className="ov-back-link" onClick={() => onNavigate("catalog")} type="button">
-          ← Каталог тестов
-        </button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button className="ov-back-link" onClick={() => onNavigate("catalog")} type="button">
+            {t.back}
+          </button>
+          <SiteLangToggle lang={lang} onLang={setLang} />
+        </div>
 
         <header className="ov-detail-hero">
           <div className="ov-detail-hero-copy">
-            <span className="ov-eyebrow">Тест сильных сторон</span>
-            <h1>Тест T-Skills</h1>
+            <span className="ov-eyebrow">{t.eyebrow}</span>
+            <h1>{t.h1}</h1>
             <p>
-              Профиль предпочтительного способа действовать: как вы понимаете сложность, создаёте
-              варианты, доводите работу, влияете и восстанавливаетесь.
+              {t.lead}
             </p>
             <div className="ov-detail-actions">
               <button className="ov-btn ov-btn-primary" onClick={() => onNavigate("checkout")} type="button">
-                Перейти к оформлению
+                {t.checkout}
                 <ArrowRight />
               </button>
               <button className="ov-btn ov-btn-secondary" onClick={onDemo} type="button">
-                Посмотреть результат на демо-данных
+                {t.demo}
               </button>
             </div>
           </div>
@@ -60,9 +52,9 @@ export function DetailView({ onNavigate, onDemo }: DetailViewProps) {
         <div className="ov-two-col ov-detail-body">
           <section className="ov-detail-main">
             <div className="ov-detail-section">
-              <SectionHeading eyebrow="Что внутри" title="Структура оценки" />
+              <SectionHeading eyebrow={t.featE} title={t.featT} />
               <div className="ov-detail-features">
-                {FEATURES.map(([num, title, body]) => (
+                {t.features.map(([num, title, body]) => (
                   <article className="ov-detail-feature ov-reveal" key={num}>
                     <span className="ov-detail-feature-num">{num}</span>
                     <h3>{title}</h3>
@@ -73,11 +65,11 @@ export function DetailView({ onNavigate, onDemo }: DetailViewProps) {
             </div>
 
             <div className="ov-detail-section">
-              <SectionHeading eyebrow="Домены" title="Шесть зон действия" />
+              <SectionHeading eyebrow={t.domE} title={t.domT} />
               <div className="ov-detail-domains">
-                {DOMAINS.map(([code, name, body, color]) => (
+                {t.domains.map(([code, name, body], i) => (
                   <article className="ov-detail-domain ov-reveal" key={code}>
-                    <span className={`ov-detail-domain-code ov-tag-${color}`}>{code}</span>
+                    <span className={`ov-detail-domain-code ov-tag-${DOMAIN_COLORS[i % DOMAIN_COLORS.length]}`}>{code}</span>
                     <div>
                       <h3>{name}</h3>
                       <p>{body}</p>
@@ -90,28 +82,25 @@ export function DetailView({ onNavigate, onDemo }: DetailViewProps) {
 
           <aside className="ov-detail-aside">
             <article className="ov-card ov-detail-card">
-              <span className="ov-eyebrow">Для кого</span>
-              <h3 className="ov-card-title">Для себя, команды и следующего разговора.</h3>
+              <span className="ov-eyebrow">{t.forWhom}</span>
+              <h3 className="ov-card-title">{t.forWhomT}</h3>
               <p className="ov-card-desc">
-                Результат можно использовать как материал для развития — не как автоматическое
-                решение о человеке.
+                {t.forWhomB}
               </p>
               <hr className="ov-divider" />
-              <span className="ov-eyebrow">Формат</span>
+              <span className="ov-eyebrow">{t.format}</span>
               <ul className="ov-list ov-detail-checklist">
-                <li><DetailCheck /> один вопрос на экран</li>
-                <li><DetailCheck /> пауза между блоками</li>
-                <li><DetailCheck /> autosave и resume</li>
-                <li><DetailCheck /> RU сейчас, KZ/EN позже</li>
+                {t.checks.map((check) => (
+                  <li key={check}><DetailCheck /> {check}</li>
+                ))}
               </ul>
             </article>
 
             <article className="ov-card ov-detail-card">
-              <span className="ov-eyebrow">Что вы получите</span>
-              <h3 className="ov-card-title">Карта, а не ярлык.</h3>
+              <span className="ov-eyebrow">{t.getE}</span>
+              <h3 className="ov-card-title">{t.getT}</h3>
               <p className="ov-card-desc">
-                Top 5, полный профиль из 30 шкал, 6 доменных агрегатов, условия работы и план
-                развития на 30 дней. PDF сохраняет frozen score JSON.
+                {t.getB}
               </p>
             </article>
           </aside>
@@ -141,7 +130,7 @@ function DetailMarkGraphic() {
     const cy = size / 2;
     const innerR = 24;
     const outerR = 92;
-    const n = 30;
+    const n = 25;
     const anglePer = (Math.PI * 2) / n;
     const startOffset = -Math.PI / 2;
     const ns = "http://www.w3.org/2000/svg";
@@ -172,17 +161,17 @@ function DetailMarkGraphic() {
     centerCircle.setAttribute("cx", String(cx));
     centerCircle.setAttribute("cy", String(cy));
     centerCircle.setAttribute("r", String(innerR - 4));
-    centerCircle.setAttribute("fill", "#FCFBF8");
-    centerCircle.setAttribute("stroke", "rgba(23,26,24,0.18)");
+    centerCircle.setAttribute("fill", "#ffffff");
+    centerCircle.setAttribute("stroke", "rgba(17,17,17,0.18)");
     frag.appendChild(centerCircle);
 
     const label = document.createElementNS(ns, "text");
     label.setAttribute("x", String(cx));
     label.setAttribute("y", String(cy + 4));
     label.setAttribute("text-anchor", "middle");
-    label.setAttribute("font-family", "'Instrument Serif', serif");
+    label.setAttribute("font-family", "'Newsreader', Georgia, serif");
     label.setAttribute("font-size", "11");
-    label.setAttribute("fill", "#171A18");
+    label.setAttribute("fill", "#111111");
     label.textContent = "T-Skills";
     frag.appendChild(label);
 
@@ -191,7 +180,7 @@ function DetailMarkGraphic() {
 
   return (
     <svg ref={ref} viewBox="0 0 220 220" width="240" height="240" aria-hidden="true">
-      <circle cx="110" cy="110" r="106" fill="#FCFBF8" stroke="rgba(23,26,24,0.12)" />
+      <circle cx="110" cy="110" r="106" fill="#ffffff" stroke="rgba(17,17,17,0.12)" />
     </svg>
   );
 }

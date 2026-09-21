@@ -2,6 +2,8 @@
 
 import { ArrowRight, SectionHeading } from "@/app/views/shared/section-heading";
 import type { PublicCatalog, View } from "@/app/orbita-view-types";
+import { useSiteLang, SiteLangToggle } from "@/lib/site-lang";
+import { CHECKOUT_STRINGS } from "@/lib/site-strings";
 
 export type CheckoutViewProps = {
   onNavigate: (view: View) => void;
@@ -12,28 +14,31 @@ export type CheckoutViewProps = {
 };
 
 export function CheckoutView({ onNavigate, onCheckout, busy, error, catalog }: CheckoutViewProps) {
+  const [lang, setLang] = useSiteLang();
+  const t = CHECKOUT_STRINGS[lang];
   const test = catalog?.test;
   const displayedPrice =
     test?.amountMinor !== null && test?.amountMinor !== undefined
-      ? new Intl.NumberFormat("ru-RU", { style: "currency", currency: test.currency }).format(test.amountMinor / 100)
-      : "Цена ещё не настроена";
+      ? new Intl.NumberFormat(lang === "kk" ? "kk-KZ" : "ru-RU", { style: "currency", currency: test.currency }).format(test.amountMinor / 100)
+      : t.noPrice;
   const checkoutAvailable = Boolean(test?.availableForCheckout);
   const betaFree = test?.accessMode === "beta-free";
 
   return (
     <div className="orbita-view ov-checkout">
       <div className="ov-container">
-        <button className="ov-back-link" onClick={() => onNavigate("detail")} type="button">
-          ← T-Skills
-        </button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button className="ov-back-link" onClick={() => onNavigate("detail")} type="button">
+            {t.back}
+          </button>
+          <SiteLangToggle lang={lang} onLang={setLang} />
+        </div>
 
         <SectionHeading
-          eyebrow={betaFree ? "Закрытая beta" : "Checkout"}
-          title={betaFree ? "Бесплатное пилотное тестирование" : "Оформление теста"}
+          eyebrow={betaFree ? t.eBeta : t.ePay}
+          title={betaFree ? t.tBeta : t.tPay}
           body={
-            betaFree
-              ? "Доступ предоставляется участникам закрытой beta без оплаты. Результаты не являются нормативной или диагностической оценкой."
-              : "После подтверждения оплаты создаётся одноразовый доступ к конкретной версии оценки."
+            betaFree ? t.bBeta : t.bPay
           }
         />
 
@@ -45,14 +50,14 @@ export function CheckoutView({ onNavigate, onCheckout, busy, error, catalog }: C
             </header>
 
             <ul className="ov-checkout-lines">
-              <li><span>Оценка</span><strong>1 доступ</strong></li>
-              <li><span>Результат</span><strong>Dashboard + PDF</strong></li>
-              <li><span>{betaFree ? "Режим" : "Тип оплаты"}</span><strong>{betaFree ? "пилотная версия" : "один раз"}</strong></li>
+              <li><span>{t.lAssess}</span><strong>{t.vAccess}</strong></li>
+              <li><span>{t.lResult}</span><strong>{t.vResult}</strong></li>
+              <li><span>{betaFree ? t.lMode : t.lPayType}</span><strong>{betaFree ? t.vPilot : t.vOnce}</strong></li>
             </ul>
 
             <div className="ov-checkout-total">
-              <span>{betaFree ? "Стоимость участия" : `К оплате · ${test?.currency ?? "—"}`}</span>
-              <strong>{betaFree ? "Бесплатно" : displayedPrice}</strong>
+              <span>{betaFree ? t.tCost : t.tToPay(test?.currency ?? "—")}</span>
+              <strong>{betaFree ? t.vFree : displayedPrice}</strong>
             </div>
 
             <button
@@ -61,30 +66,22 @@ export function CheckoutView({ onNavigate, onCheckout, busy, error, catalog }: C
               onClick={onCheckout}
               type="button"
             >
-              {busy
-                ? "Создаём доступ…"
-                : betaFree
-                  ? "Начать закрытое тестирование"
-                  : checkoutAvailable
-                    ? "Перейти к защищённой оплате"
-                    : "Оплата пока недоступна"}
+              {busy ? t.btnBusy : betaFree ? t.btnBeta : checkoutAvailable ? t.btnPay : t.btnOff}
               <ArrowRight />
             </button>
 
             {!catalog ? (
-              <p className="ov-note">Проверяем доступ…</p>
+              <p className="ov-note">{t.checking}</p>
             ) : !betaFree && !checkoutAvailable ? (
               <p className="ov-note">
-                Оплата станет доступна после настройки цены и Stripe в production.
+                {t.paySoon}
               </p>
             ) : null}
 
             {error ? <p className="ov-note ov-note-error">{error}</p> : null}
 
             <p className="ov-checkout-micro">
-              <CheckoutLockIcon /> {betaFree
-                ? "Доступ только по приглашению. Платёжные данные не требуются."
-                : "Hosted checkout: карточные данные не проходят через backend T-Skills."}
+              <CheckoutLockIcon /> {betaFree ? t.microBeta : t.microPay}
             </p>
           </article>
 
@@ -92,28 +89,22 @@ export function CheckoutView({ onNavigate, onCheckout, busy, error, catalog }: C
             <article className="ov-checkout-guardrail">
               <CheckoutIconShield />
               <div>
-                <strong>{betaFree ? "Закрытый доступ" : "Подтверждённый webhook"}</strong>
-                <p>{betaFree
-                  ? "Войти могут только приглашённые участники."
-                  : "Entitlement создаётся только после signed provider event."}</p>
+                <strong>{betaFree ? t.g1tBeta : t.g1tPay}</strong>
+                <p>{betaFree ? t.g1bBeta : t.g1bPay}</p>
               </div>
             </article>
             <article className="ov-checkout-guardrail">
               <CheckoutIconRefresh />
               <div>
-                <strong>{betaFree ? "Beta entitlement" : "Идемпотентная оплата"}</strong>
-                <p>{betaFree
-                  ? "Бесплатный grant хранится отдельно и не считается оплатой."
-                  : "Повтор одного события не создаёт второй доступ."}</p>
+                <strong>{betaFree ? t.g2tBeta : t.g2tPay}</strong>
+                <p>{betaFree ? t.g2bBeta : t.g2bPay}</p>
               </div>
             </article>
             <article className="ov-checkout-guardrail">
               <CheckoutIconDoc />
               <div>
-                <strong>{betaFree ? "Пилотные ограничения" : "Order snapshot"}</strong>
-                <p>{betaFree
-                  ? "Профиль экспериментальный, unvalidated и не содержит percentiles."
-                  : "Версия теста, цена и валюта сохраняются вместе с заказом."}</p>
+                <strong>{betaFree ? t.g3tBeta : t.g3tPay}</strong>
+                <p>{betaFree ? t.g3bBeta : t.g3bPay}</p>
               </div>
             </article>
           </aside>

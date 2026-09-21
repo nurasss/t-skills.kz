@@ -8,6 +8,7 @@ import { sendTransactionalEmail } from "@/lib/email";
 import { adminInviteSchema, parseJsonBody } from "@/lib/request-validation";
 import { isAdmin } from "@/lib/server-auth";
 import { buildAuthActionUrl } from "@/lib/auth-links";
+import { EMAIL_STRINGS, resolveEmailLocale } from "@/lib/site-strings";
 
 export async function POST(request: Request) {
   const viewer = await viewerOrResponse(request);
@@ -23,11 +24,12 @@ export async function POST(request: Request) {
     const token = newAuthToken();
     const database = getD1();
     await database.prepare(`INSERT INTO auth_invites (token_hash, email, created_by, created_at, expires_at, used_at) VALUES (?, ?, ?, ?, ?, NULL)`).bind(await sessionTokenHash(token), parsed.data.email, viewer.userId, Date.now(), Date.now() + 7 * 24 * 60 * 60 * 1000).run();
+    const em = EMAIL_STRINGS[resolveEmailLocale((parsed.data as { locale?: unknown }).locale)];
     await sendTransactionalEmail({
       to: parsed.data.email,
-      subject: "Приглашение в T-Skills",
-      text: "Вы получили приглашение в закрытое beta-тестирование T-Skills. Ссылка действует 7 дней.",
-      actionLabel: "Создать аккаунт",
+      subject: em.inviteSubject,
+      text: em.inviteText,
+      actionLabel: em.inviteAction,
       actionUrl: buildAuthActionUrl(trustedAppBaseUrl(request), "register", token),
     });
     return NextResponse.json({ ok: true, message: "Приглашение отправлено." }, { status: 201, headers: { "Cache-Control": "no-store" } });

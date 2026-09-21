@@ -3,6 +3,8 @@ export const TERMS_DOCUMENT_VERSION = "terms-2026-09";
 const COOKIES_DOCUMENT_VERSION = "cookies-2026-09";
 const REFUNDS_DOCUMENT_VERSION = "refunds-2026-09";
 
+export { COOKIES_DOCUMENT_VERSION, REFUNDS_DOCUMENT_VERSION };
+
 export type LegalConfig = {
   entityName: string;
   supportContact: string;
@@ -43,11 +45,14 @@ export const DEFAULT_LEGAL_CONFIG: LegalConfig = {
   reviewStatus: "ТРЕБУЕТСЯ ОБЯЗАТЕЛЬНЫЙ REVIEW: текст не является юридическим заключением и должен быть проверен специалистом по праву Республики Казахстан до публичного запуска.",
 };
 
+import { getLegalDocumentKk } from "@/lib/legal-kk";
+
 export type LegalKind = "privacy" | "terms" | "cookies" | "refunds";
 type LegalBlock = { title: string; body: string };
 export type LegalDocument = { title: string; version: string; updatedAt: string; blocks: LegalBlock[] };
 
-export function getLegalDocument(kind: LegalKind, config: LegalConfig = DEFAULT_LEGAL_CONFIG): LegalDocument {
+export function getLegalDocument(kind: LegalKind, config: LegalConfig = DEFAULT_LEGAL_CONFIG, locale: "ru" | "kk" = "ru"): LegalDocument {
+  if (locale === "kk") return getLegalDocumentKk(kind, config);
   if (kind === "privacy") {
     return {
       title: "Политика конфиденциальности и обработки данных",

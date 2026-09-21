@@ -6,14 +6,17 @@ import {
   InfoView as EditorialInfoView,
 } from "@/app/views/info/info-view";
 import { getLegalDocument, DEFAULT_LEGAL_CONFIG } from "@/lib/legal-documents";
+import { useSiteLang } from "@/lib/site-lang";
+import { INFO_STRINGS } from "@/lib/site-strings";
 import type { OrbitaController } from "@/hooks/use-orbita-controller";
 
-function getInfoContent(kind: "privacy" | "terms" | "faq" | "support", supportContact: string | null) {
+function getInfoContent(kind: "privacy" | "terms" | "faq" | "support", supportContact: string | null, lang: "ru" | "kk" = "ru") {
+  const t = INFO_STRINGS[lang];
   if (kind === "privacy" || kind === "terms") {
     const legal = getLegalDocument(kind, {
       ...DEFAULT_LEGAL_CONFIG,
       supportContact: supportContact || DEFAULT_LEGAL_CONFIG.supportContact,
-    });
+    }, lang);
     return {
       title: legal.title,
       version: legal.version,
@@ -24,27 +27,19 @@ function getInfoContent(kind: "privacy" | "terms" | "faq" | "support", supportCo
   }
   if (kind === "faq") {
     return {
-      title: "Вопросы, которые обычно задают.",
-      blocks: [
-        { title: "Сколько длится тест?", body: "67 основных вопросов. После предварительного профиля система задаёт до 8 коротких карьерных вопросов с вариантами A/B/C/D. Между частями можно делать паузы." },
-        { title: "Что если я закрою браузер?", body: "Введённый ответ сохраняется сразу, а session продолжает с последнего подтверждённого item. Уже принятые adaptive-вопросы не меняются при reload." },
-        { title: "Почему вопросы разные?", body: "В тесте нет хороших и плохих сильных сторон. Mercury уточняет зоны неопределённости, а сервер проверяет каждый новый вопрос и оставляет scoring детерминированным." },
-        { title: "Можно ли сравнивать людей?", body: "В MVP нет. Пилотный индекс профиля и ранг предназначены для чтения собственного среза и не являются межличностной шкалой." },
-      ],
+      title: t.faqTitle,
+      blocks: t.faq.map(([title, body]) => ({ title, body })),
     };
   }
   return {
-    title: "Нужна помощь?",
-    blocks: [
-      { title: "Проблема с оплатой", body: "Статус order проверяется по provider event. Support может повторно выдать entitlement после проверки, без повторной оплаты." },
-      { title: "Проблема с PDF", body: "Отчёт можно безопасно регенерировать без пересчёта frozen score JSON." },
-      {
-        title: "Контакт",
-        body: supportContact
-          ? `${supportContact} · укажите session ID, локаль и описание шага, на котором остановились.`
-          : "Контакт поддержки ещё не настроен. Укажите session ID, локаль и описание шага только через утверждённый канал поддержки.",
-      },
-    ],
+    title: t.supportTitle,
+    blocks: t.support.map(([title, body]) => {
+      if (body !== "") return { title, body };
+      return {
+        title,
+        body: supportContact ? `${supportContact} · ${t.supportContact}` : t.supportContactOff,
+      };
+    }),
   };
 }
 
@@ -93,6 +88,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
     logout,
     deleteAssessmentData,
   } = controller;
+  const [siteLang] = useSiteLang();
 
   if (view === "home") return null;
   if (view === "catalog") {
@@ -189,7 +185,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
   }
   if (view === "privacy" || view === "terms" || view === "faq" || view === "support") {
     if (view === "privacy" || view === "terms") {
-      const content = getInfoContent(view, publicCatalog?.supportContact ?? null);
+      const content = getInfoContent(view, publicCatalog?.supportContact ?? null, siteLang);
       return (
         <EditorialInfoView
           kind={view}
