@@ -52,9 +52,14 @@ export function TeenFlowView({ onHome }: { onHome: () => void }) {
 
   useEffect(() => {
     // Исключение: клиентский хайдрейт persisted-стейта (SSR localStorage недоступен).
+    const saved = loadState();
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setState(loadState());
+    setState(saved);
+    // FIX3: вернуться к первому неотвеченному вопросу, а не к началу.
+    const firstUnanswered = content.items75.findIndex((item) => typeof saved.answers75[item.id] !== "number");
+    setStaticIndex(firstUnanswered === -1 ? content.items75.length - 1 : firstUnanswered);
     setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -131,7 +136,7 @@ export function TeenFlowView({ onHome }: { onHome: () => void }) {
         <div className="ov-container ov-container-narrow">
           <div className="ov-teen-topbar">
             <span className="ov-eyebrow">Основная часть</span>
-            <strong>Вопрос {answeredStatic + 1} из {content.items75.length}</strong>
+            <strong>Вопрос {index + 1} из {content.items75.length}</strong>
           </div>
           <div className="ov-teen-progress"><span style={{ width: `${Math.round((answeredStatic / content.items75.length) * 100)}%` }} /></div>
           <div key={item.id} className="ov-teen-question-enter">
@@ -163,6 +168,16 @@ export function TeenFlowView({ onHome }: { onHome: () => void }) {
   const stage2Index = stage2Questions.findIndex((question) => typeof state.stage2answers[question.id] !== "number");
   if (stage2Index !== -1) {
     const question = stage2Questions[stage2Index];
+    // FIX4: «Назад» снимает предыдущий ответ — derived-индекс сам отъезжает.
+    const goBackStage2 = () => {
+      const prev = stage2Questions[stage2Index - 1];
+      if (!prev) return;
+      setState((current) => {
+        const stage2answers = { ...current.stage2answers };
+        delete stage2answers[prev.id];
+        return { ...current, stage2answers };
+      });
+    };
     return (
       <div className="orbita-view ov-teen">
         <div className="ov-container ov-container-narrow">
@@ -187,6 +202,9 @@ export function TeenFlowView({ onHome }: { onHome: () => void }) {
                 </button>
               ))}
             </div>
+            <div className="ov-teen-nav">
+              <button className="ov-teen-back" disabled={stage2Index === 0} onClick={goBackStage2} type="button">← Назад</button>
+            </div>
           </div>
         </div>
       </div>
@@ -200,6 +218,16 @@ export function TeenFlowView({ onHome }: { onHome: () => void }) {
     const left = byId.get(pair.leftProfessionId)!;
     const right = byId.get(pair.rightProfessionId)!;
     const pick = (id: string) => setState((prev) => ({ ...prev, prefPicks: { ...prev.prefPicks, [pair.id]: id } }));
+    // FIX4: «Назад» снимает предыдущий выбор.
+    const goBackPref = () => {
+      const prev = prefPairs[prefIndex - 1];
+      if (!prev) return;
+      setState((current) => {
+        const prefPicks = { ...current.prefPicks };
+        delete prefPicks[prev.id];
+        return { ...current, prefPicks };
+      });
+    };
     return (
       <div className="orbita-view ov-teen">
         <div className="ov-container ov-container-narrow">
@@ -217,6 +245,9 @@ export function TeenFlowView({ onHome }: { onHome: () => void }) {
                   <span>{profession.sphere}</span>
                 </button>
               ))}
+            </div>
+            <div className="ov-teen-nav">
+              <button className="ov-teen-back" disabled={prefIndex === 0} onClick={goBackPref} type="button">← Назад</button>
             </div>
           </div>
         </div>
