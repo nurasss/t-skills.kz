@@ -14,7 +14,8 @@ import {
 import type { View } from "@/app/orbita-view-types";
 import { trackOptionalAnalytics } from "@/app/orbita-api";
 import { BrandIcon } from "@/app/brand/brand-icon";
-import { LANDING_QUALITIES_RU, MOCK_TOP5 } from "@/app/landing/content";
+import { LANDING_QUALITIES_RU, LANDING_RU, LANDING_LANG_STORAGE_KEY, MOCK_TOP5, type LandingStrings } from "@/app/landing/content";
+import { LANDING_KK, LANDING_QUALITIES_KK, MOCK_TOP5_KK, resolveLandingLang } from "@/app/landing/content-kk";
 import "./landing.css";
 
 /**
@@ -31,40 +32,82 @@ export type LandingPageProps = {
 
 export function LandingPage({ onNavigate, onDemo, requestError, onDismissError }: LandingPageProps) {
   useSectionReveal();
+  const [lang, setLang] = useState<"ru" | "kk">("ru");
+  useEffect(() => {
+    // Локаль из localStorage применяется после хайдрейта, иначе SSR RU ≠ клиент KK.
+    try {
+      const stored = resolveLandingLang(localStorage.getItem(LANDING_LANG_STORAGE_KEY));
+      if (stored !== "ru") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLang(stored);
+      }
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LANDING_LANG_STORAGE_KEY, lang);
+    } catch {
+      // ignore
+    }
+    document.documentElement.lang = lang === "kk" ? "kk" : "ru";
+  }, [lang]);
+  const t: LandingStrings = lang === "kk" ? LANDING_KK : LANDING_RU;
+  const qualities = lang === "kk" ? LANDING_QUALITIES_KK : LANDING_QUALITIES_RU;
+  const mock = lang === "kk" ? MOCK_TOP5_KK : MOCK_TOP5;
   return (
     <div className="ev-landing">
       {requestError ? (
         <div className="ev-error" role="alert">
           <span>{requestError}</span>
-          <button onClick={onDismissError} type="button" aria-label="Закрыть">
+          <button onClick={onDismissError} type="button" aria-label={t.close}>
             ×
           </button>
         </div>
       ) : null}
       <a href="#main" className="ev-skip">
-        Перейти к содержимому
+        {t.skip}
       </a>
-      <TopBar onNavigate={onNavigate} />
+      <TopBar onNavigate={onNavigate} t={t} lang={lang} onLang={setLang} />
       <main id="main">
-        <Hero onNavigate={onNavigate} onDemo={onDemo} />
-        <StatsStrip />
-        <WhatYouGet />
-        <SampleReport onDemo={onDemo} />
-        <HowItWorks onNavigate={onNavigate} />
-        <Methodology />
-        <UseCases />
-        <FinalCta onNavigate={onNavigate} />
-        <Faq />
+        <Hero onNavigate={onNavigate} onDemo={onDemo} t={t} />
+        <StatsStrip t={t} />
+        <WhatYouGet t={t} />
+        <SampleReport onDemo={onDemo} t={t} mock={mock} />
+        <HowItWorks onNavigate={onNavigate} t={t} />
+        <Methodology t={t} qualities={qualities} />
+        <UseCases t={t} />
+        <FinalCta onNavigate={onNavigate} t={t} />
+        <Faq t={t} />
       </main>
       <div className="ev-mobile-cta">
-        <CtaButton onNavigate={onNavigate} position="mobile" />
+        <CtaButton onNavigate={onNavigate} position="mobile" label={t.cta} />
       </div>
-      <Footer onNavigate={onNavigate} />
+      <Footer onNavigate={onNavigate} t={t} lang={lang} onLang={setLang} />
     </div>
   );
 }
 
-function CtaButton({ onNavigate, position }: { onNavigate: (view: View) => void; position: string }) {
+export function LangToggle({ lang, onLang }: { lang: "ru" | "kk"; onLang: (next: "ru" | "kk") => void }) {
+  return (
+    <span className="ev-lang" role="group" aria-label="Тіл / Язык">
+      {(["ru", "kk"] as const).map((option) => (
+        <button
+          key={option}
+          className={option === lang ? "selected" : ""}
+          onClick={() => onLang(option)}
+          type="button"
+        >
+          {option === "ru" ? "РУ" : "ҚЗ"}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+function CtaButton({ onNavigate, position, label }: { onNavigate: (view: View) => void; position: string; label: string }) {
   return (
     <button
       className="ev-btn ev-btn-primary"
@@ -74,13 +117,13 @@ function CtaButton({ onNavigate, position }: { onNavigate: (view: View) => void;
       }}
       type="button"
     >
-      Пройти T-Skills
+      {label}
       <ArrowRight size={18} aria-hidden="true" />
     </button>
   );
 }
 
-function TopBar({ onNavigate }: { onNavigate: (view: View) => void }) {
+function TopBar({ onNavigate, t, lang, onLang }: { onNavigate: (view: View) => void; t: LandingStrings; lang: "ru" | "kk"; onLang: (next: "ru" | "kk") => void }) {
   const [open, setOpen] = useState(false);
   const go = useCallback(
     (view: View) => () => {
@@ -100,22 +143,23 @@ function TopBar({ onNavigate }: { onNavigate: (view: View) => void }) {
   return (
     <header className="ev-topbar">
       <div className="ev-container ev-topbar-row">
-        <a className="ev-brand" href="#main" aria-label="T-Skills — наверх">
+        <a className="ev-brand" href="#main" aria-label={t.brandTop}>
           <BrandIcon size={30} />
           <span className="ev-brand-word">T-Skills</span>
         </a>
-        <nav className="ev-nav" aria-label="Основная навигация">
-          <a href="#how">Как это работает</a>
-          <a href="#get">Что вы получите</a>
-          <a href="#methodology">Методология</a>
-          <a href="#faq">FAQ</a>
+        <nav className="ev-nav" aria-label={t.navMain}>
+          <a href="#how">{t.navHow}</a>
+          <a href="#get">{t.navGet}</a>
+          <a href="#methodology">{t.navMethodology}</a>
+          <a href="#faq">{t.navFaq}</a>
         </nav>
         <div className="ev-topbar-actions">
+          <LangToggle lang={lang} onLang={onLang} />
           <button className="ev-login" onClick={go("account")} type="button">
-            Войти
+            {t.login}
           </button>
           <span className="ev-topbar-cta">
-            <CtaButton onNavigate={onNavigate} position="topbar" />
+            <CtaButton onNavigate={onNavigate} position="topbar" label={t.cta} />
           </span>
           <button
             className="ev-burger"
@@ -123,7 +167,7 @@ function TopBar({ onNavigate }: { onNavigate: (view: View) => void }) {
             type="button"
             aria-expanded={open}
             aria-controls="ev-mobile-nav"
-            aria-label={open ? "Закрыть меню" : "Открыть меню"}
+            aria-label={open ? t.closeMenu : t.openMenu}
           >
             {open ? <X size={22} aria-hidden="true" /> : <Menu size={22} aria-hidden="true" />}
           </button>
@@ -132,13 +176,14 @@ function TopBar({ onNavigate }: { onNavigate: (view: View) => void }) {
       {open ? (
         <>
           <button className="ev-backdrop" onClick={() => setOpen(false)} type="button" tabIndex={-1} aria-hidden="true" />
-          <nav className="ev-mobile-nav" id="ev-mobile-nav" aria-label="Мобильная навигация">
-            <a href="#how" onClick={() => setOpen(false)}>Как это работает</a>
-            <a href="#get" onClick={() => setOpen(false)}>Что вы получите</a>
-            <a href="#methodology" onClick={() => setOpen(false)}>Методология</a>
-            <a href="#faq" onClick={() => setOpen(false)}>FAQ</a>
-            <button onClick={go("account")} type="button">Войти в аккаунт</button>
-            <CtaButton onNavigate={(v) => { setOpen(false); onNavigate(v); }} position="menu" />
+          <nav className="ev-mobile-nav" id="ev-mobile-nav" aria-label={t.mobileNav}>
+            <a href="#how" onClick={() => setOpen(false)}>{t.navHow}</a>
+            <a href="#get" onClick={() => setOpen(false)}>{t.navGet}</a>
+            <a href="#methodology" onClick={() => setOpen(false)}>{t.navMethodology}</a>
+            <a href="#faq" onClick={() => setOpen(false)}>{t.navFaq}</a>
+            <button onClick={go("account")} type="button">{t.loginAccount}</button>
+            <LangToggle lang={lang} onLang={(next) => { onLang(next); }} />
+            <CtaButton onNavigate={(v) => { setOpen(false); onNavigate(v); }} position="menu" label={t.cta} />
           </nav>
         </>
       ) : null}
@@ -146,24 +191,23 @@ function TopBar({ onNavigate }: { onNavigate: (view: View) => void }) {
   );
 }
 
-function Hero({ onNavigate, onDemo }: { onNavigate: (view: View) => void; onDemo: () => void }) {
+function Hero({ onNavigate, onDemo, t }: { onNavigate: (view: View) => void; onDemo: () => void; t: LandingStrings }) {
   return (
     <section className="ev-hero">
       <div className="ev-container ev-hero-grid">
         <div className="ev-hero-copy">
           <h1>
-            Поймите, в чём вы действительно <span className="ev-accent">сильны</span>
+            {t.heroPre} <span className="ev-accent">{t.heroAccent}</span>{t.heroPost ? ` ${t.heroPost}` : ""}
           </h1>
           <p className="ev-lede">
-            T-Skills оценивает 25 качеств через 75 парных сравнений и показывает ваш индивидуальный
-            профиль. Расчёт детерминирован; интерпретация — материал для рефлексии, а не диагноз.
+            {t.heroLede}
           </p>
           <div className="ev-cta-row">
-            <CtaButton onNavigate={onNavigate} position="hero" />
+            <CtaButton onNavigate={onNavigate} position="hero" label={t.cta} />
           </div>
           <p className="ev-meta">
             <Clock size={15} aria-hidden="true" />
-            ≈ 15–20 минут / 75 вопросов / Web и PDF-отчёт
+            {t.heroMeta}
           </p>
         </div>
         <figure className="ev-hero-video">
@@ -175,26 +219,20 @@ function Hero({ onNavigate, onDemo }: { onNavigate: (view: View) => void; onDemo
             loop
             playsInline
             preload="metadata"
-            aria-label="Презентационное видео T-Skills: профиль сильных сторон за 20 секунд"
+            aria-label={t.videoLabel}
           />
-          <figcaption>20 секунд о том, как это работает · пример данных вымышлен</figcaption>
+          <figcaption>{t.videoCaption}</figcaption>
         </figure>
       </div>
     </section>
   );
 }
 
-function StatsStrip() {
-  const stats = [
-    ["25", "Качеств в модели — полный профиль без сокращений"],
-    ["75", "Вопросов: 67 сравнений и до 8 уточнений"],
-    ["0", "Влияния ИИ на баллы: расчёт детерминирован"],
-    ["24", "Страницы в PDF-отчёте полиграфического качества"],
-  ];
+function StatsStrip({ t }: { t: LandingStrings }) {
   return (
-    <section className="ev-strip" aria-label="Ключевые параметры">
+    <section className="ev-strip" aria-label={t.statsAria}>
       <div className="ev-container ev-strip-grid">
-        {stats.map(([num, label]) => (
+        {t.stats.map(([num, label]) => (
           <div key={label}>
             <strong>{num}</strong>
             <span>{label}</span>
@@ -215,35 +253,13 @@ function SectionHead({ index, title, lead }: { index: string; title: string; lea
   );
 }
 
-function WhatYouGet() {
-  const items = [
-    {
-      n: "01",
-      title: "Ваш индивидуальный профиль",
-      body: "Ранжирование всех 25 качеств: от ведущих драйверов, на которые стоит опираться, до нейтральных зон.",
-    },
-    {
-      n: "02",
-      title: "Детальная интерпретация",
-      body: "Как каждое ведущее качество проявляется в решениях, стрессе и команде — и где возможна перегрузка.",
-    },
-    {
-      n: "03",
-      title: "Фокус и направления роста",
-      body: "Рабочие контексты, в которых качества раскрываются, и наблюдаемые шаги на 30 дней.",
-    },
-    {
-      n: "04",
-      title: "Доступ к отчёту",
-      body: "Интерактивная веб-версия в кабинете и PDF для разговора с руководителем, ментором или коучем.",
-    },
-  ];
+function WhatYouGet({ t }: { t: LandingStrings }) {
   return (
     <section className="ev-section" id="get">
       <div className="ev-container">
-        <SectionHead index="Что вы получите" title="Не просто результат теста, а рабочий инструмент" />
+        <SectionHead index={t.getIndex} title={t.getTitle} />
         <div className="ev-cards-4">
-          {items.map((item) => (
+          {t.getCards.map((item) => (
             <article key={item.n}>
               <span className="ev-card-num">{item.n}</span>
               <h3>{item.title}</h3>
@@ -256,14 +272,14 @@ function WhatYouGet() {
   );
 }
 
-function SampleReport({ onDemo }: { onDemo: () => void }) {
+function SampleReport({ onDemo, t, mock }: { onDemo: () => void; t: LandingStrings; mock: { name: string; score: number; text: string }[] }) {
   return (
     <section className="ev-section ev-section-tint" id="sample">
       <div className="ev-container">
-        <SectionHead index="Пример отчёта" title="Как выглядит ваш результат" lead="Фрагмент персонального досье: ведущие качества, интерпретация и план. Пример вымышлен." />
+        <SectionHead index={t.sampleIndex} title={t.sampleTitle} lead={t.sampleLead} />
         <div className="ev-sample-grid">
           <div className="ev-sample-bars" aria-hidden="true">
-            {MOCK_TOP5.map((item, i) => (
+            {mock.map((item, i) => (
               <div key={item.name}>
                 <span>{i + 1}. {item.name}</span>
                 <div className="ev-bar"><span style={{ width: `${item.score}%` }} /></div>
@@ -272,13 +288,12 @@ function SampleReport({ onDemo }: { onDemo: () => void }) {
             ))}
           </div>
           <div className="ev-sample-text">
-            <h3>Разбор без ярлыков</h3>
+            <h3>{t.sampleH3}</h3>
             <p>
-              Каждое ведущее качество описывается через наблюдаемое поведение: как проявляется,
-              где помогает и где может мешать. Без диагнозов и прогнозов судьбы.
+              {t.sampleBody}
             </p>
             <button className="ev-link" onClick={onDemo} type="button">
-              Открыть живой пример результата
+              {t.sampleLink}
               <ArrowRight size={15} aria-hidden="true" />
             </button>
           </div>
@@ -288,18 +303,13 @@ function SampleReport({ onDemo }: { onDemo: () => void }) {
   );
 }
 
-function HowItWorks({ onNavigate }: { onNavigate: (view: View) => void }) {
-  const steps = [
-    { n: "01", title: "Отвечаете на вопросы", body: "Парные сравнения без правильных ответов. Выбираете то, как поступаете на самом деле.", meta: "≈ 15 минут, можно с паузой" },
-    { n: "02", title: "Алгоритм считает", body: "Фиксированная модель взвешивает выборы. Одинаковые ответы всегда дают одинаковый расчёт.", meta: "Детерминировано" },
-    { n: "03", title: "Получаете профиль", body: "Интерактивный отчёт в кабинете и PDF. Результаты сохраняются, доступны экспорт и удаление.", meta: "Web и PDF" },
-  ];
+function HowItWorks({ onNavigate, t }: { onNavigate: (view: View) => void; t: LandingStrings }) {
   return (
     <section className="ev-section" id="how">
       <div className="ev-container">
-        <SectionHead index="Как это работает" title="Три шага к пониманию своих сил" />
+        <SectionHead index={t.howIndex} title={t.howTitle} />
         <div className="ev-steps">
-          {steps.map((step) => (
+          {t.howSteps.map((step) => (
             <article key={step.n}>
               <span className="ev-card-num">{step.n}</span>
               <h3>{step.title}</h3>
@@ -308,7 +318,7 @@ function HowItWorks({ onNavigate }: { onNavigate: (view: View) => void }) {
             </article>
           ))}
         </div>
-        <QuestionMock />
+        <QuestionMock t={t} />
         <div className="ev-steps-cta">
           <button
             className="ev-link"
@@ -318,7 +328,7 @@ function HowItWorks({ onNavigate }: { onNavigate: (view: View) => void }) {
             }}
             type="button"
           >
-            Пройти T-Skills
+            {t.howCta}
             <ArrowRight size={15} aria-hidden="true" />
           </button>
         </div>
@@ -327,56 +337,56 @@ function HowItWorks({ onNavigate }: { onNavigate: (view: View) => void }) {
   );
 }
 
-function QuestionMock() {
+function QuestionMock({ t }: { t: LandingStrings }) {
   return (
-    <div className="ev-qmock" role="img" aria-label="Пример парного вопроса T-Skills">
-      <span className="ev-eyebrow">Пример вопроса · пара 14 из 75</span>
-      <h3>Что вам ближе в рабочей ситуации?</h3>
+    <div className="ev-qmock" role="img" aria-label={t.qmockAria}>
+      <span className="ev-eyebrow">{t.qmockEyebrow}</span>
+      <h3>{t.qmockH3}</h3>
       <div className="ev-qmock-cards">
         <div>
-          <span className="ev-qmock-tag">Вариант А</span>
-          <p>«Мне важно заранее составить подробный пошаговый план и следовать ему.»</p>
-          <small>Фокус: структурирование процессов</small>
+          <span className="ev-qmock-tag">{t.qmockA}</span>
+          <p>{t.qmockAText}</p>
+          <small>{t.qmockAFocus}</small>
         </div>
         <div>
-          <span className="ev-qmock-tag">Вариант Б</span>
-          <p>«Мне комфортнее действовать по ситуации, быстро адаптируясь к обстоятельствам.»</p>
-          <small>Фокус: динамическая адаптивность</small>
+          <span className="ev-qmock-tag">{t.qmockB}</span>
+          <p>{t.qmockBText}</p>
+          <small>{t.qmockBFocus}</small>
         </div>
       </div>
       <div className="ev-qmock-scale" aria-hidden="true">
-        {["Намного ближе А", "Скорее А", "Одинаково", "Скорее Б", "Намного ближе Б"].map((label, i) => (
+        {t.qmockScale.map((label, i) => (
           <span key={label} className={i === 2 ? "on" : ""} title={label} />
         ))}
       </div>
-      <p className="ev-qmock-note">Верных и неверных ответов нет — оценивается естественное рабочее поведение.</p>
+      <p className="ev-qmock-note">{t.qmockNote}</p>
     </div>
   );
 }
 
-function Methodology() {
-  const badges = [
-    { icon: <Scale size={20} aria-hidden="true" />, title: "Forced-choice методика", body: "Выбор между двумя равноценными утверждениями снижает влияние социальной желательности по сравнению со шкалой Ликерта." },
-    { icon: <ShieldCheck size={20} aria-hidden="true" />, title: "Детерминированный расчёт", body: "Веса и формулы фиксированы. Одинаковые ответы всегда дают одинаковый результат — без магии и случайности." },
-    { icon: <ShieldCheck size={20} aria-hidden="true" />, title: "25 измеряемых качеств", body: "Когнитивный, коммуникативный, творческий и волевой контуры. Ни одно качество не «лучше» другого." },
+function Methodology({ t, qualities }: { t: LandingStrings; qualities: readonly { name: string; description: string }[] }) {
+  const badgeIcons = [
+    <Scale key="forced" size={20} aria-hidden="true" />,
+    <ShieldCheck key="det" size={20} aria-hidden="true" />,
+    <ShieldCheck key="traits" size={20} aria-hidden="true" />,
   ];
   return (
     <section className="ev-section ev-section-tint" id="methodology">
       <div className="ev-container">
-        <SectionHead index="Методология" title="Методика, а не генерация выводов" lead="Платформа опирается на методику вынужденного выбора. Все веса зафиксированы." />
+        <SectionHead index={t.methIndex} title={t.methTitle} lead={t.methLead} />
         <div className="ev-badges">
-          {badges.map((badge) => (
+          {t.methBadges.map((badge, i) => (
             <article key={badge.title}>
-              <span className="ev-badge-icon">{badge.icon}</span>
+              <span className="ev-badge-icon">{badgeIcons[i]}</span>
               <h3>{badge.title}</h3>
               <p>{badge.body}</p>
             </article>
           ))}
         </div>
         <div className="ev-qualities">
-          <h3>25 качеств модели</h3>
+          <h3>{t.methQualities}</h3>
           <ul>
-            {LANDING_QUALITIES_RU.map((q, i) => (
+            {qualities.map((q, i) => (
               <li key={q.name} title={q.description}>
                 <span>{String(i + 1).padStart(2, "0")}</span> {q.name}
               </li>
@@ -388,18 +398,13 @@ function Methodology() {
   );
 }
 
-function UseCases() {
-  const cases = [
-    { title: "Выбираю направление", body: "Для старта карьеры или смены специализации: увидеть драйверы и трек, где сильные стороны станут преимуществом.", meta: "Старт · смена трека" },
-    { title: "Хочу понять себя", body: "Инвентаризация опыта и условий, в которых вы работаете лучше всего.", meta: "Mid / Senior" },
-    { title: "Готовлюсь к шагу", body: "Оценка готовности к руководству и масштабированию: делегирование, баланс команды.", meta: "Рост роли" },
-  ];
+function UseCases({ t }: { t: LandingStrings }) {
   return (
     <section className="ev-section">
       <div className="ev-container">
-        <SectionHead index="Применение" title="В каких ситуациях помогает" />
+        <SectionHead index={t.useIndex} title={t.useTitle} />
         <div className="ev-cards-3">
-          {cases.map((item) => (
+          {t.useCases.map((item) => (
             <article key={item.title}>
               <h3>{item.title}</h3>
               <p>{item.body}</p>
@@ -412,55 +417,29 @@ function UseCases() {
   );
 }
 
-function FinalCta({ onNavigate }: { onNavigate: (view: View) => void }) {
+function FinalCta({ onNavigate, t }: { onNavigate: (view: View) => void; t: LandingStrings }) {
   return (
     <section className="ev-final">
       <div className="ev-container ev-final-grid">
         <div>
-          <span className="ev-eyebrow light">Прямой доступ</span>
-          <h2>Увидьте свой профиль целиком</h2>
-          <p>75 вопросов. 25 качеств. Один результат для карьерных решений — без подписок и автосписаний.</p>
-          <CtaButton onNavigate={onNavigate} position="finale" />
-          <p className="ev-final-note">Понадобится аккаунт — регистрация займёт минуту.</p>
+          <span className="ev-eyebrow light">{t.finalEyebrow}</span>
+          <h2>{t.finalH2}</h2>
+          <p>{t.finalP}</p>
+          <CtaButton onNavigate={onNavigate} position="finale" label={t.cta} />
+          <p className="ev-final-note">{t.finalNote}</p>
         </div>
       </div>
     </section>
   );
 }
 
-function Faq() {
-  const items = [
-    {
-      q: "Сколько времени занимает прохождение?",
-      a: "В среднем 15–20 минут в спокойном темпе. Можно делать паузы: каждый ответ сохраняется сразу, продолжение — с того же места.",
-    },
-    {
-      q: "Сколько вопросов и какой они формы?",
-      a: "75 вопросов: 67 парных сравнений («что вам ближе») и до 8 карьерных уточнений с вариантами. Правильных и неправильных ответов нет.",
-    },
-    {
-      q: "Можно ли вернуться к результату позже?",
-      a: "Да. Отчёт хранится в личном кабинете согласно политике хранения; доступны экспорт и удаление данных. PDF можно скачать в любой момент.",
-    },
-    {
-      q: "Что входит в итоговый отчёт?",
-      a: "Ранжирование всех 25 качеств, разбор ведущих качеств с примерами поведения, рабочие условия, команда и план на 30 дней, плюс 24-страничный PDF.",
-    },
-    {
-      q: "Как рассчитывается результат?",
-      a: "Детерминированный алгоритм: одинаковые ответы всегда дают одинаковый расчёт. Баллы считает математика, ИИ используется только для объяснения результата человеческим языком — и никогда не выбирает за вас.",
-    },
-    {
-      q: "Что происходит с моими данными?",
-      a: "Ответы привязаны к вашему аккаунту и используются только для расчёта профиля. Экспорт и удаление — в личном кабинете. Данные не передаются работодателям.",
-    },
-  ];
+function Faq({ t }: { t: LandingStrings }) {
   return (
     <section className="ev-section ev-section-narrow" id="faq">
       <div className="ev-container">
-        <SectionHead index="FAQ" title="Часто задаваемые вопросы" />
+        <SectionHead index={t.faqIndex} title={t.faqTitle} />
         <div className="ev-faq">
-          {items.map((item, i) => (
+          {t.faqItems.map((item, i) => (
             <details key={item.q} open={i === 0}>
               <summary>
                 <span>{item.q}</span>
@@ -475,7 +454,7 @@ function Faq() {
   );
 }
 
-function Footer({ onNavigate }: { onNavigate: (view: View) => void }) {
+function Footer({ onNavigate, t, lang, onLang }: { onNavigate: (view: View) => void; t: LandingStrings; lang: "ru" | "kk"; onLang: (next: "ru" | "kk") => void }) {
   return (
     <footer className="ev-footer">
       <div className="ev-container">
@@ -485,31 +464,31 @@ function Footer({ onNavigate }: { onNavigate: (view: View) => void }) {
               <BrandIcon size={28} />
               <span className="ev-brand-word">T-Skills</span>
             </span>
-            <p>Развивающая оценка для рефлексии и разговора о рабочих условиях.</p>
+            <p>{t.footerTagline}</p>
           </div>
-          <nav aria-label="Продукт">
-            <h4>Продукт</h4>
-            <a href="#how">Как это работает</a>
-            <a href="#get">Что вы получите</a>
-            <a href="#faq">FAQ</a>
+          <nav aria-label={t.footerProduct}>
+            <h4>{t.footerProduct}</h4>
+            <a href="#how">{t.navHow}</a>
+            <a href="#get">{t.navGet}</a>
+            <a href="#faq">{t.navFaq}</a>
           </nav>
-          <nav aria-label="Ресурсы">
-            <h4>Ресурсы</h4>
-            <button onClick={() => onNavigate("methodology")} type="button">Методология</button>
-            <button onClick={() => onNavigate("support")} type="button">Поддержка</button>
+          <nav aria-label={t.footerResources}>
+            <h4>{t.footerResources}</h4>
+            <button onClick={() => onNavigate("methodology")} type="button">{t.footerMethodology}</button>
+            <button onClick={() => onNavigate("support")} type="button">{t.footerSupport}</button>
           </nav>
-          <nav aria-label="Правовое">
-            <h4>Правовое</h4>
-            <Link href="/privacy">Конфиденциальность</Link>
-            <Link href="/terms">Условия</Link>
-            <Link href="/cookies">Cookies</Link>
-            <Link href="/refunds">Возвраты</Link>
-            <Link href="/contact">Контакты</Link>
+          <nav aria-label={t.footerLegal}>
+            <h4>{t.footerLegal}</h4>
+            <Link href="/privacy">{t.footerPrivacy}</Link>
+            <Link href="/terms">{t.footerTerms}</Link>
+            <Link href="/cookies">{t.footerCookies}</Link>
+            <Link href="/refunds">{t.footerRefunds}</Link>
+            <Link href="/contact">{t.footerContact}</Link>
           </nav>
         </div>
         <div className="ev-footer-bottom">
-          <span>© 2026 T-Skills · draft for pilot</span>
-          <span>RU</span>
+          <span>{t.footerBottom}</span>
+          <LangToggle lang={lang} onLang={onLang} />
         </div>
       </div>
     </footer>

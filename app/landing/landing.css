@@ -220,3 +220,10 @@
 .ev-landing .ev-reveal { opacity: 0; transform: translateY(14px); transition: opacity .55s ease, transform .55s ease; }
 .ev-landing .ev-reveal.is-visible { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) { .ev-landing .ev-reveal { opacity: 1; transform: none; transition: none; } }
+
+/* Переключатель языка RU | KZ */
+.ev-lang { display: inline-flex; border: 1px solid var(--ev-line-strong); border-radius: 999px; overflow: hidden; background: #fff; }
+.ev-lang button { border: none; background: transparent; padding: 7px 13px; font: inherit; font-size: 12px; font-weight: 700; letter-spacing: .04em; cursor: pointer; color: var(--ev-muted); }
+.ev-lang button.selected { background: var(--ev-green); color: #fff; }
+.ev-footer-bottom .ev-lang { border-color: var(--ev-line); }
+@media (max-width: 960px) { .ev-topbar-actions .ev-lang { display: none; } .ev-mobile-nav .ev-lang { align-self: flex-start; margin: 4px 0 8px; } }
