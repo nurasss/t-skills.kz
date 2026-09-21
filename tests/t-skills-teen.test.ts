@@ -226,3 +226,71 @@ test("teen pdf validates payload and renders bytes", async () => {
   assert.ok(bytes.length > 1000);
   assert.equal(Buffer.from(bytes.subarray(0, 4)).toString(), "%PDF");
 });
+
+test("kk bundle parses and drives the same pipeline", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { parseTeenContentBundle } = await import("@/lib/t-skills/teen/content");
+  const { buildTeenReport } = await import("@/lib/t-skills/teen/report");
+  const content = parseTeenContentBundle(JSON.parse(readFileSync("lib/t-skills/teen/content.v1.kk.json", "utf-8")));
+  assert.equal(content.items75.length, 75);
+  assert.equal(content.stage2.length, 25);
+  assert.equal(content.professions.length, 170);
+  assert.equal(content.status, "DRAFT-UNAPPROVED-KK");
+  assert.equal(content.traitNames.curiosity, "Қызығушылық");
+  assert.ok(!content.items75.some((item) => (content.items75Texts[item.id].left.match(/Могу часами/) ?? []).length > 0));
+
+  const answers: Record<string, number> = {};
+  content.items75.forEach((item, i) => { answers[item.id] = [2, 1, -1, -2][i % 4]; });
+  const stage = scoreTeenStage1(
+    content.items75.map((item) => ({ id: item.id, leftTraitId: item.leftTraitId, rightTraitId: item.rightTraitId })),
+    answers,
+  );
+  assert.equal(TEEN_TRAIT_IDS.reduce((sum, id) => sum + stage.totals[id], 0), 0);
+  const selected = selectTeenStage2(stage.totals, stage.contributions);
+  assert.ok(selected.length >= 5 && selected.length <= 15);
+  let totals = stage.totals;
+  for (const traitId of selected) totals = applyTeenStage2Correction(totals, traitId, 1);
+  const ranked = scoreTeenCareers(totals, content.professions, {
+    valueRanking: ["growth", "income", "stability", "social-impact", "value-autonomy", "creative-freedom", "status", "work-life-balance"],
+    subjects: ["math", "informatics"],
+  });
+  assert.equal(ranked.length, 170);
+  const report = buildTeenReport(content, totals, ranked, {
+    valueRanking: ["growth", "income", "stability", "social-impact", "value-autonomy", "creative-freedom", "status", "work-life-balance"],
+    subjects: ["math", "informatics"],
+  });
+  assert.equal(report.careers.length, 5);
+  assert.ok(report.careers[0].title.length > 0);
+  assert.notEqual(report.careers[0].title, "Врач общей практики (терапевт, семейный врач)");
+});
+
+test("kk pdf renders with kazakh strings", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { renderTeenPdf } = await import("@/lib/teen-pdf");
+  const { TEEN_VERSION_IDS, TEEN_TRAIT_IDS } = await import("@/lib/t-skills/teen/taxonomy");
+  type TeenReport = import("@/lib/t-skills/teen/report").TeenReport;
+  const report: TeenReport = {
+    versions: { ...TEEN_VERSION_IDS },
+    contentStatus: "DRAFT-UNAPPROVED-KK",
+    traits: TEEN_TRAIT_IDS.map((traitId, i) => ({ traitId, name: traitId, total: 10 - i, normalized: (10 - i) / 12 })),
+    topTraits: [],
+    careers: [{ professionId: "p1", title: "Тестілік мамандық", sphere: "Сала", klimovType: "", education: "", description: "Сипаттама.", totalScore: 1, traitScore: 1, valueBonus: 0, subjectBonus: 0 }],
+    topValues: [],
+    subjects: [],
+  };
+  report.topTraits = report.traits.slice(0, 5);
+  const fonts = {
+    sans: new Uint8Array(readFileSync("node_modules/@expo-google-fonts/roboto/400Regular/Roboto_400Regular.ttf")),
+    sansBold: new Uint8Array(readFileSync("node_modules/@expo-google-fonts/roboto/700Bold/Roboto_700Bold.ttf")),
+    serif: new Uint8Array(readFileSync("node_modules/@expo-google-fonts/lora/400Regular/Lora_400Regular.ttf")),
+  };
+  const bytes = await renderTeenPdf(report, fonts, "kk");
+  assert.ok(bytes.length > 1000);
+  assert.equal(Buffer.from(bytes.subarray(0, 4)).toString(), "%PDF");
+});
+
+test("onboarding validation speaks kk when asked", async () => {
+  const { validateTeenOnboarding, defaultTeenValueRanking } = await import("@/lib/t-skills/teen/onboarding-content");
+  assert.equal(validateTeenOnboarding({ valueRanking: defaultTeenValueRanking(), subjects: ["math"] }, "kk"), "2–3 сүйікті пән таңда.");
+  assert.equal(validateTeenOnboarding({ valueRanking: defaultTeenValueRanking(), subjects: ["math", "physics"] }, "kk"), null);
+});

@@ -9,6 +9,7 @@ import {
   type TeenSubjectId,
   type TeenValueId,
 } from "@/lib/t-skills/teen/taxonomy";
+import { TEEN_SUBJECT_LABELS_KK, TEEN_VALUE_LABELS_KK, TEEN_UI, type TeenLocale } from "@/lib/t-skills/teen/ui-strings";
 
 export const TEEN_VALUE_LABELS: Record<TeenValueId, string> = {
   stability: "Стабильность",
@@ -20,6 +21,14 @@ export const TEEN_VALUE_LABELS: Record<TeenValueId, string> = {
   status: "Статус и признание",
   "work-life-balance": "Баланс учёбы и жизни",
 };
+
+export function teenValueLabels(locale: TeenLocale = "ru"): Record<TeenValueId, string> {
+  return locale === "kk" ? TEEN_VALUE_LABELS_KK : TEEN_VALUE_LABELS;
+}
+
+export function teenSubjectLabels(locale: TeenLocale = "ru"): Record<TeenSubjectId, string> {
+  return locale === "kk" ? TEEN_SUBJECT_LABELS_KK : TEEN_SUBJECT_LABELS;
+}
 
 export const TEEN_SUBJECT_LABELS: Record<TeenSubjectId, string> = {
   math: "Математика",
@@ -61,12 +70,16 @@ export function toggleTeenSubject(selected: readonly TeenSubjectId[], id: TeenSu
   return [...selected, id];
 }
 
-export function validateTeenOnboarding(value: Pick<TeenOnboarding, "valueRanking" | "subjects">): string | null {
+export function validateTeenOnboarding(
+  value: Pick<TeenOnboarding, "valueRanking" | "subjects">,
+  locale: TeenLocale = "ru",
+): string | null {
+  const strings = TEEN_UI[locale];
   if (value.valueRanking.length !== TEEN_VALUES.length || new Set(value.valueRanking).size !== TEEN_VALUES.length) {
-    return "Расставьте все 8 ценностей по порядку.";
+    return strings.errRanking;
   }
   if (value.subjects.length < TEEN_SUBJECTS_MIN || value.subjects.length > TEEN_SUBJECTS_MAX) {
-    return `Выберите от ${TEEN_SUBJECTS_MIN} до ${TEEN_SUBJECTS_MAX} любимых предметов.`;
+    return strings.errSubjects;
   }
   return null;
 }

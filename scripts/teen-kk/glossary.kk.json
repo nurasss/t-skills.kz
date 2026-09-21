@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "locale": "kk",
+    "status": "DRAFT-UNREVIEWED",
+    "note": "Черновой перевод RU->KK тин-банка. Требует ревью носителем: back-translation, когнитивные интервью (см. lib/i18n.ts ITEM_TRANSLATION_POLICY).",
+    "glossary_rules": [
+      "качество = қасиет (в контексте черт личности)",
+      "обращение на 'сен' (подростковая аудитория), как в RU-оригинале 'тебе'",
+      "loanwords: эмпатия, нетворкер, коммуникатор, лидерство->көшбасшылық"
+    ]
+  },
+  "traits": {
+    "curiosity": "Қызығушылық",
+    "strategic-thinking": "Стратегиялық ойлау",
+    "innovativeness": "Жаңашылдық",
+    "aesthetic-sense": "Эстетикалық талғам",
+    "discipline": "Тәртіптілік",
+    "result-orientation": "Нәтижеге бағдарлану",
+    "organizer": "Ұйымдастырушы",
+    "reliability": "Сенімділік",
+    "stress-resilience": "Күйзеліске төзімділік",
+    "adaptability": "Бейімділік",
+    "composure": "Сабырлылық",
+    "empathy": "Эмпатия",
+    "harmonizer": "Үйлестіруші",
+    "team-player": "Команда ойыншысы",
+    "energizer": "Жігерлендіруші",
+    "networker": "Нетворкер",
+    "autonomy": "Дербестік",
+    "communicator": "Коммуникатор",
+    "leadership": "Көшбасшылық",
+    "analytical-interest": "Аналитикалық қызығушылық",
+    "data-systemizing": "Деректерді жүйелеу",
+    "technical-interest": "Техникалық қызығушылық",
+    "creative-expression": "Шығармашылық өзіндік",
+    "entrepreneurial-drive": "Кәсіпкерлік рух",
+    "persistence": "Табандылық"
+  },
+  "values": {
+    "stability": "Тұрақтылық",
+    "income": "Табыс",
+    "growth": "Өсу/даму",
+    "value-autonomy": "Дербестік",
+    "social-impact": "Қоғамға пайда",
+    "creative-freedom": "Шығармашылық еркіндік",
+    "status": "Мәртебе",
+    "work-life-balance": "Жұмыс пен өмір тепе-теңдігі"
+  },
+  "subjects": {
+    "math": "Математика",
+    "physics": "Физика",
+    "chemistry": "Химия",
+    "biology": "Биология",
+    "geography": "География",
+    "informatics": "Информатика",
+    "history": "Тарих",
+    "social-studies": "Қоғамтану / Құқық негіздері",
+    "kazakh": "Қазақ тілі мен әдебиеті",
+    "russian": "Орыс тілі мен әдебиеті",
+    "english": "Ағылшын тілі",
+    "creative": "Шығармашылық пәндер (бейнелеу, музыка)",
+    "pe": "Дене шынықтыру",
+    "pedagogy": "Педагогика"
+  }
+}

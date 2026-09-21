@@ -72,3 +72,11 @@
 .ov-teen-subjects { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
 .ov-teen-subject { padding: 10px 14px; border: 1.5px solid var(--border, #e3ddcf); border-radius: 999px; background: #fff; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .ov-teen-subject.selected { border-color: var(--primary, #1a7a4a); background: var(--primary-soft, #dcefe2); }
+
+/* Locale toggle + report top row */
+.ov-teen-locale { display: inline-flex; border: 1px solid var(--border, #e3ddcf); border-radius: 999px; overflow: hidden; }
+.ov-teen-locale button { border: none; background: #fff; padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; color: var(--text-muted, #6b6455); }
+.ov-teen-locale button.selected { background: var(--primary, #1a7a4a); color: #fff; }
+.ov-teen-report-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ov-teen-report-top .ov-back-link { margin: 0; }
+.ov-teen-topbar .ov-teen-locale { margin-left: auto; }

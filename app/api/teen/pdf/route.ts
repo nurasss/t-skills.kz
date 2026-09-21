@@ -32,9 +32,10 @@ export async function POST(request: Request) {
     if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     const raw = await request.text();
     if (raw.length > MAX_BODY_BYTES) return NextResponse.json({ error: "PAYLOAD_TOO_LARGE" }, { status: 413 });
-    const body = JSON.parse(raw) as { report?: unknown };
+    const body = JSON.parse(raw) as { report?: unknown; locale?: unknown };
     validateTeenReportPayload(body.report);
-    const bytes = await renderTeenPdf(body.report, teenPdfFonts());
+    const locale = body.locale === "kk" ? "kk" : "ru";
+    const bytes = await renderTeenPdf(body.report, teenPdfFonts(), locale);
     // Buffer.from копирует — ок для ~100KB.
     return new NextResponse(Buffer.from(bytes), {
       status: 200,

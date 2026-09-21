@@ -4,32 +4,39 @@ import { useState } from "react";
 import { ArrowRight, SectionHeading } from "@/app/views/shared/section-heading";
 import {
   TEEN_SUBJECTS,
-  TEEN_SUBJECT_LABELS,
-  TEEN_VALUE_LABELS,
   defaultTeenValueRanking,
   moveTeenValue,
+  teenSubjectLabels,
+  teenValueLabels,
   toggleTeenSubject,
   validateTeenOnboarding,
 } from "@/lib/t-skills/teen/onboarding-content";
+import { TEEN_UI, type TeenLocale } from "@/lib/t-skills/teen/ui-strings";
 import type { TeenOnboarding, TeenSubjectId, TeenValueId } from "@/lib/t-skills/teen/taxonomy";
 
 export type TeenOnboardingViewProps = {
   initial?: TeenOnboarding | null;
+  locale?: TeenLocale;
   busy?: boolean;
   error?: string;
   onSubmit: (value: TeenOnboarding) => Promise<void>;
   onSkip?: () => void;
   onBack: () => void;
+  backLabel?: string;
+  headerExtra?: React.ReactNode;
 };
 
-export function TeenOnboardingView({ initial, busy = false, error, onSubmit, onSkip, onBack }: TeenOnboardingViewProps) {
+export function TeenOnboardingView({ initial, locale = "ru", busy = false, error, onSubmit, onSkip, onBack, backLabel, headerExtra }: TeenOnboardingViewProps) {
+  const strings = TEEN_UI[locale];
+  const valueLabels = teenValueLabels(locale);
+  const subjectLabels = teenSubjectLabels(locale);
   const [ranking, setRanking] = useState<TeenValueId[]>(initial?.valueRanking ?? defaultTeenValueRanking());
   const [subjects, setSubjects] = useState<TeenSubjectId[]>(initial?.subjects ?? []);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [localError, setLocalError] = useState<string>();
 
   const submit = async () => {
-    const problem = validateTeenOnboarding({ valueRanking: ranking, subjects });
+    const problem = validateTeenOnboarding({ valueRanking: ranking, subjects }, locale);
     if (problem) {
       setLocalError(problem);
       return;
@@ -47,15 +54,18 @@ export function TeenOnboardingView({ initial, busy = false, error, onSubmit, onS
   return (
     <div className="orbita-view ov-onboarding">
       <div className="ov-container ov-container-narrow">
-        <button className="ov-back-link" onClick={onBack} type="button">← Вернуться</button>
+        <div className="ov-teen-report-top">
+          <button className="ov-back-link" onClick={onBack} type="button">{backLabel ?? strings.back}</button>
+          {headerExtra}
+        </div>
         <SectionHeading
-          eyebrow="Перед тестом · 1 минута"
-          title="Что для тебя важно?"
-          body="Расставь ценности по порядку: сверху — самое важное. Топ-3 повлияют на подбор направлений. Затем выбери 2–3 любимых предмета."
+          eyebrow={strings.onboardingEyebrow}
+          title={strings.onboardingTitle}
+          body={strings.onboardingBody}
         />
         <article className="ov-card ov-onboarding-card">
-          <h3 className="ov-teen-step-title">Шаг 1 · Расставь ценности</h3>
-          <p className="ov-teen-step-hint">Потяни карточку или пользуйся стрелками ↑ ↓. Первые три подсвечены — они дадут бонус в подборе.</p>
+          <h3 className="ov-teen-step-title">{strings.step1Title}</h3>
+          <p className="ov-teen-step-hint">{strings.step1Hint}</p>
           <ol className="ov-teen-ranking">
             {ranking.map((valueId, index) => (
               <li
@@ -68,17 +78,17 @@ export function TeenOnboardingView({ initial, busy = false, error, onSubmit, onS
                 onDrop={() => dropAt(index)}
               >
                 <span className="ov-teen-rank-pos">{index + 1}</span>
-                <span className="ov-teen-rank-label">{TEEN_VALUE_LABELS[valueId]}</span>
+                <span className="ov-teen-rank-label">{valueLabels[valueId]}</span>
                 <span className="ov-teen-rank-actions">
-                  <button aria-label="Выше" disabled={index === 0} onClick={() => setRanking((current) => moveTeenValue(current, index, index - 1))} type="button">↑</button>
-                  <button aria-label="Ниже" disabled={index === ranking.length - 1} onClick={() => setRanking((current) => moveTeenValue(current, index, index + 1))} type="button">↓</button>
+                  <button aria-label="↑" disabled={index === 0} onClick={() => setRanking((current) => moveTeenValue(current, index, index - 1))} type="button">↑</button>
+                  <button aria-label="↓" disabled={index === ranking.length - 1} onClick={() => setRanking((current) => moveTeenValue(current, index, index + 1))} type="button">↓</button>
                 </span>
               </li>
             ))}
           </ol>
 
-          <h3 className="ov-teen-step-title">Шаг 2 · Любимые предметы</h3>
-          <p className="ov-teen-step-hint">Выбери от 2 до 3. Выбрано: {subjects.length}.</p>
+          <h3 className="ov-teen-step-title">{strings.step2Title}</h3>
+          <p className="ov-teen-step-hint">{strings.subjectsHint(subjects.length)}</p>
           <div className="ov-teen-subjects">
             {TEEN_SUBJECTS.map((subjectId) => {
               const selected = subjects.includes(subjectId);
@@ -89,7 +99,7 @@ export function TeenOnboardingView({ initial, busy = false, error, onSubmit, onS
                   onClick={() => setSubjects((current) => toggleTeenSubject(current, subjectId))}
                   type="button"
                 >
-                  {TEEN_SUBJECT_LABELS[subjectId]}
+                  {subjectLabels[subjectId]}
                 </button>
               );
             })}
@@ -97,12 +107,12 @@ export function TeenOnboardingView({ initial, busy = false, error, onSubmit, onS
 
           {localError || error ? <p className="ov-form-error">{localError ?? error}</p> : null}
           <button className="ov-btn ov-btn-primary ov-btn-block" disabled={busy} onClick={() => void submit()} type="button">
-            {busy ? "Сохраняем…" : "Перейти к вопросам"}
+            {busy ? strings.saving : strings.goToQuestions}
             <ArrowRight />
           </button>
           {onSkip ? (
             <button className="ov-teen-skip" disabled={busy} onClick={onSkip} type="button">
-              Пропустить (подбор будет менее точным)
+              {strings.skipOnboarding}
             </button>
           ) : null}
         </article>
