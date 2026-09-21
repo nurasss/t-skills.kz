@@ -35,6 +35,7 @@ export const TEEN_SUBJECT_LABELS: Record<TeenSubjectId, string> = {
   english: "Английский язык",
   creative: "Творческие предметы",
   pe: "Физкультура",
+  pedagogy: "Педагогика",
 };
 
 export const TEEN_SUBJECTS_MIN = 2;

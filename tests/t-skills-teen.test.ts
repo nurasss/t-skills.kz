@@ -129,3 +129,64 @@ test("teen onboarding helpers: move, toggle, validate", async () => {
   assert.equal(validateTeenOnboarding({ valueRanking: ranking, subjects: ["math"] }), "Выберите от 2 до 3 любимых предметов.");
   assert.equal(validateTeenOnboarding({ valueRanking: ranking, subjects: ["math", "physics"] }), null);
 });
+
+test("stage 3b pairs cover top-5 and preferences bump deterministically", async () => {
+  const { buildTeenStage3bPairs, applyTeenPreference } = await import("@/lib/t-skills/teen/stage3b");
+  const ranked = Array.from({ length: 12 }, (_, i) => ({
+    professionId: `p${i + 1}`, traitScore: 1 - i * 0.01, valueBonus: 0, subjectBonus: 0, totalScore: 1 - i * 0.01,
+  }));
+  const pairs = buildTeenStage3bPairs(ranked);
+  assert.equal(pairs.length, 20);
+  assert.equal(new Set(pairs.map((p) => [p.leftProfessionId, p.rightProfessionId].sort().join("|"))).size, 20);
+  for (let i = 0; i < 5; i += 1) {
+    const appearances = pairs.filter((p) => p.leftProfessionId === `p${i + 1}` || p.rightProfessionId === `p${i + 1}`).length;
+    assert.ok(appearances >= 4, `p${i + 1} appears ${appearances}x`);
+  }
+  const [first] = pairs;
+  const bumped = applyTeenPreference(ranked, first, first.leftProfessionId);
+  assert.ok(bumped.find((e) => e.professionId === first.leftProfessionId)!.totalScore > 1);
+  assert.throws(() => applyTeenPreference(ranked, first, "p999"), /TEEN_3B_PICK/);
+  assert.deepEqual(buildTeenStage3bPairs(ranked), pairs);
+});
+
+test("full teen pipeline on real v1 bundle", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { parseTeenContentBundle } = await import("@/lib/t-skills/teen/content");
+  const { scoreTeenCareers } = await import("@/lib/t-skills/teen/matching");
+  const { buildTeenStage3bPairs, applyTeenPreference } = await import("@/lib/t-skills/teen/stage3b");
+  const { buildTeenReport } = await import("@/lib/t-skills/teen/report");
+  const raw = JSON.parse(readFileSync("lib/t-skills/teen/content.v1.json", "utf-8"));
+  const content = parseTeenContentBundle(raw);
+  assert.equal(content.items75.length, 75);
+  assert.equal(content.stage2.length, 25);
+  assert.equal(content.professions.length, 170);
+
+  const pattern = [2, 1, -1, -2, 2, -2];
+  const answers: Record<string, number> = {};
+  content.items75.forEach((item, i) => { answers[item.id] = pattern[i % pattern.length]; });
+  let { totals, contributions } = scoreTeenStage1(
+    content.items75.map((item) => ({ id: item.id, leftTraitId: item.leftTraitId, rightTraitId: item.rightTraitId })),
+    answers,
+  );
+  assert.equal(TEEN_TRAIT_IDS.reduce((sum, id) => sum + totals[id], 0), 0);
+  const selected = selectTeenStage2(totals, contributions);
+  assert.ok(selected.length >= 5 && selected.length <= 15);
+  for (const traitId of selected) totals = applyTeenStage2Correction(totals, traitId, 1);
+
+  const onboarding = {
+    valueRanking: ["growth", "income", "stability", "social-impact", "value-autonomy", "creative-freedom", "status", "work-life-balance"],
+    subjects: ["math", "informatics"],
+  } as const;
+  let ranked = scoreTeenCareers(totals, content.professions, { valueRanking: [...onboarding.valueRanking], subjects: [...onboarding.subjects] });
+  assert.equal(ranked.length, 170);
+  const pairs = buildTeenStage3bPairs(ranked);
+  assert.equal(pairs.length, 20);
+  for (const pair of pairs) ranked = applyTeenPreference(ranked, pair, pair.leftProfessionId);
+
+  const report = buildTeenReport(content, totals, ranked, { valueRanking: [...onboarding.valueRanking], subjects: [...onboarding.subjects] });
+  assert.equal(report.careers.length, 5);
+  assert.ok(report.careers.every((career) => career.title.length > 0));
+  assert.equal(report.topTraits.length, 5);
+  assert.ok(report.traits[0].normalized >= report.traits[report.traits.length - 1].normalized);
+  assert.equal(report.topValues.length, 3);
+});

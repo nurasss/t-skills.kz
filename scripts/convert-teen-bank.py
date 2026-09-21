@@ -60,6 +60,7 @@ SUBJECTS = [
     ("Английский язык", "english"),
     ("Творческие предметы (ИЗО, музыка)", "creative"),
     ("Физическая культура", "pe"),
+    ("Педагогика", "pedagogy"),
 ]
 
 SUBJECT_ALIASES = {
@@ -71,6 +72,7 @@ SUBJECT_ALIASES = {
     "английский язык": "english", "английский": "english",
     "творческие предметы (изо, музыка)": "creative", "изо": "creative", "музыка": "creative",
     "творческие предметы": "creative", "физическая культура": "pe",
+    "педагогика": "pedagogy",
 }
 
 VALUE_ALIASES = {
@@ -151,7 +153,7 @@ def parse_professions(path):
                 continue
             if val not in (1, 2, -1, -2):
                 issues.append(f"professions: unexpected weight {val} in {pid}")
-            trait_weights[TRAIT_IDS[name]] = 1.0 if val >= 2 else 0.5
+            trait_weights[TRAIT_IDS[name]] = val / 2.0
         subj = []
         for part in str(subjects or "").split(","):
             key = part.strip().lower()

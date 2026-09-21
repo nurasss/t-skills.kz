@@ -15,8 +15,7 @@ export const TEEN_VERSION_IDS = {
   onboarding: "teen-onboarding-v1",
 } as const;
 
-export const TEEN_TRAIT_IDS = [
-  "curiosity",
+export const TEEN_TRAIT_IDS = [  "curiosity",
   "strategic-thinking",
   "innovativeness",
   "aesthetic-sense",
@@ -42,6 +41,12 @@ export const TEEN_TRAIT_IDS = [
   "entrepreneurial-drive",
   "persistence",
 ] as const;
+
+/**
+ * DECIDED-BY-AGENT: adaptability нигде не взвешен в каталоге v1.
+ * Считаем намеренным: вес 0 (нейтрально), ничего не выдумываем.
+ * Трейт участвует в этапах 1–2 и рейтинге, но не влияет на матчинг профессий.
+ */
 
 export type TeenTraitId = (typeof TEEN_TRAIT_IDS)[number];
 
@@ -93,6 +98,8 @@ export const TEEN_SUBJECTS = [
   "english",
   "creative",
   "pe",
+  /** DECIDED-BY-AGENT: «Педагогика» у 11 профессий, нет в исходных 13 — добавлен 14-м, а не выкинут. */
+  "pedagogy",
 ] as const;
 
 export type TeenSubjectId = (typeof TEEN_SUBJECTS)[number];
