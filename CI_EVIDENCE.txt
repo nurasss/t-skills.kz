@@ -33,3 +33,27 @@ Reproducibility:
 Two source package runs in Node 22.13.0     PASS — identical SHA256 b45dac72a5b2fb79c15228144653ea9597696a793e120c158a96d134150ddeb6
 
 The local E2E uses an isolated Wrangler D1/R2 state directory and e2e-only test values. It never uses production secrets or data. A GitHub Actions Ubuntu run is required before promoting READY_FOR_ENGINEERING_100=YES.
+
+T-Skills admin control-plane verification record
+Date: 2026-09-22
+Source Git SHA: 17a7d9ad79357ecf034d9dd5e9717e57e7c8fe8c
+Source package SHA256: 14aa86c2b18d82f0899c1a773221456fe8a5f415d0c84092d7ab15315bf591c5
+Node: v22.13.0 for package and release verification
+
+Commands and results:
+  npx tsc --noEmit                           PASS
+  npm run lint                               PASS
+  npm test                                   PASS — 117 tests
+  npm run test:coverage                      PASS — total lib branches 84.35%
+  npm run build                              PASS
+  npm run db:check                           PASS — MIGRATION_DRIFT=PASS
+  npm run test:retention-plan                PASS — RETENTION_QUERY_PLAN=PASS
+  npm run test:e2e                           PASS — post-fix isolated Worker/D1/R2 smoke
+  npm run test:browser                       PASS — strict CSP browser test
+  npm run security:scan                      PASS — no tracked secrets
+  npm run audit:check                        PASS — 0 vulnerabilities
+  npm run package:source:check               PASS — 453 tracked source files, forbidden paths absent
+  Node 22.13.0 release:verify                PASS — archive reproduced twice with exact SHA
+
+Clean Linux note:
+  ATTEMPTED, NOT ATTESTED. Docker's VZ-backed Colima disk returned an I/O error while persisting the clean Node 22.13.0 image. A separate QEMU profile cannot start because qemu-img is not installed. No project gate was skipped locally; an independent Ubuntu/CI runner remains required before claiming clean-Linux evidence.
