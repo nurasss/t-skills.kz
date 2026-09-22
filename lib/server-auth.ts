@@ -1,4 +1,4 @@
-import { getRuntimeEnv } from "@/db";
+import { getD1, getRuntimeEnv } from "@/db";
 import { getSessionViewer } from "@/lib/app-auth";
 
 export type Viewer = {
@@ -58,4 +58,21 @@ export function isAdmin(viewer: Viewer) {
     .map((value) => value.trim())
     .filter(Boolean);
   return allowlist.includes(viewer.userId) || allowlist.map((value) => value.toLowerCase()).includes(viewer.email.toLowerCase());
+}
+
+/** Async RBAC-aware membership check used by server pages and legacy routes. */
+export async function isAdminAsync(viewer: Viewer) {
+  if (isAdmin(viewer)) return true;
+  try {
+    const result = await getD1().prepare(
+      `SELECT 1
+       FROM admin_role_assignments a
+       JOIN admin_roles r ON r.id = a.role_id
+       WHERE a.user_id = ? AND a.disabled_at IS NULL AND r.status = 'ACTIVE'
+       LIMIT 1`,
+    ).bind(viewer.userId).first<{ 1: number }>();
+    return Boolean(result);
+  } catch {
+    return false;
+  }
 }

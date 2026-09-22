@@ -21,15 +21,15 @@ test("strict CSP permits hydration and protects checkout without application scr
       body: JSON.stringify({
         supportContact: null,
         test: {
-          id: "orbita30",
+          id: "t-skills",
           name: "T-Skills",
-          assessmentVersion: "orbita30_ru_v2",
+          assessmentVersion: "t-skills_pairwise_v1",
           amountMinor: 150000,
           currency: "KZT",
           availableForCheckout: true,
           includesPdf: true,
           oneTime: true,
-          description: "browser fixture",
+          description: "67 парных сравнений 25 качеств и 8 коротких карьерных ситуаций",
         },
       }),
     });
@@ -43,9 +43,9 @@ test("strict CSP permits hydration and protects checkout without application scr
   expect(scriptSrc).toMatch(/^script-src 'self' 'nonce-[A-Za-z0-9+/]+={0,2}'$/);
   expect(scriptSrc).not.toContain("'unsafe-inline'");
   expect(scriptSrc).not.toContain("'unsafe-eval'");
-  await expect(page.getByRole("heading", { name: /Исследуйте свои способы действовать/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Поймите, в чём вы действительно сильны/ })).toBeVisible();
 
-  await page.locator("#start").click();
+  await page.getByRole("button", { name: /Пройти T-Skills/ }).first().click();
   await expect(page).toHaveURL(/\/tests\/t-skills$/);
   await page.getByRole("button", { name: /Перейти к оформлению/ }).click();
   await expect(page).toHaveURL(/\/auth\?return_to=%2Fcheckout%2Ft-skills$/);

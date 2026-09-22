@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { PaymentProviderError } from "@/lib/payment-provider";
 import { ReportProviderError } from "@/lib/report-provider";
 import { StoreError } from "@/lib/durable-store";
-import { constantTimeTokenEqual, cookieValue, csrfCookieValue, SECURE_SESSION_COOKIE, SESSION_COOKIE } from "@/lib/app-auth";
+import { constantTimeTokenEqual, cookieValue, csrfCookieValue, SECURE_SESSION_COOKIE, SESSION_COOKIE, trustedAppBaseUrl } from "@/lib/app-auth";
 import { EmailDeliveryError } from "@/lib/email";
 import { authError, viewerFromRequestAsync, type Viewer } from "@/lib/server-auth";
 
@@ -21,7 +21,10 @@ export function sameOriginOrResponse(request: Request, options: { requireCsrf?: 
   const fetchSite = request.headers.get("sec-fetch-site");
   if (origin) {
     try {
-      if (new URL(origin).origin !== new URL(request.url).origin) return csrfResponse();
+      // Behind the VPS reverse proxy, request.url can contain the internal
+      // upstream origin (for example http://tskills-app:3000). Compare the
+      // browser origin with the explicitly trusted public app origin instead.
+      if (new URL(origin).origin !== trustedAppBaseUrl(request)) return csrfResponse();
     } catch {
       return csrfResponse();
     }
@@ -84,6 +87,16 @@ function publicMessage(code: string) {
     PDF_SIGNING_SECRET_MISSING: "Защищённая выдача PDF ещё не настроена.",
     PAYMENT_INTEGRITY_MISMATCH: "Платёжное событие не совпало с заказом и не выдало доступ.",
     PAYMENT_EVENT_REPLAY_MISMATCH: "Повторное платёжное событие не совпадает с исходным payload.",
+    IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD: "Этот ключ уже использован для другого заказа.",
+    PROMO_NOT_FOUND: "Промокод не найден или недоступен.",
+    PROMO_DISABLED: "Промокод отключён.",
+    PROMO_NOT_ACTIVE: "Промокод сейчас недоступен.",
+    PROMO_EXPIRED: "Срок действия промокода истёк.",
+    PROMO_NOT_STARTED: "Промокод ещё не начал действовать.",
+    PROMO_CURRENCY_MISMATCH: "Промокод нельзя применить к этой валюте.",
+    PROMO_MINIMUM_NOT_MET: "Сумма заказа не соответствует условиям промокода.",
+    PROMO_LIMIT_REACHED: "Лимит использования промокода исчерпан.",
+    PROMO_USER_LIMIT_REACHED: "Вы уже использовали этот промокод максимально допустимое число раз.",
     DATABASE_UNAVAILABLE: "Хранилище временно недоступно. Ответы не потеряны на устройстве.",
     ACCOUNT_DELETED: "Аккаунт удалён. Восстановить эту сессию нельзя.",
     ORDER_NOT_FOUND: "Заказ не найден.",

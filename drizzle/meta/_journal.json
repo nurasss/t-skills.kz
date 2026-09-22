@@ -113,6 +113,48 @@
       "when": 1789631713168,
       "tag": "0015_steady_thunderbird",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1789663395764,
+      "tag": "0016_safe_dark_beast",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1789681898711,
+      "tag": "0017_mysterious_giant_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1789682836724,
+      "tag": "0018_melodic_loki",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1790019231605,
+      "tag": "0019_flawless_may_parker",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1790019833203,
+      "tag": "0020_pretty_johnny_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1790053150358,
+      "tag": "0021_promo_lifecycle_runtime_safety",
+      "breakpoints": true
     }
   ]
 }

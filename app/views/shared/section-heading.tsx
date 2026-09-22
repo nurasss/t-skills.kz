@@ -5,13 +5,16 @@ type SectionHeadingProps = {
   title: string;
   body?: string;
   align?: "left" | "center";
+  /** Уровень заголовка: h1 — один на страницу (каталог, методология). */
+  level?: 1 | 2;
 };
 
-export function SectionHeading({ eyebrow, title, body, align = "left" }: SectionHeadingProps) {
+export function SectionHeading({ eyebrow, title, body, align = "left", level = 2 }: SectionHeadingProps) {
+  const Title = level === 1 ? "h1" : "h2";
   return (
     <div className={`ov-section-head${align === "center" ? " centered" : ""}`}>
       {eyebrow ? <span className="ov-eyebrow">{eyebrow}</span> : null}
-      <h2>{title}</h2>
+      <Title>{title}</Title>
       {body ? <p>{body}</p> : null}
     </div>
   );

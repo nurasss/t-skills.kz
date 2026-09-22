@@ -5,6 +5,7 @@ import {
   INTERPRETATION_LIBRARY_VERSION,
 } from "@/lib/interpretation-library";
 import { buildReportSourceKeys } from "@/lib/report-safety";
+import { T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 
 export const VERSION_IDS = {
   assessment: "orbita30_ru_v1",
@@ -30,7 +31,7 @@ export const V2_VERSION_IDS = {
   translation: "ru-source-v1",
 } as const;
 
-export type AssessmentVersionIds = typeof VERSION_IDS | typeof V2_VERSION_IDS;
+export type AssessmentVersionIds = typeof VERSION_IDS | typeof V2_VERSION_IDS | typeof T_SKILLS_VERSION_IDS;
 
 type NormStatus = "unvalidated" | "pilot" | "normed";
 
@@ -150,6 +151,13 @@ export type ReportJSON = {
   workEnvironments: string[];
   development30Days: string[];
   confidenceNote: string;
+  career?: {
+    traitProfile: unknown[];
+    clarificationAnswers: Array<{ questionId: string; optionId: string }>;
+    careerPreferences: Array<{ questionId: string; optionId: string }>;
+    ranking: Array<Record<string, unknown>>;
+    versions: Record<string, string>;
+  };
   sourceKeys: {
     executiveSummary: string[];
     topStrengths: Array<{ trait: TraitCode; keys: string[] }>;
@@ -414,7 +422,8 @@ export function normalizeScoreProfile(value: unknown): ScoreProfile {
   const raw = value as Record<string, unknown>;
   const rawVersions = raw.versions && typeof raw.versions === "object" ? raw.versions as Record<string, unknown> : {};
   const isV2 = rawVersions.assessment === V2_VERSION_IDS.assessment;
-  const versionDefaults = isV2 ? V2_VERSION_IDS : VERSION_IDS;
+  const isTSkills = rawVersions.assessment === T_SKILLS_VERSION_IDS.assessment;
+  const versionDefaults = isV2 ? V2_VERSION_IDS : isTSkills ? T_SKILLS_VERSION_IDS : VERSION_IDS;
   const traits = Array.isArray(raw.traits) ? raw.traits.map((candidate) => {
     if (!candidate || typeof candidate !== "object") return null;
     const trait = candidate as Record<string, unknown>;
@@ -456,9 +465,9 @@ export function normalizeScoreProfile(value: unknown): ScoreProfile {
       itemBank: typeof rawVersions.itemBank === "string" ? rawVersions.itemBank : versionDefaults.itemBank,
       scoring: typeof rawVersions.scoring === "string" ? rawVersions.scoring : versionDefaults.scoring,
       norms: typeof rawVersions.norms === "string" ? rawVersions.norms : versionDefaults.norms,
-      ...(isV2 ? {
-        adaptive: typeof rawVersions.adaptive === "string" ? rawVersions.adaptive : V2_VERSION_IDS.adaptive,
-        norm: typeof rawVersions.norm === "string" ? rawVersions.norm : V2_VERSION_IDS.norm,
+      ...((isV2 || isTSkills) ? {
+        adaptive: typeof rawVersions.adaptive === "string" ? rawVersions.adaptive : isV2 ? V2_VERSION_IDS.adaptive : T_SKILLS_VERSION_IDS.adaptive,
+        norm: typeof rawVersions.norm === "string" ? rawVersions.norm : isV2 ? V2_VERSION_IDS.norm : T_SKILLS_VERSION_IDS.norm,
       } : {}),
       selector: versionDefaults.selector,
       report: versionDefaults.report,

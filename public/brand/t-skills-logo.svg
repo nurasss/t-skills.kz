@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 250" role="img" aria-labelledby="tskills-logo-title tskills-logo-desc">
+  <title id="tskills-logo-title">T-Skills logo</title>
+  <desc id="tskills-logo-desc">Abstract growth and human potential mark with T-Skills wordmark.</desc>
+
+  <defs>
+    <style>
+      .tsb-sage { fill: #8CA78F; }
+      .tsb-deep { fill: #2F3A36; }
+      .tsb-wordmark {
+        fill: #1F2724;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: 118px;
+        font-weight: 400;
+        letter-spacing: -2px;
+      }
+      .tsb-tagline {
+        fill: #2F3A36;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 18px;
+        font-weight: 500;
+        letter-spacing: 6px;
+      }
+    </style>
+  </defs>
+
+  <!-- Icon -->
+  <g transform="translate(22 20)">
+    <!-- head -->
+    <circle class="tsb-sage" cx="92" cy="28" r="21"/>
+
+    <!-- left leaf / arm -->
+    <path class="tsb-sage" d="M82 72
+      C53 45, 18 47, 2 55
+      C9 87, 32 111, 63 121
+      C73 124, 81 124, 88 122
+      C84 101, 80 84, 82 72Z"/>
+
+    <!-- right leaf / arm -->
+    <path class="tsb-deep" d="M102 79
+      C124 48, 154 45, 181 52
+      C176 82, 159 105, 132 116
+      C120 121, 108 123, 96 121
+      C96 102, 98 90, 102 79Z"/>
+
+    <!-- left body / stem -->
+    <path class="tsb-sage" d="M77 84
+      C84 98, 90 112, 91 129
+      L91 192
+      C74 187, 61 180, 53 168
+      C48 160, 46 151, 46 141
+      C46 122, 54 104, 67 91
+      C71 87, 74 85, 77 84Z"/>
+
+    <!-- right body / stem -->
+    <path class="tsb-deep" d="M93 119
+      C105 111, 116 105, 128 101
+      C123 117, 119 133, 118 149
+      L117 192
+      C106 188, 98 182, 92 174
+      L92 130
+      C92 126, 92 123, 93 119Z"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text class="tsb-wordmark" x="230" y="145">T-Skills</text>
+
+  <!-- Tagline -->
+  <text class="tsb-tagline" x="236" y="188">KNOW YOUR STRENGTHS</text>
+  <text class="tsb-tagline" x="236" y="214">A BRIGHTER TOMORROW</text>
+</svg>

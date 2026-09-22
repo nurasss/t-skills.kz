@@ -32,8 +32,26 @@ import { canPublishLocale, resolveLocale, type Locale } from "@/lib/i18n";
 import { nextPaymentStatus, paymentTelemetryEvent, type PaymentEventStatus, type PaymentOperationalStatus } from "@/lib/payment-event-policy";
 import { canSessionTransition, type SessionState } from "@/lib/assessment-state-machine";
 import { purgeAfterFrom, retentionDaysFrom } from "@/lib/retention-policy";
+import { deleteAssessmentDataStatements, deleteUserAssessmentDataStatements } from "@/lib/privacy-data-registry";
 import type { Viewer } from "@/lib/server-auth";
-import { isBetaFreeMode } from "@/lib/runtime-config";
+import { hasUnlimitedAssessmentAccess } from "@/lib/runtime-config";
+import { assertOnboarding } from "@/lib/t-skills/onboarding";
+import { T_SKILLS_ADAPTIVE_BANK_V1 } from "@/lib/t-skills/adaptive-bank-v1";
+import { applyAdaptiveAnswer, validateAdaptiveQuestion } from "@/lib/t-skills/adaptive";
+import { T_SKILLS_PAIRWISE_BANK_V1, T_SKILLS_WORKING_TAXONOMY } from "@/lib/t-skills/content-v4";
+import type { AdaptiveAnswer, AdaptiveQuestion, OnboardingContext, Profession } from "@/lib/t-skills/contracts";
+import { T_SKILLS_PAIRWISE_ITEM_BY_ID } from "@/lib/t-skills/item-bank";
+import { pairwiseScoreToProfile } from "@/lib/t-skills/profile-adapter";
+import { buildTSkillsReport } from "@/lib/t-skills/report-adapter";
+import { scorePairwiseV1 } from "@/lib/t-skills/scoring";
+import { T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import { T_SKILLS_V5_VERSION_IDS } from "@/lib/t-skills/v5/versions";
+import { calculatePromotion, normalizePromoCode, type PromotionDefinition } from "@/lib/promotion-engine";
+import { matchCareers, validateCareerCatalog } from "@/lib/t-skills/career";
+import { productionCareerCatalog, productionCareerModel } from "@/lib/t-skills/production-career-model";
+import { canonicalOrderIdempotencyPayload as canonicalOrderPayloadObject, serializeOrderIdempotencyPayload, assertSerializedOrderIdempotencyPayloadMatches } from "@/lib/order-idempotency";
+import { executableAssessmentVersionReason } from "@/lib/assessment-runtime-registry";
+import { paymentsFeatureEnabled } from "@/lib/feature-flags";
 
 export type { SessionState } from "@/lib/assessment-state-machine";
 
@@ -49,7 +67,7 @@ export type DurableSession = {
   responseTimes: Record<string, number>;
   clientSeq: number;
   adaptiveItemIds: string[];
-  adaptiveItems: GeneratedAdaptiveQuestion[];
+  adaptiveItems: StoredAdaptiveQuestion[];
   selectionMode?: "deterministic-fallback" | "ai-openai" | "mercury" | "approved-fallback";
   adaptiveGenerationStatus?: string;
   adaptiveFallbackUsed?: boolean;
@@ -67,8 +85,35 @@ export type OrderRecord = {
   status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED" | "REFUNDED" | "DISPUTED" | "DISPUTE_CLOSED";
   provider: string;
   checkoutUrl: string | null;
+  freeAccess: boolean;
   createdAt: string;
 };
+
+const PROMO_RESERVATION_MS = 24 * 60 * 60 * 1000;
+
+async function releaseExpiredPromoReservations(database: ReturnType<typeof ensureDatabase>, timestamp: number) {
+  // Stripe Checkout sessions cannot be completed after their expiry.  Releasing
+  // only an expired reservation keeps a code available after abandonment while
+  // preserving a verified paid order as the source of truth.
+  await database.batch([
+    database.prepare(
+      `UPDATE promo_redemptions
+       SET status = 'RELEASED', released_at = ?
+       WHERE status = 'RESERVED' AND reservation_expires_at IS NOT NULL AND reservation_expires_at <= ?`,
+    ).bind(timestamp, timestamp),
+    database.prepare(
+      `UPDATE orders
+       SET status = 'PAYMENT_FAILED', updated_at = ?
+       WHERE status = 'PAYMENT_PENDING' AND id IN (
+         SELECT order_id FROM promo_redemptions WHERE status = 'RELEASED' AND released_at = ?
+       )`,
+    ).bind(timestamp, timestamp),
+  ]);
+}
+
+function activePromoReservationWhere(alias = "r") {
+  return `(${alias}.status = 'REDEEMED' OR (${alias}.status = 'RESERVED' AND ${alias}.reservation_expires_at > ?))`;
+}
 
 export type ReportRecord = {
   id: string;
@@ -157,6 +202,12 @@ type OrderRow = {
   id: string;
   test_id: string;
   amount_minor: number;
+  original_amount_minor: number | null;
+  discount_amount_minor: number | null;
+  final_amount_minor: number | null;
+  promo_code_id: string | null;
+  pricing_snapshot_json: string | null;
+  idempotency_payload_json: string | null;
   currency: string;
   status: OrderRecord["status"];
   provider: string;
@@ -174,6 +225,8 @@ type PaymentOrderRow = {
   provider: string;
   provider_checkout_id: string | null;
   provider_payment_id: string | null;
+  promo_code_id: string | null;
+  campaign_id: string | null;
 };
 
 type ReportRow = {
@@ -213,6 +266,7 @@ type AdaptiveRunRow = {
 
 const itemById = new Map<string, Item>(ITEM_BANK.map((item) => [item.id, item]));
 const MAX_ADAPTIVE_GENERATION_ATTEMPTS = 3;
+type StoredAdaptiveQuestion = GeneratedAdaptiveQuestion | AdaptiveQuestion;
 
 function now() {
   return Date.now();
@@ -244,10 +298,15 @@ function isV2Session(session: Pick<DurableSession, "versions">) {
   return session.versions.assessment === V2_VERSION_IDS.assessment;
 }
 
+function isTSkillsSession(session: Pick<DurableSession, "versions">) {
+  return "testId" in session
+    ? (session as Pick<DurableSession, "testId" | "versions">).testId === T_SKILLS_TEST_ID || (typeof session.versions.assessment === "string" && session.versions.assessment.startsWith("t-skills"))
+    : session.versions.assessment === T_SKILLS_VERSION_IDS.assessment;
+}
+
 function isSessionCoreItem(session: Pick<DurableSession, "versions">, itemId: string) {
-  return isV2Session(session)
-    ? CORE60_BANK.some((item) => item.id === itemId)
-    : isCoreItem(itemId);
+  if (isTSkillsSession(session)) return T_SKILLS_PAIRWISE_ITEM_BY_ID.has(itemId);
+  return isV2Session(session) ? CORE60_BANK.some((item) => item.id === itemId) : isCoreItem(itemId);
 }
 
 function isAdaptiveItem(itemId: string) {
@@ -275,6 +334,13 @@ function validV2Response(item: Core60ItemOrAdaptive, value: number) {
 }
 
 type Core60ItemOrAdaptive = (typeof CORE60_BANK)[number] | GeneratedAdaptiveQuestion;
+
+function validTSkillsResponse(session: DurableSession, itemId: string, value: number) {
+  if (!Number.isFinite(value) || !Number.isInteger(value)) return false;
+  if (T_SKILLS_PAIRWISE_ITEM_BY_ID.has(itemId)) return value >= -2 && value <= 2;
+  if (isTSkillsSession(session) && session.adaptiveItemIds.includes(itemId)) return value >= 0 && value <= 3;
+  return false;
+}
 
 function responseMap(rows: ResponseRow[]) {
   return Object.fromEntries(rows.map((row) => [row.item_id, row.response])) as ResponseMap;
@@ -413,38 +479,47 @@ async function loadSession(sessionId: string, userId: string): Promise<DurableSe
     .bind(sessionId)
     .all<{
       question_id: string;
-      format: "forced_choice" | "likert";
+      format: string;
       prompt: string;
       options_json: string;
       target_traits_json: string;
-      reason_code: GeneratedAdaptiveQuestion["reasonCode"];
+      reason_code: string;
       semantic_intent: string;
       semantic_cluster: string;
       confidence: number | null;
-      provider: GeneratedAdaptiveQuestion["provider"];
+      provider: string;
       model_id: string | null;
       provider_request_id: string | null;
-      prompt_version: GeneratedAdaptiveQuestion["promptVersion"];
-      adaptive_version: GeneratedAdaptiveQuestion["adaptiveVersion"];
-      validation_status: "accepted";
+      prompt_version: string;
+      adaptive_version: string;
+      validation_status: string;
     }>();
-  const adaptiveItems = (questionResult.results ?? []).map((question) => ({
-    questionId: question.question_id as `AI-${string}` | `FB-${string}`,
-    format: question.format,
-    targetTraits: parseJson(question.target_traits_json, []) as GeneratedAdaptiveQuestion["targetTraits"],
-    reasonCode: question.reason_code,
-    prompt: question.prompt,
-    options: parseJson(question.options_json, []) as GeneratedAdaptiveQuestion["options"],
-    semanticIntent: question.semantic_intent,
-    semanticCluster: question.semantic_cluster,
-    confidence: question.confidence ?? 0,
-    provider: question.provider,
-    model: question.model_id,
-    providerRequestId: question.provider_request_id,
-    promptVersion: question.prompt_version,
-    adaptiveVersion: question.adaptive_version,
-    validationStatus: question.validation_status,
-  })) satisfies GeneratedAdaptiveQuestion[];
+  const adaptiveItems = (questionResult.results ?? []).map((question) => {
+    if (question.format === "career_forced_choice") {
+      return {
+        id: question.question_id,
+        prompt: question.prompt,
+        options: parseJson(question.options_json, []) as unknown as AdaptiveQuestion["options"],
+      } satisfies AdaptiveQuestion;
+    }
+    return {
+      questionId: question.question_id as `AI-${string}` | `FB-${string}`,
+      format: question.format as GeneratedAdaptiveQuestion["format"],
+      targetTraits: parseJson(question.target_traits_json, []) as GeneratedAdaptiveQuestion["targetTraits"],
+      reasonCode: question.reason_code as GeneratedAdaptiveQuestion["reasonCode"],
+      prompt: question.prompt,
+      options: parseJson(question.options_json, []) as GeneratedAdaptiveQuestion["options"],
+      semanticIntent: question.semantic_intent,
+      semanticCluster: question.semantic_cluster,
+      confidence: question.confidence ?? 0,
+      provider: question.provider as GeneratedAdaptiveQuestion["provider"],
+      model: question.model_id,
+      providerRequestId: question.provider_request_id,
+      promptVersion: question.prompt_version as GeneratedAdaptiveQuestion["promptVersion"],
+      adaptiveVersion: question.adaptive_version as GeneratedAdaptiveQuestion["adaptiveVersion"],
+      validationStatus: "accepted",
+    } satisfies GeneratedAdaptiveQuestion;
+  });
   return {
     id: row.id,
     userId: row.user_id,
@@ -502,7 +577,7 @@ async function loadAdaptiveRun(assessmentId: string): Promise<AdaptiveRunRecord 
 }
 
 function nextItemId(session: DurableSession) {
-  const core = isV2Session(session) ? CORE60_BANK : ITEM_BANK.filter((item) => isCoreItem(item.id));
+  const core = isTSkillsSession(session) ? T_SKILLS_PAIRWISE_BANK_V1 : isV2Session(session) ? CORE60_BANK : ITEM_BANK.filter((item) => isCoreItem(item.id));
   const nextCore = core.find((item) => typeof session.responses[item.id] !== "number");
   if (nextCore) return nextCore.id;
   const nextAdaptive = session.adaptiveItemIds.find((itemId) => typeof session.responses[itemId] !== "number");
@@ -522,8 +597,63 @@ function publicOrder(row: OrderRow): OrderRecord {
     status: row.status,
     provider: row.provider,
     checkoutUrl: row.provider_checkout_url,
+    freeAccess: row.status === "PAID" && (row.final_amount_minor ?? row.amount_minor) === 0,
     createdAt: iso(row.created_at),
   };
+}
+
+function promotionFromRow(row: Record<string, unknown>): PromotionDefinition {
+  const list = (value: unknown) => parseJson<string[]>(typeof value === "string" ? value : null, []);
+  return {
+    id: String(row.id),
+    code: String(row.code),
+    name: String(row.name ?? ""),
+    description: String(row.description ?? ""),
+    discountType: String(row.discount_type) as PromotionDefinition["discountType"],
+    discountValue: Number(row.discount_value),
+    currency: String(row.currency),
+    maxTotalUses: row.max_total_uses === null ? null : Number(row.max_total_uses),
+    maxUsesPerUser: row.max_uses_per_user === null ? null : Number(row.max_uses_per_user),
+    validFrom: row.valid_from === null ? null : Number(row.valid_from),
+    validUntil: row.valid_until === null ? null : Number(row.valid_until),
+    minimumOrderAmount: row.minimum_order_amount === null ? null : Number(row.minimum_order_amount),
+    newUsersOnly: Number(row.new_users_only) === 1,
+    allowedTestIds: list(row.allowed_test_ids_json),
+    allowedEmailDomains: list(row.allowed_email_domains_json),
+    allowedUserIds: list(row.allowed_user_ids_json),
+    campaignId: row.campaign_id as string | null,
+    status: String(row.status),
+  };
+}
+
+function promotionStoreError(error: unknown): StoreError {
+  const code = error instanceof Error && /^[A-Z0-9_]+$/.test(error.message) ? error.message : "PROMO_NOT_ACTIVE";
+  const status = code === "PROMO_NOT_ACTIVE" || code === "PROMO_DISABLED" || code === "PROMO_EXPIRED" || code === "PROMO_NOT_STARTED" ? 409 : 422;
+  return new StoreError(code, status);
+}
+
+export function canonicalOrderIdempotencyPayload(input: { testId: string; amountMinor: number; currency: string; provider: string; promoCode: string | null }) {
+  return canonicalOrderPayloadObject(input);
+}
+
+function orderPayload(input: { testId: string; amountMinor: number; currency: string; provider: string; promoCode: string | null }) {
+  return serializeOrderIdempotencyPayload(input);
+}
+
+export function assertOrderIdempotencyPayloadMatches(savedPayload: string, expectedPayload: string) {
+  try {
+    assertSerializedOrderIdempotencyPayloadMatches(savedPayload, expectedPayload);
+  } catch {
+    throw new StoreError("IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD", 409);
+  }
+}
+
+function assertOrderIdempotency(row: OrderRow, payload: string) {
+  const saved = parseJson<Record<string, unknown>>(row.idempotency_payload_json, {});
+  const savedPayload = Object.keys(saved).length
+    ? JSON.stringify({ amount_minor: saved.amount_minor, currency: saved.currency, provider: saved.provider, promo_code: saved.promo_code ?? null, test_id: saved.test_id })
+    : orderPayload({ testId: row.test_id, amountMinor: row.original_amount_minor ?? row.amount_minor, currency: row.currency, provider: row.provider, promoCode: null });
+  assertOrderIdempotencyPayloadMatches(savedPayload, payload);
 }
 
 export async function createPendingOrder(input: {
@@ -533,69 +663,177 @@ export async function createPendingOrder(input: {
   currency: string;
   provider: string;
   idempotencyKey: string;
+  promoCode?: string;
 }) {
   await ensureUser(input.viewer);
   const database = ensureDatabase();
+  const normalizedPromoCode = input.promoCode ? normalizePromoCode(input.promoCode) : null;
+  const requestTimestamp = now();
+  await releaseExpiredPromoReservations(database, requestTimestamp);
+  const payload = orderPayload({ testId: input.testId, amountMinor: input.amountMinor, currency: input.currency, provider: input.provider, promoCode: normalizedPromoCode });
   const existing = await database
     .prepare(
       `SELECT id, test_id, amount_minor, currency, status, provider,
-              provider_checkout_url, created_at
+              provider_checkout_url, created_at, original_amount_minor,
+              discount_amount_minor, final_amount_minor, promo_code_id,
+              pricing_snapshot_json, idempotency_payload_json
        FROM orders WHERE user_id = ? AND idempotency_key = ? LIMIT 1`,
     )
     .bind(input.viewer.userId, input.idempotencyKey)
     .first<OrderRow>();
-  if (existing) return { order: publicOrder(existing), reused: true };
+  if (existing) {
+    assertOrderIdempotency(existing, payload);
+    return { order: publicOrder(existing), reused: true };
+  }
 
-  const timestamp = now();
+  let promotion: PromotionDefinition | null = null;
+  let calculation = { originalAmountMinor: input.amountMinor, discountAmountMinor: 0, finalAmountMinor: input.amountMinor, freeAccess: false };
+  if (normalizedPromoCode) {
+    const row = await database.prepare(`SELECT * FROM promo_codes WHERE code = ? LIMIT 1`).bind(normalizedPromoCode).first<Record<string, unknown>>();
+    if (!row) throw new StoreError("PROMO_NOT_FOUND", 404);
+    promotion = promotionFromRow(row);
+    const history = await database.prepare(`SELECT (SELECT COUNT(*) FROM orders WHERE user_id = ? AND status NOT IN ('PAYMENT_FAILED')) AS orders, (SELECT COUNT(*) FROM assessments WHERE user_id = ?) AS assessments`).bind(input.viewer.userId, input.viewer.userId).first<{ orders: number; assessments: number }>();
+    try {
+      calculation = calculatePromotion(promotion, {
+        nowMs: now(), userId: input.viewer.userId, email: input.viewer.email, testId: input.testId,
+        currency: input.currency, originalAmountMinor: input.amountMinor,
+        existingUser: Number(history?.orders ?? 0) > 0 || Number(history?.assessments ?? 0) > 0,
+      });
+    } catch (error) {
+      throw promotionStoreError(error);
+    }
+    const usage = await database.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS user_total FROM promo_redemptions r WHERE promo_code_id = ? AND ${activePromoReservationWhere("r")}`).bind(input.viewer.userId, promotion.id, requestTimestamp).first<{ total: number; user_total: number }>();
+    if (promotion.maxTotalUses !== null && promotion.maxTotalUses !== undefined && Number(usage?.total ?? 0) >= promotion.maxTotalUses) throw new StoreError("PROMO_LIMIT_REACHED", 409);
+    if (promotion.maxUsesPerUser !== null && promotion.maxUsesPerUser !== undefined && Number(usage?.user_total ?? 0) >= promotion.maxUsesPerUser) throw new StoreError("PROMO_USER_LIMIT_REACHED", 409);
+    if (promotion.campaignId) {
+      const campaign = await database.prepare(`
+        SELECT c.id, c.status, c.seat_limit, c.valid_from, c.valid_until,
+          (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) AS used,
+          EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = ?) AS already_used
+        FROM campaigns c WHERE c.id = ? LIMIT 1
+      `).bind(input.viewer.userId, promotion.campaignId).first<{ id: string; status: string; seat_limit: number; valid_from: number | null; valid_until: number | null; used: number; already_used: number }>();
+      if (!campaign) throw new StoreError("CAMPAIGN_NOT_FOUND", 404);
+      if (campaign.status !== "ACTIVE") throw new StoreError("CAMPAIGN_NOT_ACTIVE", 409);
+      if (campaign.valid_from !== null && Number(campaign.valid_from) > now()) throw new StoreError("CAMPAIGN_NOT_STARTED", 409);
+      if (campaign.valid_until !== null && Number(campaign.valid_until) <= now()) throw new StoreError("CAMPAIGN_EXPIRED", 409);
+      if (campaign.already_used) throw new StoreError("CAMPAIGN_USER_ALREADY_ACTIVATED", 409);
+      if (Number(campaign.used) >= Number(campaign.seat_limit)) throw new StoreError("CAMPAIGN_SEAT_LIMIT_REACHED", 409);
+    }
+  }
+
+  const timestamp = requestTimestamp;
   const orderId = newId("ord");
+  const orderStatus = calculation.freeAccess ? "PAID" : "PAYMENT_PENDING";
+  const snapshot = JSON.stringify({
+    currency: input.currency,
+    originalAmountMinor: calculation.originalAmountMinor,
+    discountAmountMinor: calculation.discountAmountMinor,
+    finalAmountMinor: calculation.finalAmountMinor,
+    promoCode: promotion ? { id: promotion.id, code: promotion.code, discountType: promotion.discountType, discountValue: promotion.discountValue } : null,
+  });
+  const statements = [
+    database.prepare(
+      `INSERT INTO orders
+        (id, user_id, test_id, amount_minor, original_amount_minor,
+         discount_amount_minor, final_amount_minor, currency, status, provider,
+         promo_code_id, campaign_id, pricing_snapshot_json, idempotency_payload_json,
+         provider_checkout_id, provider_checkout_url, provider_payment_id,
+         provider_event_id, idempotency_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?)`,
+    ).bind(
+      orderId, input.viewer.userId, input.testId, calculation.finalAmountMinor,
+      calculation.originalAmountMinor, calculation.discountAmountMinor, calculation.finalAmountMinor,
+      input.currency, orderStatus, input.provider, promotion?.id ?? null, promotion?.campaignId ?? null,
+      snapshot, payload, input.idempotencyKey, timestamp, timestamp,
+    ),
+  ];
+  if (promotion) {
+    const redemptionId = newId("promo_redemption");
+    const redemptionStatus = calculation.freeAccess ? "REDEEMED" : "RESERVED";
+    const reservationExpiresAt = calculation.freeAccess ? null : timestamp + PROMO_RESERVATION_MS;
+    statements.push(database.prepare(
+      `INSERT INTO promo_redemptions
+        (id, promo_code_id, user_id, order_id, campaign_id, original_amount_minor,
+         discount_amount_minor, final_amount_minor, currency, reserved_at,
+         reservation_expires_at, released_at, redeemed_at, status)
+       VALUES (
+         CASE WHEN EXISTS (
+           SELECT 1 FROM promo_codes p WHERE p.id = ? AND p.status = 'ACTIVE'
+             AND (p.valid_from IS NULL OR p.valid_from <= ?)
+             AND (p.valid_until IS NULL OR p.valid_until > ?)
+             AND (p.max_total_uses IS NULL OR (SELECT COUNT(*) FROM promo_redemptions r WHERE r.promo_code_id = p.id AND ${activePromoReservationWhere("r")}) < p.max_total_uses)
+             AND (p.max_uses_per_user IS NULL OR (SELECT COUNT(*) FROM promo_redemptions r WHERE r.promo_code_id = p.id AND r.user_id = ? AND ${activePromoReservationWhere("r")}) < p.max_uses_per_user)
+         ) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+    ).bind(promotion.id, timestamp, timestamp, timestamp, input.viewer.userId, timestamp, redemptionId, promotion.id, input.viewer.userId, orderId,
+      promotion.campaignId ?? null, calculation.originalAmountMinor, calculation.discountAmountMinor, calculation.finalAmountMinor, input.currency, timestamp, reservationExpiresAt, null, timestamp, redemptionStatus));
+    if (calculation.freeAccess) {
+      const freeEntitlementId = newId("ent");
+      statements.push(database.prepare(
+        `INSERT INTO entitlements
+          (id, order_id, user_id, test_id, grant_source, grant_reference,
+           promo_code_id, campaign_id, status, created_at, revoked_at, expires_at)
+         VALUES (?, ?, ?, ?, 'promo_free', ?, ?, ?, 'ACTIVE', ?, NULL, NULL)`,
+      ).bind(freeEntitlementId, orderId, input.viewer.userId, input.testId, `promo:${orderId}`, promotion.id, promotion.campaignId ?? null, timestamp));
+      if (promotion.campaignId) {
+        statements.push(database.prepare(`
+          INSERT INTO campaign_members (id, campaign_id, user_id, entitlement_id, created_at)
+          SELECT CASE
+            WHEN c.status = 'ACTIVE'
+             AND (c.valid_from IS NULL OR c.valid_from <= ?)
+             AND (c.valid_until IS NULL OR c.valid_until > ?)
+             AND (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) < c.seat_limit
+             AND NOT EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = ?)
+            THEN ? ELSE NULL END,
+            c.id, ?, e.id, ?
+          FROM campaigns c JOIN entitlements e ON e.id = ?
+          WHERE c.id = ?
+        `).bind(timestamp, timestamp, input.viewer.userId, newId("member"), input.viewer.userId, timestamp, freeEntitlementId, promotion.campaignId));
+      }
+    }
+  }
   try {
-    await database
-      .prepare(
-        `INSERT INTO orders
-          (id, user_id, test_id, amount_minor, currency, status, provider,
-           provider_checkout_id, provider_checkout_url, provider_payment_id,
-           provider_event_id, idempotency_key, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'PAYMENT_PENDING', ?, NULL, NULL, NULL, NULL, ?, ?, ?)`,
-      )
-      .bind(
-        orderId,
-        input.viewer.userId,
-        input.testId,
-        input.amountMinor,
-        input.currency,
-        input.provider,
-        input.idempotencyKey,
-        timestamp,
-        timestamp,
-      )
-      .run();
+    await database.batch(statements);
   } catch {
     const race = await database
       .prepare(
         `SELECT id, test_id, amount_minor, currency, status, provider,
-                provider_checkout_url, created_at
+                provider_checkout_url, created_at, original_amount_minor,
+                discount_amount_minor, final_amount_minor, promo_code_id,
+                pricing_snapshot_json, idempotency_payload_json
          FROM orders WHERE user_id = ? AND idempotency_key = ? LIMIT 1`,
       )
       .bind(input.viewer.userId, input.idempotencyKey)
       .first<OrderRow>();
-    if (race) return { order: publicOrder(race), reused: true };
+    if (race) {
+      assertOrderIdempotency(race, payload);
+      return { order: publicOrder(race), reused: true };
+    }
+    if (promotion) {
+      const usage = await database.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS user_total FROM promo_redemptions r WHERE promo_code_id = ? AND ${activePromoReservationWhere("r")}`).bind(input.viewer.userId, promotion.id, timestamp).first<{ total: number; user_total: number }>();
+      if (promotion.maxTotalUses !== null && promotion.maxTotalUses !== undefined && Number(usage?.total ?? 0) >= promotion.maxTotalUses) throw new StoreError("PROMO_LIMIT_REACHED", 409);
+      if (promotion.maxUsesPerUser !== null && promotion.maxUsesPerUser !== undefined && Number(usage?.user_total ?? 0) >= promotion.maxUsesPerUser) throw new StoreError("PROMO_USER_LIMIT_REACHED", 409);
+    }
     console.error("order_insert_failed", { error_code: "ORDER_INSERT_FAILED" });
     throw new StoreError("ORDER_CREATE_FAILED", 500);
   }
   await audit(input.viewer.userId, "ORDER_CREATED", "order", orderId, {
     testId: input.testId,
-    amountMinor: input.amountMinor,
+    amountMinor: calculation.finalAmountMinor,
+    originalAmountMinor: calculation.originalAmountMinor,
+    discountAmountMinor: calculation.discountAmountMinor,
+    promoCode: promotion?.code ?? null,
     currency: input.currency,
   });
   return {
     order: {
       id: orderId,
       testId: input.testId,
-      amountMinor: input.amountMinor,
+      amountMinor: calculation.finalAmountMinor,
       currency: input.currency,
-      status: "PAYMENT_PENDING" as const,
+      status: orderStatus as OrderRecord["status"],
       provider: input.provider,
       checkoutUrl: null,
+      freeAccess: calculation.freeAccess,
       createdAt: iso(timestamp),
     },
     reused: false,
@@ -623,13 +861,18 @@ export async function attachCheckoutSession(input: {
 
 export async function markOrderPaymentFailed(orderId: string, reason: string) {
   const database = ensureDatabase();
-  await database
-    .prepare(
+  const timestamp = now();
+  await database.batch([
+    database.prepare(
       `UPDATE orders SET status = 'PAYMENT_FAILED', updated_at = ?
        WHERE id = ? AND status = 'PAYMENT_PENDING'`,
     )
-    .bind(now(), orderId)
-    .run();
+    .bind(timestamp, orderId),
+    database.prepare(
+      `UPDATE promo_redemptions SET status = 'RELEASED', released_at = ?
+       WHERE order_id = ? AND status = 'RESERVED'`,
+    ).bind(timestamp, orderId),
+  ]);
   await audit(null, "PAYMENT_PROVIDER_FAILED", "order", orderId, { reason });
 }
 
@@ -665,7 +908,7 @@ export async function handlePaymentEvent(input: {
   }
 
   const order = await database
-    .prepare(`SELECT id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id, provider_payment_id FROM orders WHERE id = ? LIMIT 1`)
+    .prepare(`SELECT id, user_id, test_id, amount_minor, currency, status, provider, provider_checkout_id, provider_payment_id, promo_code_id, campaign_id FROM orders WHERE id = ? LIMIT 1`)
     .bind(input.orderId)
     .first<PaymentOrderRow>();
   if (!order) throw new StoreError("ORDER_NOT_FOUND", 404);
@@ -728,14 +971,36 @@ export async function handlePaymentEvent(input: {
   ];
   if (input.status === "PAID") {
     statements.push(
+      database.prepare(
+        `UPDATE promo_redemptions
+         SET status = 'REDEEMED', redeemed_at = ?, reservation_expires_at = NULL
+         WHERE order_id = ? AND status = 'RESERVED'`,
+      ).bind(timestamp, input.orderId),
       database
         .prepare(
           `INSERT OR IGNORE INTO entitlements
-            (id, order_id, user_id, test_id, grant_source, grant_reference, status, created_at, revoked_at)
-           SELECT ?, id, user_id, test_id, 'stripe', 'stripe:' || id, 'ACTIVE', ?, NULL
+            (id, order_id, user_id, test_id, grant_source, grant_reference, promo_code_id, campaign_id, status, created_at, revoked_at, expires_at)
+           SELECT ?, id, user_id, test_id, 'stripe', 'stripe:' || id, promo_code_id, campaign_id, 'ACTIVE', ?, NULL, NULL
            FROM orders WHERE id = ?`,
         )
         .bind(entitlementId, timestamp, input.orderId),
+      database
+        .prepare(
+          `INSERT INTO campaign_members (id, campaign_id, user_id, entitlement_id, created_at)
+           SELECT CASE
+             WHEN c.status = 'ACTIVE'
+              AND (c.valid_from IS NULL OR c.valid_from <= ?)
+              AND (c.valid_until IS NULL OR c.valid_until > ?)
+              AND (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) < c.seat_limit
+              AND NOT EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = o.user_id)
+             THEN ? ELSE NULL END,
+             c.id, o.user_id, e.id, ?
+           FROM orders o
+           JOIN entitlements e ON e.id = ?
+           LEFT JOIN campaigns c ON c.id = o.campaign_id
+           WHERE o.id = ? AND o.campaign_id IS NOT NULL`,
+        )
+        .bind(timestamp, timestamp, newId("member"), timestamp, entitlementId, input.orderId),
       database
         .prepare(
           `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
@@ -743,15 +1008,23 @@ export async function handlePaymentEvent(input: {
         )
         .bind(newId("tel"), telemetryEvent, order.user_id, JSON.stringify({ provider: "stripe", status: input.status }), timestamp),
     );
-  } else if (telemetryEvent) {
+  } else {
+    if (input.status === "PAYMENT_FAILED") {
+      statements.push(database.prepare(
+        `UPDATE promo_redemptions SET status = 'RELEASED', released_at = ?
+         WHERE order_id = ? AND status = 'RESERVED'`,
+      ).bind(timestamp, input.orderId));
+    }
+    if (telemetryEvent) {
     statements.push(
       database
         .prepare(
           `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
            VALUES (?, ?, ?, NULL, ?, ?)`,
-        )
+      )
         .bind(newId("tel"), telemetryEvent, order.user_id, JSON.stringify({ provider: "stripe", status: input.status, event_type: input.eventType }), timestamp),
     );
+    }
   }
   try {
     await database.batch(statements);
@@ -775,22 +1048,54 @@ export async function handlePaymentEvent(input: {
   return { duplicate: false, entitlementCreated: input.status === "PAID", orderStatus: nextStatus };
 }
 
+async function publishedAssessmentVersions(database: ReturnType<typeof ensureDatabase>, testId: string): Promise<AssessmentVersionIds> {
+  if (testId !== T_SKILLS_TEST_ID) return V2_VERSION_IDS;
+  const row = await database.prepare(
+    `SELECT version, scoring_version, content_version, career_model_version,
+            report_version, adaptive_version, item_count
+     FROM assessment_versions
+     WHERE product_id = ? AND status = 'PUBLISHED'
+     ORDER BY published_at DESC LIMIT 1`,
+  ).bind(testId).first<{
+    version: string;
+    scoring_version: string;
+    content_version: string;
+    career_model_version: string;
+    report_version: string;
+    adaptive_version: string | null;
+    item_count: number;
+  }>();
+  if (!row) return T_SKILLS_VERSION_IDS;
+  const runtimeReason = executableAssessmentVersionReason({
+    productId: testId,
+    version: row.version,
+    scoringVersion: row.scoring_version,
+    contentVersion: row.content_version,
+    careerModelVersion: row.career_model_version,
+    reportVersion: row.report_version,
+    adaptiveVersion: row.adaptive_version,
+    itemCount: Number(row.item_count),
+  });
+  if (runtimeReason) throw new StoreError(runtimeReason, 409);
+  return {
+    ...T_SKILLS_VERSION_IDS,
+    assessment: row.version,
+    scoring: row.scoring_version,
+    itemBank: row.content_version,
+    careerMatching: row.career_model_version,
+    report: row.report_version,
+    adaptive: row.adaptive_version ?? T_SKILLS_VERSION_IDS.adaptive,
+    selector: row.adaptive_version ?? T_SKILLS_VERSION_IDS.selector,
+  } as AssessmentVersionIds;
+}
+
 export async function createAssessmentForUser(input: { viewer: Viewer; testId: string; locale?: Locale }) {
   const locale = input.locale ?? "ru";
   if (!canPublishLocale(locale)) throw new StoreError("LOCALE_NOT_PUBLISHED", 422);
   await ensureUser(input.viewer, locale);
   const database = ensureDatabase();
-  if (isBetaFreeMode(getRuntimeEnv())) {
-    const reference = `beta_free:${input.viewer.userId}:${input.testId}`;
-    await database
-      .prepare(
-        `INSERT OR IGNORE INTO entitlements
-          (id, order_id, user_id, test_id, grant_source, grant_reference, status, created_at, revoked_at)
-         VALUES (?, NULL, ?, ?, 'beta_free', ?, 'ACTIVE', ?, NULL)`,
-      )
-      .bind(newId("ent"), input.viewer.userId, input.testId, reference, now())
-      .run();
-  }
+  const runtimeEnv = getRuntimeEnv();
+  const unlimitedAssessmentAccess = hasUnlimitedAssessmentAccess(runtimeEnv, input.viewer.email);
   const existing = await database
     .prepare(
       `SELECT a.id
@@ -806,6 +1111,22 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
     if (resumed) return { session: resumed, reused: true };
   }
 
+  const paymentsEnabled = await paymentsFeatureEnabled();
+  if ((!paymentsEnabled && (runtimeEnv.ENTITLEMENT_MODE ?? "beta-free").trim().toLowerCase() === "beta-free") || unlimitedAssessmentAccess) {
+    const grantSource = unlimitedAssessmentAccess ? "admin_unlimited" : "beta_free";
+    const reference = unlimitedAssessmentAccess
+      ? `admin_unlimited:${input.viewer.userId}:${input.testId}:${newId("grant")}`
+      : `beta_free:${input.viewer.userId}:${input.testId}`;
+    await database
+      .prepare(
+        `INSERT OR IGNORE INTO entitlements
+          (id, order_id, user_id, test_id, grant_source, grant_reference, status, created_at, revoked_at)
+         VALUES (?, NULL, ?, ?, ?, ?, 'ACTIVE', ?, NULL)`,
+      )
+      .bind(newId("ent"), input.viewer.userId, input.testId, grantSource, reference, now())
+      .run();
+  }
+
   const entitlement = await database
     .prepare(
       `SELECT id, grant_source FROM entitlements
@@ -819,8 +1140,8 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
 
   const timestamp = now();
   const sessionId = newId("sess");
-  const versions = V2_VERSION_IDS;
-  const initialState: SessionState = entitlement.grant_source === "beta_free" ? "ENTITLED" : "PAID";
+  const versions = await publishedAssessmentVersions(database, input.testId);
+  const initialState: SessionState = ["beta_free", "admin_unlimited"].includes(entitlement.grant_source) ? "ENTITLED" : "PAID";
   try {
     await database
       .prepare(
@@ -873,6 +1194,142 @@ export async function getSessionForUser(sessionId: string, viewer: Viewer) {
   return loadSession(sessionId, viewer.userId);
 }
 
+/**
+ * Admin-only, privacy-minimized v5 trace. It exposes the calculation chain
+ * without returning the account's name, email, phone or user id.
+ */
+export async function getTSkillsV5Diagnostics(assessmentId: string) {
+  const database = ensureDatabase();
+  const assessment = await database
+    .prepare(
+      `SELECT id, test_id, state, versions_json, client_seq, created_at,
+              completed_at, updated_at
+       FROM assessments WHERE id = ? LIMIT 1`,
+    )
+    .bind(assessmentId)
+    .first<{
+      id: string;
+      test_id: string;
+      state: SessionState;
+      versions_json: string;
+      client_seq: number;
+      created_at: number;
+      completed_at: number | null;
+      updated_at: number;
+    }>();
+  if (!assessment) throw new StoreError("SESSION_NOT_FOUND", 404);
+  const versions = parseJson<Record<string, string>>(assessment.versions_json, {});
+  if (versions.assessment !== T_SKILLS_V5_VERSION_IDS.assessment) throw new StoreError("V5_DIAGNOSTICS_NOT_AVAILABLE", 409);
+
+  const [onboarding, responses, traitProfile, uncertainty, clarificationQuestions, clarificationAnswers, careerResults, careerTiebreakAnswers, narratives, report] = await Promise.all([
+    database.prepare(
+      `SELECT age, education_level, favorite_subjects_json, extensions_json, version,
+              created_at, updated_at
+       FROM assessment_onboarding WHERE assessment_id = ? LIMIT 1`,
+    ).bind(assessmentId).first<Record<string, unknown>>(),
+    database.prepare(
+      `SELECT item_id, response, response_time_ms, client_seq, response_source,
+              presentation_metadata_json, created_at
+       FROM assessment_responses WHERE assessment_id = ? ORDER BY client_seq ASC`,
+    ).bind(assessmentId).all<Record<string, unknown>>(),
+    database.prepare(
+      `SELECT base_json, final_json, clarification_answers_json, scoring_version,
+              uncertainty_version, clarification_version, created_at, updated_at
+       FROM t_skills_trait_profiles WHERE assessment_id = ? LIMIT 1`,
+    ).bind(assessmentId).first<Record<string, unknown>>(),
+    database.prepare(
+      `SELECT id, payload_json, uncertainty_version, created_at
+       FROM t_skills_uncertainty_snapshots WHERE assessment_id = ? ORDER BY created_at ASC`,
+    ).bind(assessmentId).all<Record<string, unknown>>(),
+    database.prepare(
+      `SELECT question_id, type, payload_json, selection_reason_json, position,
+              clarification_version, created_at
+       FROM t_skills_clarification_questions WHERE assessment_id = ? ORDER BY position ASC`,
+    ).bind(assessmentId).all<Record<string, unknown>>(),
+    database.prepare(
+      `SELECT question_id, response_value, response_time_ms, client_seq,
+              idempotency_key, created_at
+       FROM t_skills_clarification_answers WHERE assessment_id = ? ORDER BY client_seq ASC`,
+    ).bind(assessmentId).all<Record<string, unknown>>(),
+    database.prepare(
+      `SELECT phase, candidates_json, recommendations_json, career_catalog_version,
+              career_matching_version, career_tiebreak_version, created_at
+       FROM t_skills_career_results WHERE assessment_id = ? ORDER BY created_at ASC`,
+    ).bind(assessmentId).all<Record<string, unknown>>(),
+    database.prepare(
+      `SELECT question_id, option_id, response_time_ms, client_seq,
+              idempotency_key, created_at
+       FROM t_skills_career_tiebreak_answers WHERE assessment_id = ? ORDER BY client_seq ASC`,
+    ).bind(assessmentId).all<Record<string, unknown>>(),
+    database.prepare(
+      `SELECT input_json, output_json, narrative_prompt_version, report_version,
+              provider, created_at
+       FROM t_skills_narratives WHERE assessment_id = ? LIMIT 1`,
+    ).bind(assessmentId).first<Record<string, unknown>>(),
+    database.prepare(
+      `SELECT id, status, provider, prompt_version, model_id, input_hash,
+              output_hash, validation_result, created_at, updated_at
+       FROM reports WHERE assessment_id = ? LIMIT 1`,
+    ).bind(assessmentId).first<Record<string, unknown>>(),
+  ]);
+
+  const parseNested = (value: unknown, fallback: unknown) => typeof value === "string" ? parseJson(value, fallback) : fallback;
+  return {
+    assessment: {
+      id: assessment.id,
+      testId: assessment.test_id,
+      state: assessment.state,
+      versions,
+      clientSeq: assessment.client_seq,
+      createdAt: iso(assessment.created_at),
+      completedAt: assessment.completed_at === null ? null : iso(assessment.completed_at),
+      updatedAt: iso(assessment.updated_at),
+    },
+    onboarding: onboarding ? {
+      age: onboarding.age,
+      educationLevel: onboarding.education_level,
+      favoriteSubjects: parseNested(onboarding.favorite_subjects_json, []),
+      extensions: parseNested(onboarding.extensions_json, {}),
+      version: onboarding.version,
+      createdAt: onboarding.created_at,
+      updatedAt: onboarding.updated_at,
+    } : null,
+    responses: responses.results ?? [],
+    traitProfile: traitProfile ? {
+      base: parseNested(traitProfile.base_json, []),
+      final: parseNested(traitProfile.final_json, []),
+      clarificationAnswers: parseNested(traitProfile.clarification_answers_json, []),
+      scoringVersion: traitProfile.scoring_version,
+      uncertaintyVersion: traitProfile.uncertainty_version,
+      clarificationVersion: traitProfile.clarification_version,
+      createdAt: traitProfile.created_at,
+      updatedAt: traitProfile.updated_at,
+    } : null,
+    uncertainty: (uncertainty.results ?? []).map((row) => ({ ...row, payload: parseNested(row.payload_json, {}) })),
+    clarificationQuestions: (clarificationQuestions.results ?? []).map((row) => ({
+      ...row,
+      payload: parseNested(row.payload_json, {}),
+      selectionReason: parseNested(row.selection_reason_json, {}),
+    })),
+    clarificationAnswers: clarificationAnswers.results ?? [],
+    careerResults: (careerResults.results ?? []).map((row) => ({
+      ...row,
+      candidates: parseNested(row.candidates_json, []),
+      recommendations: parseNested(row.recommendations_json, []),
+    })),
+    careerTiebreakAnswers: careerTiebreakAnswers.results ?? [],
+    narratives: narratives ? {
+      input: parseNested(narratives.input_json, {}),
+      output: parseNested(narratives.output_json, {}),
+      narrativePromptVersion: narratives.narrative_prompt_version,
+      reportVersion: narratives.report_version,
+      provider: narratives.provider,
+      createdAt: narratives.created_at,
+    } : null,
+    report,
+  };
+}
+
 export async function deleteAssessmentForUser(sessionId: string, viewer: Viewer) {
   await ensureUser(viewer);
   const database = ensureDatabase();
@@ -910,11 +1367,7 @@ export async function deleteAssessmentForUser(sessionId: string, viewer: Viewer)
 
   try {
     await database.batch([
-      database.prepare(`DELETE FROM assessment_responses WHERE assessment_id = ?`).bind(sessionId),
-      database.prepare(`DELETE FROM adaptive_questions WHERE assessment_id = ?`).bind(sessionId),
-      database.prepare(`DELETE FROM adaptive_runs WHERE assessment_id = ?`).bind(sessionId),
-      database.prepare(`DELETE FROM consents WHERE assessment_id = ? AND user_id = ?`).bind(sessionId, viewer.userId),
-      database.prepare(`DELETE FROM reports WHERE assessment_id = ? AND user_id = ?`).bind(sessionId, viewer.userId),
+      ...deleteAssessmentDataStatements(database, sessionId),
       database.prepare(`DELETE FROM assessments WHERE id = ? AND user_id = ?`).bind(sessionId, viewer.userId),
       database.prepare(`UPDATE privacy_requests SET status = 'COMPLETE', completed_at = ? WHERE id = ? AND user_id = ?`).bind(timestamp, requestId, viewer.userId),
     ]);
@@ -927,7 +1380,7 @@ export async function deleteAssessmentForUser(sessionId: string, viewer: Viewer)
     throw new StoreError("ASSESSMENT_DELETE_FAILED", 503);
   }
   await audit(viewer.userId, "ASSESSMENT_DELETED", "privacy_request", requestId, { assessmentState: assessment.state });
-  await serverTelemetry({ name: "privacy_delete", userId: viewer.userId, assessmentId: sessionId, metadata: { status: "COMPLETE" } });
+  await serverTelemetry({ name: "privacy_delete", userId: viewer.userId, metadata: { status: "COMPLETE" } });
   return { requestId, assessmentId: sessionId, deleted: true };
 }
 
@@ -998,6 +1451,61 @@ export async function getConsentsForUser(sessionId: string, viewer: Viewer): Pro
   }));
 }
 
+export async function getOnboardingForUser(sessionId: string, viewer: Viewer): Promise<OnboardingContext | null> {
+  await ensureUser(viewer);
+  const row = await ensureDatabase()
+    .prepare(
+      `SELECT age, education_level, favorite_subjects_json, extensions_json
+       FROM assessment_onboarding WHERE assessment_id = ? AND user_id = ? LIMIT 1`,
+    )
+    .bind(sessionId, viewer.userId)
+    .first<{ age: number; education_level: string; favorite_subjects_json: string; extensions_json: string }>();
+  if (!row) return null;
+  const extensions = parseJson<Record<string, unknown>>(row.extensions_json, {});
+  return assertOnboarding({
+    age: row.age,
+    educationLevel: row.education_level,
+    favoriteSubjects: parseJson<string[]>(row.favorite_subjects_json, []),
+    ...extensions,
+  });
+}
+
+export async function saveOnboardingForUser(sessionId: string, viewer: Viewer, onboarding: OnboardingContext) {
+  await ensureUser(viewer);
+  const normalized = assertOnboarding(onboarding);
+  const database = ensureDatabase();
+  const assessment = await database
+    .prepare(`SELECT state, test_id, versions_json FROM assessments WHERE id = ? AND user_id = ? LIMIT 1`)
+    .bind(sessionId, viewer.userId)
+    .first<{ state: SessionState; test_id: string; versions_json: string }>();
+  if (!assessment) throw new StoreError("SESSION_NOT_FOUND", 404);
+  const versions = parseJson<Record<string, string>>(assessment.versions_json, {});
+  if (assessment.test_id !== T_SKILLS_TEST_ID && versions.assessment !== T_SKILLS_VERSION_IDS.assessment) throw new StoreError("ONBOARDING_NOT_AVAILABLE", 409);
+  if (!( ["PAID", "ENTITLED", "CONSENTED", "CORE_IN_PROGRESS"] as SessionState[]).includes(assessment.state)) {
+    throw new StoreError("ONBOARDING_NOT_AVAILABLE", 409);
+  }
+  const { age, educationLevel, favoriteSubjects, ...extensions } = normalized;
+  const timestamp = now();
+  await database
+    .prepare(
+      `INSERT INTO assessment_onboarding
+        (id, assessment_id, user_id, age, education_level, favorite_subjects_json,
+         extensions_json, version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 't-skills-onboarding-v1', ?, ?)
+       ON CONFLICT(assessment_id) DO UPDATE SET
+         age = excluded.age,
+         education_level = excluded.education_level,
+         favorite_subjects_json = excluded.favorite_subjects_json,
+         extensions_json = excluded.extensions_json,
+         version = excluded.version,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(newId("onboarding"), sessionId, viewer.userId, age, educationLevel, JSON.stringify(favoriteSubjects), JSON.stringify(extensions), timestamp, timestamp)
+    .run();
+  await audit(viewer.userId, "ONBOARDING_SAVED", "assessment", sessionId, { version: "t-skills-onboarding-v1" });
+  return normalized;
+}
+
 export async function consentSessionForUser(
   sessionId: string,
   viewer: Viewer,
@@ -1063,6 +1571,62 @@ export async function consentSessionForUser(
   return session;
 }
 
+/**
+ * Пересмотр уже сохранённого ответа (передумал до «Продолжить»).
+ * Разрешён только внутри своей фазы: core правится, пока идёт core,
+ * adaptive — пока идёт adaptive. Повтор того же значения — безобидный replay.
+ */
+async function reviseResponse(args: {
+  database: ReturnType<typeof ensureDatabase>;
+  session: DurableSession;
+  input: {
+    itemId: string;
+    response: number;
+    responseTimeMs?: number;
+    idempotencyKey: string;
+  };
+  idempotencyKey: string;
+}) {
+  const { database, session, input, idempotencyKey } = args;
+  const revisingCore = isSessionCoreItem(session, input.itemId);
+  const revisable = revisingCore
+    ? ["CONSENTED", "CORE_IN_PROGRESS"].includes(session.state)
+    : ["ADAPTIVE_IN_PROGRESS", "ADAPTIVE_FALLBACK"].includes(session.state);
+  if (!revisable) throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
+  const row = await database
+    .prepare(
+      `SELECT client_seq FROM assessment_responses WHERE assessment_id = ? AND item_id = ? LIMIT 1`,
+    )
+    .bind(session.id, input.itemId)
+    .first<{ client_seq: number }>();
+  if (!row) throw new StoreError("RESPONSE_WRITE_CONFLICT", 409);
+  if (session.responses[input.itemId] === input.response) {
+    return { saved: true, replay: true, serverSeq: row.client_seq, nextItemId: nextItemId(session) };
+  }
+  const responseTimeMs = Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number.isFinite(input.responseTimeMs ?? 0) ? input.responseTimeMs ?? 0 : 0)));
+  const updated = await database
+    .prepare(
+      `UPDATE assessment_responses SET response = ?, response_time_ms = ?, idempotency_key = ?, created_at = ?
+       WHERE assessment_id = ? AND item_id = ?`,
+    )
+    .bind(input.response, responseTimeMs, idempotencyKey, now(), session.id, input.itemId)
+    .run();
+  if ((updated.meta?.changes ?? 0) !== 1) throw new StoreError("RESPONSE_WRITE_CONFLICT", 409);
+  const careerAnswerId = careerOptionId(args.session, input.itemId, input.response);
+  if (careerAnswerId) {
+    await database.prepare(
+      `INSERT INTO career_adaptive_answers
+        (id, assessment_id, question_id, answer_id, response_time_ms, client_seq, idempotency_key, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(assessment_id, question_id) DO UPDATE SET
+         answer_id = excluded.answer_id, response_time_ms = excluded.response_time_ms,
+         client_seq = excluded.client_seq, idempotency_key = excluded.idempotency_key,
+         created_at = excluded.created_at`,
+    ).bind(newId("career_answer"), session.id, input.itemId, careerAnswerId, responseTimeMs, row.client_seq, idempotencyKey, now()).run();
+  }
+  return { saved: true, replay: false, serverSeq: row.client_seq, nextItemId: nextItemId(session) };
+}
+
 export async function saveResponse(input: {
   sessionId: string;
   viewer: Viewer;
@@ -1084,14 +1648,24 @@ export async function saveResponse(input: {
     throw new StoreError("SESSION_NOT_ACCEPTING_RESPONSES", 409);
   }
   const v2CoreItem = isV2Session(session) ? CORE60_BANK.find((item) => item.id === input.itemId) : undefined;
-  const v2AdaptiveItem = isV2Session(session) ? session.adaptiveItems.find((item) => item.questionId === input.itemId) : undefined;
+  const v2AdaptiveItem = isV2Session(session)
+    ? (session.adaptiveItems as GeneratedAdaptiveQuestion[]).find((item) => item.questionId === input.itemId)
+    : undefined;
+  const tSkillsCoreItem = isTSkillsSession(session) ? T_SKILLS_PAIRWISE_ITEM_BY_ID.get(input.itemId) : undefined;
   const coreResponseItem = v2CoreItem ?? v2AdaptiveItem;
-  if (isV2Session(session) ? !coreResponseItem || !validV2Response(coreResponseItem, input.response) : !validResponse(input.itemId, input.response)) {
+  const responseValid = isTSkillsSession(session)
+    ? validTSkillsResponse(session, input.itemId, input.response)
+    : isV2Session(session)
+      ? Boolean(coreResponseItem && validV2Response(coreResponseItem, input.response))
+      : validResponse(input.itemId, input.response);
+  if (!responseValid) {
     throw new StoreError("INVALID_RESPONSE", 422);
   }
-  const allowed = isV2Session(session)
-    ? Boolean(v2CoreItem || v2AdaptiveItem)
-    : isCoreItem(input.itemId) || session.adaptiveItemIds.includes(input.itemId) && isAdaptiveItem(input.itemId);
+  const allowed = isTSkillsSession(session)
+    ? Boolean(tSkillsCoreItem || session.adaptiveItemIds.includes(input.itemId))
+    : isV2Session(session)
+      ? Boolean(v2CoreItem || v2AdaptiveItem)
+      : isCoreItem(input.itemId) || session.adaptiveItemIds.includes(input.itemId) && isAdaptiveItem(input.itemId);
   if (!allowed) throw new StoreError("ITEM_NOT_ALLOWED", 422);
 
   const database = ensureDatabase();
@@ -1110,7 +1684,12 @@ export async function saveResponse(input: {
       nextItemId: nextItemId(session),
     };
   }
-  if (typeof session.responses[input.itemId] === "number") throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
+  if (typeof session.responses[input.itemId] === "number") {
+    // Пересмотр ответа до «Продолжить»: разрешён внутри своей фазы
+    // (core — пока идёт core, adaptive — пока идёт adaptive), чтобы нельзя
+    // было задним числом менять core после adaptive-подбора.
+    return reviseResponse({ database, session, input, idempotencyKey });
+  }
 
   const timestamp = now();
   const serverSeq = session.clientSeq + 1;
@@ -1122,9 +1701,11 @@ export async function saveResponse(input: {
   const position = phase === "core" ? itemNumber : session.adaptiveItemIds.indexOf(input.itemId) + 1;
   const responseSource = phase === "core"
     ? "core"
-    : isV2Session(session)
-      ? v2AdaptiveItem?.provider === "approved-fallback" ? "adaptive_fallback" : "adaptive_ai"
-      : "adaptive_legacy";
+    : isTSkillsSession(session)
+      ? "adaptive_fallback"
+      : isV2Session(session)
+        ? v2AdaptiveItem?.provider === "approved-fallback" ? "adaptive_fallback" : "adaptive_ai"
+        : "adaptive_legacy";
   const presentationMetadata = JSON.stringify({
     phase,
     position,
@@ -1134,40 +1715,52 @@ export async function saveResponse(input: {
     translationVersion: session.versions.translation,
     responseSource,
   });
+  const careerAnswerId = careerOptionId(session, input.itemId, input.response);
+  if (phase === "adaptive" && isTSkillsSession(session) && !careerAnswerId) throw new StoreError("ADAPTIVE_RESPONSE_MAPPING_FAILED", 422);
+  const responseStatements = [
+    database
+      .prepare(
+        `INSERT INTO assessment_responses
+          (id, assessment_id, item_id, response, response_time_ms,
+          client_seq, idempotency_key, response_source, presentation_metadata_json, created_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         FROM assessments
+         WHERE id = ? AND user_id = ? AND client_seq = ?
+           AND state IN ('CONSENTED', 'CORE_IN_PROGRESS', 'ADAPTIVE_IN_PROGRESS', 'ADAPTIVE_FALLBACK')`,
+      )
+      .bind(
+        `${input.sessionId}:${input.itemId}`,
+        input.sessionId,
+        input.itemId,
+        input.response,
+        Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number.isFinite(input.responseTimeMs ?? 0) ? input.responseTimeMs ?? 0 : 0))),
+        serverSeq,
+        idempotencyKey,
+        responseSource,
+        presentationMetadata,
+        timestamp,
+        input.sessionId,
+        input.viewer.userId,
+        session.clientSeq,
+      ),
+    database
+      .prepare(
+        `UPDATE assessments SET state = ?, client_seq = ?, updated_at = ?
+         WHERE id = ? AND user_id = ? AND client_seq = ?`,
+      )
+      .bind(nextState, serverSeq, timestamp, input.sessionId, input.viewer.userId, session.clientSeq),
+  ];
+  if (careerAnswerId) {
+    responseStatements.push(database.prepare(
+      `INSERT INTO career_adaptive_answers
+        (id, assessment_id, question_id, answer_id, response_time_ms, client_seq, idempotency_key, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(newId("career_answer"), input.sessionId, input.itemId, careerAnswerId,
+      Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number.isFinite(input.responseTimeMs ?? 0) ? input.responseTimeMs ?? 0 : 0))),
+      serverSeq, idempotencyKey, timestamp));
+  }
   try {
-    const writeResults = await database.batch([
-      database
-        .prepare(
-          `INSERT INTO assessment_responses
-            (id, assessment_id, item_id, response, response_time_ms,
-            client_seq, idempotency_key, response_source, presentation_metadata_json, created_at)
-           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-           FROM assessments
-           WHERE id = ? AND user_id = ? AND client_seq = ?
-             AND state IN ('CONSENTED', 'CORE_IN_PROGRESS', 'ADAPTIVE_IN_PROGRESS', 'ADAPTIVE_FALLBACK')`,
-        )
-        .bind(
-          `${input.sessionId}:${input.itemId}`,
-          input.sessionId,
-          input.itemId,
-          input.response,
-          Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number.isFinite(input.responseTimeMs ?? 0) ? input.responseTimeMs ?? 0 : 0))),
-          serverSeq,
-          idempotencyKey,
-          responseSource,
-          presentationMetadata,
-          timestamp,
-          input.sessionId,
-          input.viewer.userId,
-          session.clientSeq,
-        ),
-      database
-        .prepare(
-          `UPDATE assessments SET state = ?, client_seq = ?, updated_at = ?
-           WHERE id = ? AND user_id = ? AND client_seq = ?`,
-        )
-        .bind(nextState, serverSeq, timestamp, input.sessionId, input.viewer.userId, session.clientSeq),
-    ]);
+    const writeResults = await database.batch(responseStatements);
     if ((writeResults[0]?.meta?.changes ?? 0) !== 1 || (writeResults[1]?.meta?.changes ?? 0) !== 1) {
       throw new StoreError("RESPONSE_WRITE_CONFLICT", 409);
     }
@@ -1188,7 +1781,8 @@ export async function saveResponse(input: {
           nextItemId: nextItemId(session),
         };
       }
-      throw new StoreError("ITEM_ALREADY_ANSWERED", 409);
+      // Параллельная запись: трактуем как пересмотр с теми же фазовыми guardrails.
+      return reviseResponse({ database, session, input, idempotencyKey });
     }
     const current = await loadSession(input.sessionId, input.viewer.userId);
     if (current && typeof current.responses[input.itemId] !== "number") {
@@ -1200,18 +1794,25 @@ export async function saveResponse(input: {
   return { saved: true, replay: false, serverSeq, nextItemId: nextItemId({ ...session, responses: { ...session.responses, [input.itemId]: input.response } }) };
 }
 
+function careerOptionId(session: DurableSession, itemId: string, response: number) {
+  if (!isTSkillsSession(session) || !session.adaptiveItemIds.includes(itemId)) return null;
+  const matching = session.adaptiveItems.find((item) => isCareerAdaptiveQuestion(item) && item.id === itemId);
+  return matching && Number.isInteger(response) ? matching.options[response]?.id ?? null : null;
+}
+
 async function hashText(value: string) {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function v2Selection(session: DurableSession, fallbackMode?: boolean): AdaptiveSelection {
+  const questions = session.adaptiveItems as GeneratedAdaptiveQuestion[];
   return {
-    selectedItemIds: session.adaptiveItems.map((question) => question.questionId),
-    targetCount: session.adaptiveItems.length,
+    selectedItemIds: questions.map((question) => question.questionId),
+    targetCount: questions.length,
     mode: fallbackMode || session.adaptiveFallbackUsed ? "approved-fallback" : "mercury",
     validation: "passed",
-    reasonCodes: Object.fromEntries(session.adaptiveItems.map((question) => [question.questionId, [question.reasonCode]])),
+    reasonCodes: Object.fromEntries(questions.map((question) => [question.questionId, [question.reasonCode]])),
   };
 }
 
@@ -1232,6 +1833,101 @@ function v2RunToPublic(run: AdaptiveProviderRun) {
     promptTokens: run.promptTokens,
     outputTokens: run.outputTokens,
   };
+}
+
+function tSkillsSelection(session: DurableSession): AdaptiveSelection {
+  return {
+    selectedItemIds: session.adaptiveItemIds,
+    targetCount: session.adaptiveItemIds.length,
+    mode: "approved-fallback",
+    validation: "passed",
+    reasonCodes: Object.fromEntries(session.adaptiveItemIds.map((id) => [id, ["HIGH_INFORMATION"]])),
+  };
+}
+
+async function completeCoreTSkillsForUser(session: DurableSession, viewer: Viewer) {
+  if (session.adaptiveItems.length && session.profile && [
+    "ADAPTIVE_IN_PROGRESS",
+    "ADAPTIVE_FALLBACK",
+    "REPORT_GENERATING",
+    "REPORT_FAILED_RETRYABLE",
+    "COMPLETE",
+  ].includes(session.state)) {
+    return { session, selection: tSkillsSelection(session), run: null, reused: true };
+  }
+
+  const coreItemIds = new Set(T_SKILLS_PAIRWISE_BANK_V1.map((item) => item.id));
+  const coreAnswered = Object.keys(session.responses).filter((itemId) => coreItemIds.has(itemId)).length;
+  if (coreAnswered < T_SKILLS_PAIRWISE_BANK_V1.length) throw new StoreError("CORE_INCOMPLETE", 422);
+
+  const answers = Object.fromEntries(
+    T_SKILLS_PAIRWISE_BANK_V1.map((item) => [item.id, session.responses[item.id]]),
+  ) as Record<string, -2 | -1 | 0 | 1 | 2>;
+  const pairwise = scorePairwiseV1({ items: T_SKILLS_PAIRWISE_BANK_V1, traits: T_SKILLS_WORKING_TAXONOMY, answers });
+  const preliminary = pairwiseScoreToProfile(pairwise, 0);
+  const questions = T_SKILLS_ADAPTIVE_BANK_V1.map((question) => {
+    const validation = validateAdaptiveQuestion(question);
+    if (!validation.ok) throw new StoreError("ADAPTIVE_FALLBACK_INVALID", 500);
+    return validation.value;
+  });
+  const database = ensureDatabase();
+  const timestamp = now();
+  const questionStatements = await Promise.all(questions.map(async (question) => database.prepare(
+    `INSERT INTO adaptive_questions
+      (id, assessment_id, question_id, format, prompt, options_json,
+       target_traits_json, reason_code, semantic_intent, semantic_cluster,
+       confidence, provider, model_id, provider_request_id, prompt_version,
+       adaptive_version, validation_status, question_hash, generated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    newId("aq"),
+    session.id,
+    question.id,
+    "career_forced_choice",
+    question.prompt,
+    JSON.stringify(question.options),
+    "[]",
+    "HIGH_INFORMATION",
+    question.dimension ?? "career-discrimination",
+    `career-${question.id}`,
+    1,
+    "approved-fallback",
+    null,
+    null,
+    T_SKILLS_VERSION_IDS.adaptivePrompt,
+    T_SKILLS_VERSION_IDS.adaptive,
+    "accepted",
+    await hashText(JSON.stringify(question)),
+    timestamp,
+  )));
+
+  try {
+    await database.batch([
+      ...questionStatements,
+      database.prepare(
+        `UPDATE assessments SET state = 'ADAPTIVE_FALLBACK', adaptive_item_ids_json = ?,
+           selection_mode = 'approved-fallback', preliminary_score_json = ?,
+           adaptive_generation_status = 'FALLBACK', adaptive_fallback_used = 1,
+           adaptive_generation_lock = 0, adaptive_generation_attempts = adaptive_generation_attempts + 1,
+           updated_at = ? WHERE id = ? AND user_id = ?`,
+      ).bind(
+        JSON.stringify(questions.map((question) => question.id)),
+        JSON.stringify(preliminary),
+        timestamp,
+        session.id,
+        viewer.userId,
+      ),
+    ]);
+  } catch {
+    const concurrent = await loadSession(session.id, viewer.userId);
+    if (concurrent?.adaptiveItems.length) return { session: concurrent, selection: tSkillsSelection(concurrent), run: null, reused: true };
+    throw new StoreError("ADAPTIVE_FALLBACK_SAVE_FAILED", 500);
+  }
+  await serverTelemetry({ name: "core_completed", userId: viewer.userId, assessmentId: session.id, metadata: { count: coreAnswered, status: "CORE_COMPLETE", assessment_version: T_SKILLS_VERSION_IDS.assessment } });
+  await serverTelemetry({ name: "adaptive_started", userId: viewer.userId, assessmentId: session.id, metadata: { provider: "approved-fallback", fallback: true, mode: "approved-fallback", count: questions.length } });
+  const updated = await loadSession(session.id, viewer.userId);
+  if (!updated) throw new StoreError("SESSION_NOT_FOUND", 404);
+  return { session: updated, selection: tSkillsSelection(updated), run: null, reused: false };
 }
 
 async function completeCoreV2ForUser(session: DurableSession, viewer: Viewer) {
@@ -1404,6 +2100,7 @@ async function completeCoreV2ForUser(session: DurableSession, viewer: Viewer) {
 export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
   const session = await getSessionForUser(sessionId, viewer);
   if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
+  if (isTSkillsSession(session)) return completeCoreTSkillsForUser(session, viewer);
   if (isV2Session(session)) return completeCoreV2ForUser(session, viewer);
   if (
     session.adaptiveItemIds.length &&
@@ -1518,6 +2215,131 @@ export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
   return { session: updated, selection, run: decision.run, reused: false };
 }
 
+function isCareerAdaptiveQuestion(item: StoredAdaptiveQuestion): item is AdaptiveQuestion {
+  return "id" in item && typeof item.id === "string" && Array.isArray(item.options);
+}
+
+function careerEvidenceForSession(session: DurableSession) {
+  const questions = session.adaptiveItems.filter(isCareerAdaptiveQuestion);
+  const questionById = new Map(questions.map((question) => [question.id, question]));
+  const answers: AdaptiveAnswer[] = [];
+  for (const questionId of session.adaptiveItemIds) {
+    const response = session.responses[questionId];
+    const question = questionById.get(questionId);
+    const option = question && Number.isInteger(response) ? question.options[response] : undefined;
+    if (!question || !option) throw new StoreError("ADAPTIVE_RESPONSE_MAPPING_FAILED", 422);
+    answers.push({ questionId, optionId: option.id });
+  }
+  return { questions, answers };
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+async function loadPublishedV1CareerCatalog(database: ReturnType<typeof ensureDatabase>) {
+  const versionRow = await database.prepare(
+    `SELECT version FROM career_catalog_versions WHERE status = 'PUBLISHED' ORDER BY published_at DESC LIMIT 1`,
+  ).first<{ version: string }>();
+  if (!versionRow) return { version: T_SKILLS_VERSION_IDS.careerCatalog, modelVersion: T_SKILLS_VERSION_IDS.careerMatching, catalog: productionCareerCatalog() };
+  const assessmentVersion = await database.prepare(
+    `SELECT career_model_version FROM assessment_versions
+     WHERE product_id = ? AND status = 'PUBLISHED' ORDER BY published_at DESC LIMIT 1`,
+  ).bind(T_SKILLS_TEST_ID).first<{ career_model_version: string }>();
+  const modelVersion = assessmentVersion?.career_model_version ?? T_SKILLS_VERSION_IDS.careerMatching;
+  const modelRow = await database.prepare(
+    `SELECT version, status, config_json FROM career_model_versions WHERE version = ? AND status = 'PUBLISHED' LIMIT 1`,
+  ).bind(modelVersion).first<{ version: string; status: string; config_json: string }>();
+  const modelConfig = objectValue(parseJson(modelRow?.config_json ?? "{}", {}));
+  if (!modelRow || modelConfig.runtime !== "built-in:t-skills-career-v1" || modelConfig.catalogVersion !== versionRow.version) {
+    throw new StoreError("CAREER_MODEL_NOT_EXECUTABLE", 409);
+  }
+  const model = productionCareerModel(modelVersion);
+  if (!model) throw new StoreError("CAREER_MODEL_NOT_EXECUTABLE", 409);
+  const rows = await database.prepare(
+    `SELECT e.slug, e.status, e.title_ru, e.description_ru, e.category,
+            e.education_paths_json, e.career_tags_json, e.catalog_version
+     FROM career_catalog_entries e
+     WHERE e.catalog_version = ? AND e.status = 'ACTIVE'
+     ORDER BY e.slug ASC`,
+  ).bind(versionRow.version).all<Record<string, unknown>>();
+  const traitIds = T_SKILLS_WORKING_TAXONOMY.map((trait) => trait.id);
+  const raw = (rows.results ?? []).map((row) => {
+    const config = model[String(row.slug)];
+    return {
+      id: String(row.slug),
+      title: String(row.title_ru),
+      description: String(row.description_ru),
+      version: String(row.catalog_version),
+      active: true,
+      traitProfile: config?.traitProfile ?? {},
+      careerDimensions: config?.careerDimensions ?? {},
+      subjectTags: parseJson<string[]>(row.career_tags_json as string | null, []),
+      educationPaths: parseJson<string[]>(row.education_paths_json as string | null, []),
+    };
+  });
+  const validated = validateCareerCatalog(raw, traitIds, versionRow.version);
+  if (!validated.ok) {
+    console.error("career_catalog_validation_failed", { error_code: "CAREER_CATALOG_INVALID", version: versionRow.version, issue_count: validated.issues.length });
+    throw new StoreError("CAREER_CATALOG_INVALID", 500);
+  }
+  return { version: versionRow.version, modelVersion, catalog: validated.value satisfies Profession[] };
+}
+
+async function buildTSkillsCareerPersistence(session: DurableSession, viewer: Viewer, pairwise: ReturnType<typeof scorePairwiseV1>, database: ReturnType<typeof ensureDatabase>) {
+  const onboarding = await getOnboardingForUser(session.id, viewer);
+  const context: OnboardingContext = onboarding ?? { age: 18, educationLevel: "unknown", favoriteSubjects: [] };
+  const evidence = careerEvidenceForSession(session);
+  const catalog = await loadPublishedV1CareerCatalog(database);
+  const rankingHistory: Array<ReturnType<typeof matchCareers>> = [];
+  let consumedAnswers: AdaptiveAnswer[] = [];
+  let candidates = matchCareers({ traits: pairwise.traitResults, onboarding: context, catalog: catalog.catalog, adaptiveQuestions: evidence.questions });
+  for (const answer of evidence.answers) {
+    candidates = applyAdaptiveAnswer({
+      traits: pairwise.traitResults,
+      onboarding: context,
+      catalog: catalog.catalog,
+      questions: evidence.questions,
+      answers: consumedAnswers,
+      answer,
+    });
+    consumedAnswers = [...consumedAnswers, answer];
+    rankingHistory.push(candidates);
+  }
+  const snapshot = {
+    traitProfile: pairwise.traitResults,
+    candidates,
+    adaptiveAnswers: consumedAnswers,
+    careerPreferences: consumedAnswers,
+    rankingHistory,
+    adaptiveQuestionIds: session.adaptiveItemIds,
+    consumedResponseItemIds: session.adaptiveItemIds,
+    assessmentVersion: session.versions.assessment,
+    scoringVersion: session.versions.scoring,
+    adaptiveVersion: "adaptive" in session.versions ? session.versions.adaptive : session.versions.selector,
+    reportVersion: session.versions.report,
+    contentVersion: session.versions.itemBank,
+    matchingVersion: catalog.modelVersion,
+    careerCatalogVersion: catalog.version,
+  };
+  return {
+    candidates,
+    statements: [
+      database.prepare(
+        `INSERT INTO t_skills_career_results
+          (id, assessment_id, phase, candidates_json, recommendations_json,
+           career_catalog_version, career_matching_version, career_tiebreak_version, created_at)
+         VALUES (?, ?, 'FINAL', ?, ?, ?, ?, ?, ?)`,
+      ).bind(newId("career_result"), session.id, JSON.stringify(candidates), JSON.stringify(candidates.slice(0, 5)), catalog.version, catalog.modelVersion, "none-v1", now()),
+      database.prepare(
+        `INSERT INTO career_match_snapshots
+          (id, assessment_id, phase, candidates_json, matching_version, career_catalog_version, created_at)
+         VALUES (?, ?, 'FINAL', ?, ?, ?, ?)`,
+      ).bind(newId("career_snapshot"), session.id, JSON.stringify(snapshot), catalog.modelVersion, catalog.version, now()),
+    ],
+  };
+}
+
 export async function completeAssessmentForUser(sessionId: string, viewer: Viewer) {
   const session = await getSessionForUser(sessionId, viewer);
   if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
@@ -1529,14 +2351,35 @@ export async function completeAssessmentForUser(sessionId: string, viewer: Viewe
   if (missing.length) throw new StoreError("ADAPTIVE_INCOMPLETE", 422);
   if (!canSessionTransition(session.state, "REPORT_GENERATING")) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
 
-  const profile = isV2Session(session)
-    ? scoreCore60(session.responses, session.responseTimes, session.adaptiveItems.map(generatedQuestionToResponseItem))
-    : scoreAssessment(session.responses, session.responseTimes);
+  const tSkillsPairwise = isTSkillsSession(session)
+    ? scorePairwiseV1({
+        items: T_SKILLS_PAIRWISE_BANK_V1,
+        traits: T_SKILLS_WORKING_TAXONOMY,
+        answers: Object.fromEntries(
+          T_SKILLS_PAIRWISE_BANK_V1.map((item) => [item.id, session.responses[item.id]]),
+        ) as Record<string, -2 | -1 | 0 | 1 | 2>,
+      })
+    : null;
+  const calculatedProfile = isTSkillsSession(session)
+    ? pairwiseScoreToProfile(
+        tSkillsPairwise!,
+        session.adaptiveItemIds.length,
+      )
+    : isV2Session(session)
+      ? scoreCore60(session.responses, session.responseTimes, (session.adaptiveItems as GeneratedAdaptiveQuestion[]).map(generatedQuestionToResponseItem))
+      : scoreAssessment(session.responses, session.responseTimes);
+  const profile = isTSkillsSession(session)
+    ? { ...calculatedProfile, versions: session.versions }
+    : calculatedProfile;
   const reportId = newId("rep");
   const database = ensureDatabase();
   const timestamp = now();
+  const careerPersistence = isTSkillsSession(session) && tSkillsPairwise
+    ? await buildTSkillsCareerPersistence(session, viewer, tSkillsPairwise, database)
+    : { candidates: [], statements: [] as D1PreparedStatement[] };
   try {
     await database.batch([
+      ...careerPersistence.statements,
       database
         .prepare(
         `INSERT INTO reports
@@ -1587,21 +2430,55 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
   const score = normalizeScoreProfile(parseJson<ScoreProfile | null>(row.score_json, null));
   if (!score) throw new StoreError("SCORE_NOT_FOUND", 500);
   try {
-    const generated = await generateReportContent(score);
     const assessmentMeta = await database
-      .prepare(`SELECT versions_json, adaptive_provider, adaptive_fallback_used, adaptive_item_ids_json FROM assessments WHERE id = ? AND user_id = ? LIMIT 1`)
+      .prepare(`SELECT test_id, versions_json, adaptive_provider, adaptive_fallback_used, adaptive_item_ids_json FROM assessments WHERE id = ? AND user_id = ? LIMIT 1`)
       .bind(row.assessment_id, viewer.userId)
-      .first<{ versions_json: string; adaptive_provider: string | null; adaptive_fallback_used: number; adaptive_item_ids_json: string }>();
+      .first<{ test_id: string; versions_json: string; adaptive_provider: string | null; adaptive_fallback_used: number; adaptive_item_ids_json: string }>();
     const versionSnapshot = parseJson<Record<string, string>>(assessmentMeta?.versions_json, score.versions);
+    const adaptiveQuestionCount = parseJson<string[]>(assessmentMeta?.adaptive_item_ids_json, []).length || score.adaptiveAnswered;
+    const isTSkillsReport = assessmentMeta?.test_id === T_SKILLS_TEST_ID || versionSnapshot.assessment.startsWith("t-skills");
+    const careerSnapshotRow = isTSkillsReport
+      ? await database.prepare(`SELECT candidates_json, matching_version, career_catalog_version FROM career_match_snapshots WHERE assessment_id = ? ORDER BY created_at DESC LIMIT 1`).bind(row.assessment_id).first<{ candidates_json: string; matching_version: string; career_catalog_version: string }>()
+      : null;
+    const careerSnapshot = parseJson<Record<string, unknown>>(careerSnapshotRow?.candidates_json, {});
+    const careerArray = (value: unknown) => Array.isArray(value) ? value.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)) : [];
+    const careerReport = isTSkillsReport ? {
+      traitProfile: careerArray(careerSnapshot.traitProfile),
+      clarificationAnswers: careerArray(careerSnapshot.adaptiveAnswers).filter((entry) => typeof entry.questionId === "string" && typeof entry.optionId === "string").map((entry) => ({ questionId: String(entry.questionId), optionId: String(entry.optionId) })),
+      careerPreferences: careerArray(careerSnapshot.careerPreferences).filter((entry) => typeof entry.questionId === "string" && typeof entry.optionId === "string").map((entry) => ({ questionId: String(entry.questionId), optionId: String(entry.optionId) })),
+      ranking: careerArray(careerSnapshot.candidates),
+      versions: {
+        assessment: String(careerSnapshot.assessmentVersion ?? versionSnapshot.assessment ?? ""),
+        scoring: String(careerSnapshot.scoringVersion ?? versionSnapshot.scoring ?? ""),
+        adaptive: String(careerSnapshot.adaptiveVersion ?? versionSnapshot.adaptive ?? ""),
+        careerMatching: String(careerSnapshot.matchingVersion ?? careerSnapshotRow?.matching_version ?? versionSnapshot.careerMatching ?? ""),
+        careerCatalog: String(careerSnapshot.careerCatalogVersion ?? careerSnapshotRow?.career_catalog_version ?? versionSnapshot.careerCatalog ?? ""),
+        report: String(careerSnapshot.reportVersion ?? versionSnapshot.report ?? ""),
+        content: String(careerSnapshot.contentVersion ?? versionSnapshot.itemBank ?? ""),
+      },
+    } : undefined;
+    const generated = isTSkillsReport
+      ? {
+          report: buildTSkillsReport(score, adaptiveQuestionCount),
+          provider: "t-skills-deterministic",
+          promptVersion: T_SKILLS_VERSION_IDS.report,
+          modelId: null,
+          inputHash: "t-skills-deterministic",
+          outputHash: "t-skills-deterministic",
+          validationResult: "passed" as const,
+          fallbackReason: null,
+        }
+      : await generateReportContent(score);
     const report = {
       ...generated.report,
       assessmentVersion: versionSnapshot.assessment ?? score.versions.assessment,
-      coreQuestionCount: versionSnapshot.assessment === V2_VERSION_IDS.assessment ? 60 : score.coreAnswered,
-      adaptiveQuestionCount: parseJson<string[]>(assessmentMeta?.adaptive_item_ids_json, []).length || score.adaptiveAnswered,
-      adaptiveProvider: assessmentMeta?.adaptive_provider ?? (versionSnapshot.assessment === V2_VERSION_IDS.assessment ? "approved-fallback" : "legacy-selector"),
+      coreQuestionCount: isTSkillsReport ? 67 : versionSnapshot.assessment === V2_VERSION_IDS.assessment ? 60 : score.coreAnswered,
+      adaptiveQuestionCount,
+      adaptiveProvider: assessmentMeta?.adaptive_provider ?? (isTSkillsReport || versionSnapshot.assessment === V2_VERSION_IDS.assessment ? "approved-fallback" : "legacy-selector"),
       adaptiveFallbackUsed: assessmentMeta?.adaptive_fallback_used === 1,
       adaptiveVersion: versionSnapshot.adaptive ?? versionSnapshot.selector ?? generated.report.adaptiveVersion,
       reportVersion: versionSnapshot.report ?? score.versions.report,
+      ...(careerReport ? { career: careerReport } : {}),
     } satisfies ReportJSON;
     const pdfKey = `reports/${viewer.userId}/${reportId}.pdf`;
     const pdf = await buildReportPdf(score, report);
@@ -1741,15 +2618,17 @@ export async function getAccountOverview(viewer: Viewer) {
     .first<{ locale: string }>();
   const orderResult = await database
     .prepare(
-      `SELECT id, test_id, amount_minor, currency, status, provider,
-              provider_checkout_url, created_at
+      `SELECT id, test_id, amount_minor, original_amount_minor,
+              discount_amount_minor, final_amount_minor, promo_code_id,
+              pricing_snapshot_json, idempotency_payload_json, currency,
+              status, provider, provider_checkout_url, created_at
        FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
     )
     .bind(viewer.userId)
     .all<OrderRow>();
   const assessmentResult = await database
     .prepare(
-      `SELECT id, test_id, state, client_seq, adaptive_item_ids_json,
+      `SELECT id, test_id, state, versions_json, client_seq, adaptive_item_ids_json,
               report_id, created_at, updated_at
        FROM assessments WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50`,
     )
@@ -1758,6 +2637,7 @@ export async function getAccountOverview(viewer: Viewer) {
       id: string;
       test_id: string;
       state: SessionState;
+      versions_json: string;
       client_seq: number;
       adaptive_item_ids_json: string;
       report_id: string | null;
@@ -1778,6 +2658,7 @@ export async function getAccountOverview(viewer: Viewer) {
       state: row.state,
       clientSeq: row.client_seq,
       adaptiveCount: parseJson<string[]>(row.adaptive_item_ids_json, []).length,
+      versions: parseJson<Record<string, string>>(row.versions_json, {}),
       reportId: row.report_id,
       createdAt: iso(row.created_at),
       updatedAt: iso(row.updated_at),
@@ -1826,7 +2707,8 @@ export async function requestDataExport(viewer: Viewer) {
   const requestId = newId("privacy");
   const key = `exports/${viewer.userId}/${requestId}.json`;
   const overview = await getAccountOverview(viewer);
-  const sessionResult = await database
+  const [sessionResult, responseResult, reportResult, adaptiveRunResult, adaptiveQuestionResult, onboardingResult, careerQuestionResult, careerAnswerResult, careerMatchResult, tSkillsTraitProfileResult, tSkillsUncertaintyResult, tSkillsClarificationQuestionResult, tSkillsClarificationAnswerResult, tSkillsCareerResult, tSkillsCareerTiebreakResult, tSkillsNarrativeResult, consentResult] = await Promise.all([
+    database
     .prepare(
       `SELECT id, test_id, state, versions_json, adaptive_item_ids_json,
               preliminary_score_json, final_score_json, report_id, client_seq,
@@ -1834,8 +2716,8 @@ export async function requestDataExport(viewer: Viewer) {
        FROM assessments WHERE user_id = ? ORDER BY created_at ASC`,
     )
     .bind(viewer.userId)
-    .all<Record<string, unknown>>();
-  const responseResult = await database
+    .all<Record<string, unknown>>(),
+    database
     .prepare(
       `SELECT r.assessment_id, r.item_id, r.response, r.response_time_ms, r.client_seq,
               r.response_source, r.presentation_metadata_json, r.created_at
@@ -1844,8 +2726,8 @@ export async function requestDataExport(viewer: Viewer) {
        WHERE a.user_id = ? ORDER BY r.created_at ASC`,
     )
     .bind(viewer.userId)
-    .all<Record<string, unknown>>();
-  const reportResult = await database
+    .all<Record<string, unknown>>(),
+    database
     .prepare(
       `SELECT id, assessment_id, status, provider, score_json, report_json,
               prompt_version, model_id, input_hash, output_hash, validation_result,
@@ -1853,8 +2735,8 @@ export async function requestDataExport(viewer: Viewer) {
        FROM reports WHERE user_id = ? ORDER BY created_at ASC`,
     )
     .bind(viewer.userId)
-    .all<Record<string, unknown>>();
-  const adaptiveRunResult = await database
+    .all<Record<string, unknown>>(),
+    database
     .prepare(
       `SELECT ar.assessment_id, ar.selector_version, ar.provider, ar.model_id,
               ar.input_hash, ar.output_hash, ar.chosen_ids_json, ar.latency_ms,
@@ -1866,8 +2748,8 @@ export async function requestDataExport(viewer: Viewer) {
        WHERE a.user_id = ? ORDER BY ar.created_at ASC`,
     )
     .bind(viewer.userId)
-    .all<Record<string, unknown>>();
-  const adaptiveQuestionResult = await database
+    .all<Record<string, unknown>>(),
+    database
     .prepare(
       `SELECT aq.assessment_id, aq.question_id, aq.format, aq.prompt, aq.options_json,
               aq.target_traits_json, aq.reason_code, aq.semantic_intent, aq.semantic_cluster,
@@ -1879,8 +2761,120 @@ export async function requestDataExport(viewer: Viewer) {
        WHERE a.user_id = ? ORDER BY aq.generated_at ASC, aq.question_id ASC`,
     )
     .bind(viewer.userId)
-    .all<Record<string, unknown>>();
-  const consentResult = await database
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT ao.assessment_id, ao.age, ao.education_level, ao.favorite_subjects_json,
+              ao.extensions_json, ao.version, ao.created_at, ao.updated_at
+       FROM assessment_onboarding ao
+       JOIN assessments a ON a.id = ao.assessment_id
+       WHERE a.user_id = ? ORDER BY ao.created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT cq.assessment_id, cq.question_id, cq.prompt, cq.options_json,
+              cq.source, cq.provider, cq.model_id, cq.prompt_version,
+              cq.adaptive_version, cq.validation_status, cq.question_hash, cq.created_at
+       FROM career_adaptive_questions cq
+       JOIN assessments a ON a.id = cq.assessment_id
+       WHERE a.user_id = ? ORDER BY cq.created_at ASC, cq.question_id ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT ca.assessment_id, ca.question_id, ca.answer_id, ca.response_time_ms,
+              ca.client_seq, ca.idempotency_key, ca.created_at
+       FROM career_adaptive_answers ca
+       JOIN assessments a ON a.id = ca.assessment_id
+       WHERE a.user_id = ? ORDER BY ca.created_at ASC, ca.question_id ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT cm.assessment_id, cm.phase, cm.candidates_json, cm.matching_version,
+              cm.career_catalog_version, cm.created_at
+       FROM career_match_snapshots cm
+       JOIN assessments a ON a.id = cm.assessment_id
+       WHERE a.user_id = ? ORDER BY cm.created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT tp.assessment_id, tp.base_json, tp.final_json, tp.clarification_answers_json,
+              tp.scoring_version, tp.uncertainty_version, tp.clarification_version,
+              tp.created_at, tp.updated_at
+       FROM t_skills_trait_profiles tp
+       JOIN assessments a ON a.id = tp.assessment_id
+       WHERE a.user_id = ? ORDER BY tp.created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT us.assessment_id, us.payload_json, us.uncertainty_version, us.created_at
+       FROM t_skills_uncertainty_snapshots us
+       JOIN assessments a ON a.id = us.assessment_id
+       WHERE a.user_id = ? ORDER BY us.created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT cq.assessment_id, cq.question_id, cq.type, cq.payload_json,
+              cq.selection_reason_json, cq.position, cq.clarification_version, cq.created_at
+       FROM t_skills_clarification_questions cq
+       JOIN assessments a ON a.id = cq.assessment_id
+       WHERE a.user_id = ? ORDER BY cq.assessment_id ASC, cq.position ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT ca.assessment_id, ca.question_id, ca.response_value, ca.response_time_ms,
+              ca.client_seq, ca.idempotency_key, ca.created_at
+       FROM t_skills_clarification_answers ca
+       JOIN assessments a ON a.id = ca.assessment_id
+       WHERE a.user_id = ? ORDER BY ca.created_at ASC, ca.question_id ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT cr.assessment_id, cr.phase, cr.candidates_json, cr.recommendations_json,
+              cr.career_catalog_version, cr.career_matching_version,
+              cr.career_tiebreak_version, cr.created_at
+       FROM t_skills_career_results cr
+       JOIN assessments a ON a.id = cr.assessment_id
+       WHERE a.user_id = ? ORDER BY cr.created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT ca.assessment_id, ca.question_id, ca.option_id, ca.response_time_ms,
+              ca.client_seq, ca.idempotency_key, ca.created_at
+       FROM t_skills_career_tiebreak_answers ca
+       JOIN assessments a ON a.id = ca.assessment_id
+       WHERE a.user_id = ? ORDER BY ca.created_at ASC, ca.question_id ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
+    .prepare(
+      `SELECT n.assessment_id, n.input_json, n.output_json, n.narrative_prompt_version,
+              n.report_version, n.provider, n.created_at
+       FROM t_skills_narratives n
+       JOIN assessments a ON a.id = n.assessment_id
+       WHERE a.user_id = ? ORDER BY n.created_at ASC`,
+    )
+    .bind(viewer.userId)
+    .all<Record<string, unknown>>(),
+    database
     .prepare(
       `SELECT c.assessment_id, c.consent_type, c.text_version, c.granted,
               c.decided_at, c.revoked_at
@@ -1889,7 +2883,8 @@ export async function requestDataExport(viewer: Viewer) {
        WHERE c.user_id = ? ORDER BY c.decided_at ASC`,
     )
     .bind(viewer.userId)
-    .all<Record<string, unknown>>();
+    .all<Record<string, unknown>>(),
+  ]);
   const payload = {
     exportedAt: new Date().toISOString(),
     user: overview.user,
@@ -1899,6 +2894,17 @@ export async function requestDataExport(viewer: Viewer) {
     reports: reportResult.results ?? [],
     adaptiveRuns: adaptiveRunResult.results ?? [],
     adaptiveQuestions: adaptiveQuestionResult.results ?? [],
+    onboarding: onboardingResult.results ?? [],
+    careerAdaptiveQuestions: careerQuestionResult.results ?? [],
+    careerAdaptiveAnswers: careerAnswerResult.results ?? [],
+    careerMatchSnapshots: careerMatchResult.results ?? [],
+    tSkillsTraitProfiles: tSkillsTraitProfileResult.results ?? [],
+    tSkillsUncertaintySnapshots: tSkillsUncertaintyResult.results ?? [],
+    tSkillsClarificationQuestions: tSkillsClarificationQuestionResult.results ?? [],
+    tSkillsClarificationAnswers: tSkillsClarificationAnswerResult.results ?? [],
+    tSkillsCareerResults: tSkillsCareerResult.results ?? [],
+    tSkillsCareerTiebreakAnswers: tSkillsCareerTiebreakResult.results ?? [],
+    tSkillsNarratives: tSkillsNarrativeResult.results ?? [],
     consents: consentResult.results ?? [],
   };
   const bucket = getR2();
@@ -1983,16 +2989,13 @@ export async function deleteAccount(viewer: Viewer) {
   }
   try {
     await database.batch([
-      database.prepare(`DELETE FROM assessment_responses WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
-      database.prepare(`DELETE FROM adaptive_questions WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
-      database.prepare(`DELETE FROM adaptive_runs WHERE assessment_id IN (SELECT id FROM assessments WHERE user_id = ?)`).bind(viewer.userId),
-      database.prepare(`DELETE FROM consents WHERE user_id = ?`).bind(viewer.userId),
-      database.prepare(`DELETE FROM reports WHERE user_id = ?`).bind(viewer.userId),
+      ...deleteUserAssessmentDataStatements(database, viewer.userId),
+      database.prepare(`DELETE FROM campaign_members WHERE user_id = ?`).bind(viewer.userId),
+      database.prepare(`DELETE FROM promo_redemptions WHERE user_id = ?`).bind(viewer.userId),
       database.prepare(`DELETE FROM assessments WHERE user_id = ?`).bind(viewer.userId),
       database.prepare(`DELETE FROM entitlements WHERE user_id = ?`).bind(viewer.userId),
       database.prepare(`DELETE FROM payment_events WHERE order_id IN (SELECT id FROM orders WHERE user_id = ?)`).bind(viewer.userId),
       database.prepare(`DELETE FROM orders WHERE user_id = ?`).bind(viewer.userId),
-      database.prepare(`DELETE FROM telemetry_events WHERE user_id = ?`).bind(viewer.userId),
       database.prepare(`DELETE FROM rate_limits WHERE bucket_key LIKE '%:' || ?`).bind(viewer.userId),
       database.prepare(`DELETE FROM auth_sessions WHERE user_id = ?`).bind(viewer.userId),
       database.prepare(`DELETE FROM auth_tokens WHERE user_id = ?`).bind(viewer.userId),

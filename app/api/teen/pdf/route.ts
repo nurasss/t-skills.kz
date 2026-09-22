@@ -1,24 +1,28 @@
 import { NextResponse } from "next/server";
 
+import { getRuntimeEnv } from "@/db";
 import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
 import { consumeRateLimit } from "@/lib/durable-store";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import type { Viewer } from "@/lib/server-auth";
 import { renderTeenPdf, validateTeenReportPayload } from "@/lib/teen-pdf";
 import { teenPdfFonts } from "@/lib/teen-pdf-fonts";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
-/** IP клиента для анонимного rate-limit (доверяем первому адресу в цепочке). */
+/** IP клиента для анонимного rate-limit; proxy headers are opt-in. */
 function clientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim().slice(0, 64);
   const cf = request.headers.get("cf-connecting-ip");
   if (cf) return cf.trim().slice(0, 64);
+  if (getRuntimeEnv().TRUST_PROXY?.trim().toLowerCase() === "true") {
+    const forwarded = request.headers.get("x-forwarded-for");
+    if (forwarded) return forwarded.split(",")[0].trim().slice(0, 64);
+  }
   return "unknown";
 }
 
 export async function POST(request: Request) {
-  if (process.env.TEEN_BANK_ENABLED !== "1" && process.env.TEEN_BANK_ENABLED !== "true") {
+  if (!(await isFeatureEnabled("teen_enabled", "TEEN_BANK_ENABLED"))) {
     return NextResponse.json({ error: "TEEN_NOT_ENABLED" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
   // FIX1: teen-флоу анонимный — PDF доступен без логина, лимит по IP.

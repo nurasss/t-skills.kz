@@ -1,5 +1,6 @@
 import { getD1, getR2, getRuntimeEnv } from "@/db";
 import { RETENTION_ACTIVE_STATES, retentionDaysFrom } from "@/lib/retention-policy";
+import { countAssessmentData, deleteAssessmentDataStatements } from "@/lib/privacy-data-registry";
 const RETENTION_JOB_VERSION = "purge-job-v1";
 
 type PurgeJobStatus =
@@ -67,19 +68,7 @@ async function reportKeysFor(database: D1Database, targetId: string) {
 }
 
 async function deletionCounts(database: D1Database, targetId: string) {
-  const row = await database
-    .prepare(
-      "SELECT " +
-      "(SELECT COUNT(*) FROM assessment_responses WHERE assessment_id = ?) AS responses, " +
-      "(SELECT COUNT(*) FROM adaptive_questions WHERE assessment_id = ?) AS adaptive_questions, " +
-      "(SELECT COUNT(*) FROM adaptive_runs WHERE assessment_id = ?) AS adaptive_runs, " +
-      "(SELECT COUNT(*) FROM consents WHERE assessment_id = ?) AS consents, " +
-      "(SELECT COUNT(*) FROM reports WHERE assessment_id = ?) AS reports, " +
-      "(SELECT COUNT(*) FROM telemetry_events WHERE assessment_id = ?) AS telemetry",
-    )
-    .bind(targetId, targetId, targetId, targetId, targetId, targetId)
-    .first<{ responses: number; adaptive_questions: number; adaptive_runs: number; consents: number; reports: number; telemetry: number }>();
-  return row ?? { responses: 0, adaptive_questions: 0, adaptive_runs: 0, consents: 0, reports: 0, telemetry: 0 };
+  return countAssessmentData(database, targetId);
 }
 
 async function setJobFailure(database: D1Database, jobId: string, errorClass: string, counts: Record<string, number>, nowMs: number) {
@@ -212,12 +201,7 @@ export async function runRetentionSweep(options: {
       counts = { ...counts, ...rowCounts };
       try {
         await database.batch([
-          database.prepare("DELETE FROM assessment_responses WHERE assessment_id = ?").bind(originalJob.target_id),
-          database.prepare("DELETE FROM adaptive_questions WHERE assessment_id = ?").bind(originalJob.target_id),
-          database.prepare("DELETE FROM adaptive_runs WHERE assessment_id = ?").bind(originalJob.target_id),
-          database.prepare("DELETE FROM consents WHERE assessment_id = ?").bind(originalJob.target_id),
-          database.prepare("DELETE FROM reports WHERE assessment_id = ?").bind(originalJob.target_id),
-          database.prepare("DELETE FROM telemetry_events WHERE assessment_id = ?").bind(originalJob.target_id),
+          ...deleteAssessmentDataStatements(database, originalJob.target_id),
           database.prepare("DELETE FROM assessments WHERE id = ? AND purge_state = 'ARTIFACTS_DELETED'").bind(originalJob.target_id),
           database
             .prepare("UPDATE purge_jobs SET status = 'DB_PURGED', counts_json = ?, error_class = NULL, updated_at = ? WHERE id = ? AND status = 'ARTIFACTS_DELETED'")

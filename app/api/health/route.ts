@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 
 import { getRuntimeEnv } from "@/db";
-import { aiEnabled, entitlementMode, paymentsEnabled } from "@/lib/runtime-config";
+import { aiEnabled, entitlementMode } from "@/lib/runtime-config";
+import { maintenanceModeEnabled, paymentsFeatureEnabled } from "@/lib/feature-flags";
 
 export async function GET() {
   const env = getRuntimeEnv();
   return NextResponse.json({
     status: "ok",
     environment: env.APP_ENV ?? env.ORBITA_ENV ?? "unknown",
-    paymentsEnabled: paymentsEnabled(env),
+    paymentsEnabled: await paymentsFeatureEnabled(),
+    maintenanceMode: await maintenanceModeEnabled(),
     entitlementMode: entitlementMode(env),
     aiEnabled: aiEnabled(env),
     adaptiveProvider: env.ADAPTIVE_PROVIDER ?? "approved-library",

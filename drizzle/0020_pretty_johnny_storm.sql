@@ -1,0 +1,1 @@
+ALTER TABLE `entitlements` ADD `expires_at` integer;

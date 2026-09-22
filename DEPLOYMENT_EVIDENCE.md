@@ -105,3 +105,158 @@ External blockers recorded 2026-09-16:
 ```
 
 No secret values belong in this file.
+
+## VPS production deploy 2026-09-18 (paper design system + brand)
+
+- Source synced local -> /opt/t-skills via rsync (node_modules, build outputs, .git, deploy/vps/.env excluded; no deletions).
+- Previous image preserved as t-skills:vps-prev (03612487939e) for rollback.
+- Rebuilt with docker compose (docker-compose.yml + docker-compose.shared-proxy.yml, service app); migrations 0016-0018 applied on boot; container healthy.
+- Verified: GET / 200 with new landing (paper hero, BrandIcon lockup, 15 000 ₸ pricing), GET /api/catalog 200 (beta-free, KZT, t-skills_pairwise_v1).
+- Shipped uncommitted working tree from branch feature/orbita-v2-core60-mercury (local HEAD 5a80a5d plus session changes); no secrets transferred (deploy/vps/.env kept server-side).
+- Rollback: docker tag t-skills:vps-prev t-skills:vps && compose up -d app.
+
+## VPS production deploy 2026-09-18 (evening: hero split, brand lockup, animations, pairwise mobile, 15 000 ₸)
+
+- Source synced local -> /opt/t-skills via rsync (same excludes; deploy/vps/.env kept; no deletions).
+- Previous image preserved as t-skills:vps-prev (83c31ab557f1); new image 3a016c0908d5; container recreated healthy, migrations applied=0 (all current).
+- Verified: GET / 200 (two-column hero, footer lockup with tagline, 15 000 ₸ pricing), GET /api/catalog 200 (beta-free, KZT, t-skills_pairwise_v1).
+- Rollback: docker tag t-skills:vps-prev t-skills:vps && compose up -d app.
+
+## VPS production deploy 2026-09-18 (night: trait icons + pairwise restyle)
+
+- Source synced local -> /opt/t-skills via rsync (same excludes; deploy/vps/.env kept; no deletions).
+- Previous image preserved as t-skills:vps-prev (3a016c0908d5); new image bbe7b02b5ba2; container recreated healthy.
+- Verified: GET / 200, served CSS contains ov-pairwise-card/medallion, bronze CTA, question animation; /api/catalog 200.
+- Rollback: docker tag t-skills:vps-prev t-skills:vps && compose up -d app.
+
+## VPS production deploy 2026-09-19 (email truncation + hydration-safe dates)
+
+- Source synced local -> /opt/t-skills via rsync (same excludes; deploy/vps/.env kept; no deletions).
+- Previous image preserved as t-skills:vps-prev (bbe7b02b5ba2); new image 8c38cb1deb9b; container recreated healthy.
+- Fixes: long displayName middle-truncation (bul..22@gmail.com) with full value in title; ClientDate component removes toLocale* SSR/CSR hydration mismatches (verified in UTC+14).
+- Verified: GET / 200 (new build markers), GET /api/catalog 200.
+- Rollback: docker tag t-skills:vps-prev t-skills:vps && compose up -d app.
+
+## VPS SMTP cutover 2026-09-19 (свой Postfix вместо Resend)
+
+- Причина: Resend-ключ send-only, домен не верифицирован (ошибка 1010, письма только владельцу аккаунта).
+- Postfix был остановлен (stale pid) — поднят; слушает 127.0.0.1:25 и 172.18.0.1:25 (контейнер app в той же docker-сети, relay без смены конфига соседей).
+- OpenDKIM: добавлен ключ tskills для t-skills.kz (KeyTable/SigningTable, timetrack.kz не тронут).
+- Код: lib/email.ts — EMAIL_PROVIDER=resend|smtp (nodemailer 7), сервер переключён на smtp (SMTP_HOST=172.18.0.1).
+- E2E: инвайт + регистрация nuras@qsqrp.com через публичный API -> delivered=true, postfix 250 OK дважды.
+- Открыто: DNS у регистратора (SPF/DKIM/DMARC), PTR у хостера, иначе Gmail может класть в спам.
+- Rollback почты: EMAIL_PROVIDER=resend в deploy/vps/.env + рестарт app (Resend-ключ на месте).
+
+## VPS production deploy 2026-09-19 (logout button)
+
+- Source synced local -> /opt/t-skills via rsync (same excludes; deploy/vps/.env kept; no deletions).
+- Previous image preserved as t-skills:vps-prev (4b8788b02450); new image 49d1d0eeee33; container recreated healthy.
+- Change: account view gains "Выйти" (POST /api/auth/logout -> top-level navigate home).
+- Verified: GET /api/catalog 200.
+- Rollback: docker tag t-skills:vps-prev t-skills:vps && compose up -d app.
+
+## VPS production deploy 2026-09-19 (auth UX: password toggle, live mismatch, mobile keyboards)
+
+- Source synced local -> /opt/t-skills via rsync (same excludes; deploy/vps/.env kept; no deletions).
+- Previous image preserved as t-skills:vps-prev (49d1d0eeee33); new image c2551f009c01; container recreated healthy.
+- Change: registration/login password visibility toggle, live password-mismatch warning + disabled submit, email/invite inputs hardened for mobile keyboards, resend link only after attempt, larger consent tap targets.
+- Verified: GET /auth?mode=register 200 contains toggle; GET /api/catalog 200.
+- Rollback: docker tag t-skills:vps-prev t-skills:vps && compose up -d app.
+
+## VPS production deploy 2026-09-19 (open registration, no invite code)
+
+- Server: REGISTRATION_MODE=invite -> public (backup at /tmp/t-skills-env.bak on host).
+- Code: invite field optional in auth form ("Код приглашения (если есть)").
+- Previous image preserved as t-skills:vps-prev (c2551f009c01); new image c79c07531ae0; container recreated healthy.
+- Verified: POST /api/auth/register WITHOUT invite -> 202 ok/delivered; test user removed afterwards (tokens, credentials, row).
+- Rollback: invite mode = set REGISTRATION_MODE=invite + restart; image = tag vps-prev + up -d app.
+
+## Prod E2E audit 2026-09-19 (ALL GREEN) + test data cleanup
+
+- Local unit suite: 91/91 pass (fixed 1 pre-existing branding failure by renaming ORBITA_UNLIMITED_ASSESSMENT_EMAILS -> TSKILLS_UNLIMITED_ASSESSMENT_EMAILS in code + examples; server .env follows on next deploy).
+- Prod API E2E (temporary script, removed after): register -> login -> assessment -> onboarding -> consents -> 67 core answers -> complete-core (8 adaptive) -> adaptive answers -> complete -> report COMPLETE (25 traits) -> signed PDF download (valid %PDF) -> export -> logout -> 401 boundary -> re-login -> account delete -> user row gone. Email verify step emulated in DB (real link-click proven separately by owner account).
+- Orphan e2e users from failed runs fully removed (cascade incl. telemetry_events, privacy_requests).
+
+## VPS production deploy 2026-09-19 (env rename + full E2E re-run)
+
+- Renamed ORBITA_UNLIMITED_ASSESSMENT_EMAILS -> TSKILLS_UNLIMITED_ASSESSMENT_EMAILS (code, examples, server .env); fixes the 1 failing branding unit test. Local suite now 91/91.
+- New image 28cc3248516b; container healthy.
+- Full prod E2E re-run on new build: ALL GREEN (register/login/67+adaptive/report/PDF/export/logout/delete).
+- No e2e debris left in prod DB. Temp scripts removed.
+- Rollback: image vps-prev (c79c07531ae0).
+
+## VPS production deploy 2026-09-19 (answer revision, no-break flow, career clarity)
+
+- Changes: answer change-of-mind before Continue (server UPDATE-with-phase-guards + client replacePending + per-question send serialization); break view removed (uninterrupted 67->adaptive flow; /break and /adaptive URLs resolve to assessment); career options get unmistakable selected state (accent border + check badge).
+- Previous image vps-prev (28cc3248516b); new image 8242f665a1d3; healthy.
+- Verified: unit 91/91; prod E2E ALL GREEN incl. revision proof (2 -> -1 stored), report, PDF, delete.
+- Rollback: tag vps-prev + up -d app.
+
+## VPS production deploy 2026-09-20 (progress 134/179 fix, names in contour, processing timeline)
+
+- Fixed adaptive-phase counter: router passed core questionIndex (67+67=134, 179%); now shows Q68-75 and correct percent.
+- Results "Контур профиля" shows Russian trait names instead of English codes.
+- Processing timeline hides ADAPTIVE_PROVIDER_FAILED unless it is the current status.
+- Verified: tsc/eslint clean, unit 91/91.
+- Rollback: image vps-prev (8242f665a1d3).
+
+## VPS production deploy 2026-09-20 (audit batch: fonts leak, report/admin/methodology truth, links, menus, security.txt)
+
+- Removed legacy Inter/Instrument Serif next/font imports: prod Link headers no longer leak /Users/nuras/... paths and no longer 404 (verified live).
+- Report: "Полный профиль {N}", plan subtitle follows actual count, empty domains section hidden, contour shows Russian names.
+- Processing: core counter from live bank size; provider-failed row only when active.
+- Admin panel reflects live pairwise bank (67 + adaptive + legacy); methodology model/scoring/adaptive/version blocks use live taxonomy and version IDs.
+- SectionHeading supports h1 (catalog, methodology); shell nav/footer are real links with SPA fast path; Escape closes menus; landing burger gains backdrop close; security.txt route added (404 until SECURITY_CONTACT_EMAIL set).
+- Incident during deploy: disk 100% (40G) crashed boot (SQLite WAL I/O error); freed 6.8G via docker builder/image prune; site restored on new image. Watch disk: containerd 13G belongs to neighbors, untouched. Recommend log/size monitoring.
+- Rollback: image vps-prev.
+
+## VPS production deploy 2026-09-20 (backdrop, favicon.ico, security.txt live)
+
+- Shell mobile menu: tap-outside backdrop close (+ existing Escape).
+- Real public/favicon.ico generated from brand SVG; wired into metadata.
+- SECURITY_CONTACT_EMAIL=support@t-skills.kz on server; /.well-known/security.txt now 200.
+- Verified: security 200, favicon 200, catalog 200.
+- Rollback: image vps-prev (50c7e88f5268).
+
+## VPS production deploy 2026-09-20 (Gallup-style results web + PDF engine)
+
+- Web results: profile strip, ranked Укрепляйте/Изучайте lists, trait detail blocks with domain chips and quote cards.
+- PDF engine rewritten in same spirit (paper palette, Newsreader headlines, ranked pages, detail pages with quotes, dynamic profile chunks, live methodology numbers); 24-page contract preserved and verified on all 4 fixtures (A4 ok).
+- Verified: unit 91/91, tsc/eslint clean.
+- Rollback: image vps-prev (350d6594ca8c).
+
+## VPS production deploy 2026-09-20 (audit fixes: PDF Cyrillic, 5 detail cards, names, numbering)
+
+- PDF serif Newsreader->Lora (Newsreader has no Cyrillic; PT Serif subset breaks in pdf-lib). Verified by rendering: Russian headings print correctly. 24 pages intact.
+- Web results: 5 detail cards (was 3), Russian trait names via profile lookup (was English codes), sequential section numbers with hidden domains section.
+- Verified: unit 91/91, tsc/eslint clean.
+- Rollback: image vps-prev (23557ad975d7).
+
+## VPS production deploy 2026-09-20 (Empirical Vanguard landing)
+
+- Full landing rewrite: white canvas, Inter Tight (Hanken Grotesk from the mock has no Cyrillic — substituted closest grotesque with Cyrillic), botanical green accents.
+- Copy adapted to product truth (no clusters/norms/forever/ISSN/professions claims); EN toggle hidden pending reviewed translation.
+- Verified: tsc/eslint clean, desktop+mobile screenshots, no overflow.
+- Rollback: image vps-prev (fc6ca778ba18).
+
+## VPS production deploy 2026-09-20 (Empirical Vanguard site-wide)
+
+- Rethemed all views/shell/auth/cookie/legal to white canvas + green + Inter Tight (Hanken has no Cyrillic).
+- Verified: tsc/eslint clean, unit 91/91, contrast PASS, screenshots desktop+auth.
+- Rollback: image vps-prev (cb969d94f3ed).
+
+## VPS production deploy 2026-09-21 (landing cleanup: no badges/microstats, tighter hero)
+
+- Rollback: image vps-prev (43907d6f31e3).
+
+## VPS production deploy 2026-09-21 (qmock full width, quiet CTA)
+
+- Rollback: image vps-prev (7ff753566e6f).
+
+## VPS production deploy 2026-09-21 (email full/short responsive)
+
+- Rollback: image vps-prev (ee7a50b639bb).
+
+## VPS production deploy 2026-09-21 (account buttons alignment)
+
+- Rollback: image vps-prev (92bd22e8b957).

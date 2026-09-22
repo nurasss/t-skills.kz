@@ -51,6 +51,7 @@ export type OrbitaController = {
   autosaveStatus: string;
   checkoutBusy: boolean;
   checkoutError?: string;
+  promoCode: string;
   publicCatalog?: PublicCatalog;
   accountOverview?: AccountOverview;
   accountLoading: boolean;
@@ -66,6 +67,7 @@ export type OrbitaController = {
   dismissRequestError: () => void;
   openDemo: () => void;
   startCheckout: () => Promise<void>;
+  setPromoCode: (value: string) => void;
   setConsent: (key: "terms" | "privacy" | "research" | "marketing", value: boolean) => void;
   beginAssessment: () => Promise<void>;
   saveOnboarding: (value: OnboardingContext) => Promise<void>;
@@ -109,6 +111,7 @@ export function useOrbitaController({
   const [requestError, setRequestError] = useState<string>();
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string>();
+  const [promoCode, setPromoCode] = useState("");
   const [publicCatalog, setPublicCatalog] = useState<PublicCatalog>();
   const [accountOverview, setAccountOverview] = useState<AccountOverview>();
   const [accountLoading, setAccountLoading] = useState(initialView === "account");
@@ -389,7 +392,7 @@ export function useOrbitaController({
 
   const isTSkillsSessionVersion = () => {
     const current = coreItems[0];
-    return Boolean(current && "leftTraitId" in current && current.version === T_SKILLS_VERSION_IDS.itemBank);
+    return Boolean(current && "leftTraitId" in current && (current.version === T_SKILLS_VERSION_IDS.itemBank || current.version.startsWith("t-skills")));
   };
 
   const saveOnboarding = async (value: OnboardingContext) => {
@@ -470,11 +473,15 @@ export function useOrbitaController({
     setCheckoutError(undefined);
     try {
       trackOptionalAnalytics({ name: "checkout_started", metadata: { provider: "stripe", mode: "hosted" } });
-      const result = await apiJson<{ checkout_url: string }>('/api/checkout', {
+      const result = await apiJson<{ checkout_url: string | null; free_access?: boolean }>('/api/checkout', {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ test_id: T_SKILLS_TEST_ID }),
+        body: JSON.stringify({ test_id: T_SKILLS_TEST_ID, promo_code: promoCode.trim() || undefined }),
       });
+      if (result.free_access) {
+        await startAssessmentFromAccount();
+        return;
+      }
       if (!result.checkout_url) throw new ApiClientError("CHECKOUT_URL_MISSING", "Платёжная ссылка не была создана.");
       trackOptionalAnalytics({ name: "checkout_redirected" });
       window.location.assign(result.checkout_url);
@@ -822,6 +829,7 @@ export function useOrbitaController({
     autosaveStatus,
     checkoutBusy,
     checkoutError,
+    promoCode,
     publicCatalog,
     accountOverview,
     accountLoading,
@@ -837,6 +845,7 @@ export function useOrbitaController({
     dismissRequestError: () => setRequestError(undefined),
     openDemo,
     startCheckout,
+    setPromoCode,
     setConsent,
     beginAssessment,
     saveOnboarding,

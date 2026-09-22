@@ -25,7 +25,10 @@ export function OrbitaApp(options: OrbitaControllerOptions) {
     <div className={immersive ? "orbita-app immersive" : "orbita-app"}>
       {!immersive ? <AppHeader onNavigate={controller.go} view={controller.view} /> : null}
       {controller.requestError ? <div className="global-error" role="alert">{controller.requestError}<button onClick={controller.dismissRequestError} type="button" aria-label="Закрыть">×</button></div> : null}
-      <OrbitaViewRouter controller={controller} />
+      {/* key по view перезапускает лёгкую mount-анимацию перехода (см. .ts-view-enter) */}
+      <div key={controller.view} className="ts-view-enter">
+        <OrbitaViewRouter controller={controller} />
+      </div>
       {!immersive ? <Footer onNavigate={controller.go} /> : null}
     </div>
   );

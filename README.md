@@ -1,6 +1,8 @@
 # T-Skills
 
-Production-oriented T-Skills v2 assessment: 60 fixed Russian Core items, deterministic 30-trait scoring, 10–15 server-validated Mercury 2.5 follow-up items (with an approved deterministic fallback), protected identity, durable Cloudflare D1 state, private R2 report artifacts, short-lived signed PDF links, preserved Stripe Checkout/webhooks, exports/deletion workflows, privacy-safe telemetry, scheduled retention, and a private closed-beta deployment. The legacy Q001–Q300 bank remains available only for historical v1 snapshots.
+Production-oriented T-Skills assessment: a 67-item pairwise core with deterministic 25-trait scoring, up to 8 server-validated career clarification questions, protected identity, durable Cloudflare D1 state, private R2 report artifacts, short-lived signed PDF links, Pricing Registry-backed Checkout/webhooks, exports/deletion workflows, privacy-safe telemetry, scheduled retention, and a private closed-beta deployment. The historical Core60/Mercury and Q001–Q300 pathways remain versioned compatibility contracts and are not allowed to rewrite T-Skills scoring.
+
+The Master Specification v5 pathway is prepared behind an independent, versioned contract in [`lib/t-skills/v5/`](./lib/t-skills/v5/) and is documented in [`docs/T_SKILLS_V5_IMPLEMENTATION.md`](./docs/T_SKILLS_V5_IMPLEMENTATION.md). It is intentionally content-gated: the client-approved 75-item bank, 25-trait taxonomy, clarification bank, profession catalog, career tie-breaks and roadmap templates must pass `npm run content:t-skills:v5:check` before v5 can replace the active `t-skills_pairwise_v1` flow. No production questions, trait definitions or career weights are invented in the repository.
 
 The assessment is an original developmental product. It is not a Gallup/CliftonStrengths® implementation, a diagnosis, or a high-stakes decision tool. Items are marked `draft for pilot` until independent psychometric validation is completed.
 
@@ -64,8 +66,8 @@ Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=tru
 - `app/orbita-view-router.tsx` — presentation routing for landing, catalog, checkout, consent, assessment, break, results, account, methodology and legal/support views.
 - `hooks/use-orbita-controller.ts` — assessment-flow orchestration, network state, WebMCP registration and account/checkout/report actions; it owns no JSX.
 - `app/orbita-views.tsx` — presentation-only views; `app/orbita-api.ts`, `hooks/use-assessment-queue.ts`, `lib/view-routing.ts` and `lib/response-retry-queue.ts` are API/queue/routing boundaries, with the queue and routing logic remaining DOM-free.
-- `lib/v2-item-bank.ts` and `lib/orbita-v2-engine.ts` — immutable Core60 bank and deterministic v2 preliminary/final scoring.
-- `lib/mercury-adaptive-provider.ts` and `lib/prompts/mercury-adaptive-v1.ts` — abstract adaptive provider, Inception Labs Mercury integration, strict validator and approved fallback; Mercury never scores.
+- `lib/t-skills/` — active pairwise item bank, deterministic trait scoring, career clarification, matching and report contracts.
+- `lib/v2-item-bank.ts`, `lib/orbita-v2-engine.ts`, `lib/mercury-adaptive-provider.ts` and `lib/prompts/mercury-adaptive-v1.ts` — preserved versioned compatibility pathways; they cannot score or mutate the active T-Skills contract.
 - `lib/assessment-engine.ts` and `lib/item-bank.ts` — shared report/scoring contracts plus the preserved legacy 300-item bank for v1 snapshots.
 - `lib/interpretation-library.ts` — versioned approved trait/pair semantics; AI output cannot add unsupported claims.
 - `lib/durable-store.ts` — all user-owned state transitions and ownership checks.
@@ -202,6 +204,7 @@ npm run test:e2e
 - `npm run build`: build the deployable Sites artifact
 - `npm run start`: preview the built Worker locally with D1/R2 support
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+- `npm run content:t-skills:check -- ./path/to/t-skills-content.json`: validate the approved 25-trait/75-item/profession bundle before activation
 - `npm run test`: run unit/contract tests
 - `npm run test:e2e`: run the full local Worker/D1/R2 smoke flow
 - `npm run test:load`: concurrent response/replay and completion load smoke with latency/error/rate-limit metrics

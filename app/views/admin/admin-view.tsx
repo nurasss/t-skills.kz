@@ -3,6 +3,7 @@
 import { ArrowRight } from "@/app/views/shared/section-heading";
 import type { AdminMetrics, View } from "@/app/orbita-view-types";
 import type { ScoreProfile } from "@/lib/assessment-engine";
+import { T_SKILLS_ADAPTIVE_MAX_QUESTIONS, T_SKILLS_STATIC_ITEM_COUNT, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 
 export type AdminViewProps = {
   profile?: ScoreProfile;
@@ -11,9 +12,9 @@ export type AdminViewProps = {
 };
 
 const ITEM_RANGES = [
-  { range: "Q001–Q030", type: "primary Likert", count: 30, status: "core60-v1" },
-  { range: "Q031–Q060", type: "discrimination FC", count: 30, status: "core60-v1" },
-  { range: "FB-01–FB-24", type: "approved fallback", count: 24, status: "fallback" },
+  { range: "TS001–TS067", type: "pairwise forced-choice", count: T_SKILLS_STATIC_ITEM_COUNT, status: T_SKILLS_VERSION_IDS.assessment },
+  { range: "CA-01–CA-08", type: "career adaptive", count: T_SKILLS_ADAPTIVE_MAX_QUESTIONS, status: T_SKILLS_VERSION_IDS.adaptive },
+  { range: "Q001–Q300", type: "legacy bank", count: 300, status: "legacy" },
 ];
 
 export function AdminView({ profile, onNavigate, metrics }: AdminViewProps) {
@@ -38,9 +39,9 @@ export function AdminView({ profile, onNavigate, metrics }: AdminViewProps) {
 
         <div className="ov-admin-metrics">
           <article className="ov-admin-metric">
-            <span>Core item bank</span>
-            <strong>60</strong>
-            <small>Core60 v1 · pilot / unvalidated</small>
+            <span>Pairwise bank</span>
+            <strong>{T_SKILLS_STATIC_ITEM_COUNT}</strong>
+            <small>{T_SKILLS_VERSION_IDS.assessment} · pilot / unvalidated</small>
           </article>
           <article className="ov-admin-metric">
             <span>Users</span>
@@ -71,9 +72,9 @@ export function AdminView({ profile, onNavigate, metrics }: AdminViewProps) {
         <div className="ov-two-col ov-admin-grid">
           <article className="ov-card">
             <header className="ov-card-header">
-              <h3 className="ov-card-title">Core60 Item Bank</h3>
+              <h3 className="ov-card-title">T-Skills Pairwise Bank</h3>
               <p className="ov-card-desc">
-                Новая версия с фиксированным набором; v1 Q001–Q300 сохранён как legacy.
+                Живой банк 67 парных сравнений и до 8 карьерных уточнений; v1 Q001–Q300 сохранён как legacy.
               </p>
             </header>
             <div className="ov-admin-table">
@@ -88,7 +89,7 @@ export function AdminView({ profile, onNavigate, metrics }: AdminViewProps) {
                   <span>{row.range}</span>
                   <span>{row.type}</span>
                   <strong>{row.count}</strong>
-                  <span className={`ov-badge ${row.status === "fallback" ? "ov-badge-outline" : "ov-badge-primary"}`}>{row.status}</span>
+                  <span className={`ov-badge ${row.status === "legacy" ? "ov-badge-outline" : "ov-badge-primary"}`}>{row.status}</span>
                 </div>
               ))}
             </div>

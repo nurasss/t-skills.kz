@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 
 import { OrbitaApp } from "@/app/orbita-app";
 import { canPublishLocale, resolveLocaleInput } from "@/lib/i18n";
+import { maintenanceModeEnabled } from "@/lib/feature-flags";
+import { MaintenanceScreen } from "@/app/maintenance-screen";
 
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
   const { locale } = await params;
@@ -18,5 +20,6 @@ export default async function LocalizedHome({ params }: { params: Promise<{ loca
   const { locale: rawLocale } = await params;
   const resolved = resolveLocaleInput(rawLocale);
   if (resolved.requested !== "ru" || !canPublishLocale(resolved.locale)) notFound();
+  if (await maintenanceModeEnabled()) return <MaintenanceScreen locale={resolved.locale === "kk" ? "kk" : "ru"} />;
   return <OrbitaApp initialView="home" />;
 }

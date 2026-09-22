@@ -15,9 +15,11 @@ import "@/app/views/teen/teen.css";
 
 const STORAGE_KEY = "t-skills-teen-flow-v1";
 const LOCALE_KEY = "t-skills-teen-locale";
+const STATE_TTL_MS = 24 * 60 * 60 * 1000;
 const STATIC_VALUES = [-2, -1, 0, 1, 2];
 
 type PersistedState = {
+  savedAt?: number;
   onboarding: TeenOnboarding | null;
   onboardingDone: boolean;
   answers75: Record<string, number>;
@@ -32,7 +34,13 @@ function loadState(): PersistedState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return EMPTY_STATE;
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
+    const savedAt = typeof parsed.savedAt === "number" ? parsed.savedAt : 0;
+    if (!Number.isFinite(savedAt) || savedAt <= 0 || Date.now() - savedAt > STATE_TTL_MS) {
+      localStorage.removeItem(STORAGE_KEY);
+      return EMPTY_STATE;
+    }
     return {
+      savedAt,
       onboarding: parsed.onboarding ?? null,
       onboardingDone: parsed.onboardingDone ?? false,
       answers75: parsed.answers75 ?? {},
@@ -96,7 +104,7 @@ export function TeenFlowView({ onHome }: { onHome: () => void }) {
   }, []);
 
   useEffect(() => {
-    if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, savedAt: Date.now() }));
   }, [state, hydrated]);
 
   const changeLocale = (next: TeenLocale) => {

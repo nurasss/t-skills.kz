@@ -10,5 +10,5 @@ export const dynamic = "force-dynamic";
 export default async function AssessmentAdaptivePage({ params }: { params: Promise<{ session: string }> }) {
   const { session } = await params;
   await requireAppUser(`/assessment/${session}/adaptive`);
-  return <OrbitaApp initialView="break" initialSessionId={session} />;
+  return <OrbitaApp initialView="assessment" initialSessionId={session} />;
 }

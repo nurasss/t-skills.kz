@@ -102,8 +102,12 @@ class NodeD1Database {
   constructor(private readonly database: DatabaseSync) {}
 
   prepare(sql: string) {
+    const unbound = () => new NodeD1BoundStatement(this.database, sql, []);
     return {
       bind: (...params: BindValue[]) => new NodeD1BoundStatement(this.database, sql, params),
+      run: () => unbound().run(),
+      all: <T>() => unbound().all<T>(),
+      first: <T>() => unbound().first<T>(),
     };
   }
 

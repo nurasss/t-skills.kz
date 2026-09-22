@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getRuntimeEnv } from "@/db";
 import { itemTranslationMetadata, resolveLocaleInput } from "@/lib/i18n";
-import { getPublicTestConfig } from "@/lib/payment-provider";
+import { getPublicTestConfigAsync } from "@/lib/payment-provider";
 
 export async function GET(request: Request) {
   const runtimeEnv = getRuntimeEnv();
@@ -19,6 +19,6 @@ export async function GET(request: Request) {
       status: translation.status,
       translationVersion: translation.translationVersion,
     },
-    test: getPublicTestConfig(),
+    test: await getPublicTestConfigAsync(),
   }, { headers: { "Cache-Control": "public, max-age=60" } });
 }

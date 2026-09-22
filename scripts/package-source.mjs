@@ -5,10 +5,10 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 const root = resolve(process.cwd());
-const output = resolve(process.argv[2] ?? join(tmpdir(), "orbita-30-source.tar.gz"));
+const output = resolve(process.argv[2] ?? join(tmpdir(), "t-skills-source.tar.gz"));
 const sourceRevision = process.argv[3] ?? process.env.SOURCE_GIT_SHA ?? "HEAD";
 const sourceGitSha = execFileSync("git", ["rev-parse", "--verify", `${sourceRevision}^{commit}`], { cwd: root, encoding: "utf8" }).trim();
-const forbidden = ["node_modules/", "dist/", ".next/", ".wrangler/", ".vinext/", ".vite/", ".sites-runtime/", ".DS_Store"];
+const forbidden = [".git/", "node_modules/", "dist/", ".next/", ".output/", ".wrangler/", ".vinext/", ".vite/", ".sites-runtime/", ".DS_Store", ".env.local"];
 // Release evidence records their own source/package identity and is delivered
 // alongside the immutable source archive, so excluding it avoids a hash cycle
 // while keeping the archive free of generated release state. The handoff is
@@ -29,6 +29,7 @@ const treeEntries = execFileSync("git", ["ls-tree", "-r", "-z", "--full-tree", s
 const includedEntries = treeEntries
   .filter(({ file }) => !releaseEvidence.has(file))
   .filter(({ file }) => !forbidden.some((prefix) => file === prefix || file.startsWith(prefix)))
+  .filter(({ file }) => !/^\.env(?:\..+)?\.local$/u.test(file))
   .sort((left, right) => left.file.localeCompare(right.file));
 const files = includedEntries.map(({ file }) => file);
 if (!files.includes("package-lock.json")) throw new Error("SOURCE_PACKAGE_LOCKFILE_MISSING");

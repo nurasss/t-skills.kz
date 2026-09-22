@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
 import { safeReturnTo } from "@/lib/app-auth";
-import { isAdmin, viewerFromRequestAsync, type Viewer } from "@/lib/server-auth";
+import { isAdminAsync, viewerFromRequestAsync, type Viewer } from "@/lib/server-auth";
 
 async function requestFromPage() {
   const requestHeaders = await headers();
@@ -21,6 +21,6 @@ export async function requireAppUser(returnTo: string): Promise<Viewer> {
 
 export async function requireAppAdmin(returnTo = "/admin") {
   const viewer = await requireAppUser(returnTo);
-  if (!isAdmin(viewer)) notFound();
+  if (!(await isAdminAsync(viewer))) notFound();
   return viewer;
 }

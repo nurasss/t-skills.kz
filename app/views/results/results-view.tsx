@@ -60,6 +60,7 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
   const strengthen = ordered.slice(0, 10);
   const study = ordered.slice(10);
   const topFive = report.topStrengths.slice(0, 5);
+  const careers = report.career?.ranking ?? [];
   const traitIndexByCode = new Map(ordered.map((trait, index) => [trait.code, index]));
   const traitDisplayName = (code: string) =>
     ordered.find((trait) => trait.code === code)?.name ?? code;
@@ -135,6 +136,25 @@ export function ResultsView({ profile, report, provider, onNavigate, onPrint }: 
                   <span className="ov-results-rank-name">{trait.name}</span>
                 </li>
               ))}
+            </ol>
+          </section>
+          ) : null}
+
+          {careers.length ? (
+          <section className="ov-results-section">
+            <header className="ov-results-section-head">
+              <div>
+                <span className="ov-results-section-num">{nextSectionNum()}</span>
+                <h2>{lang === "kk" ? "Мансап бағыттары" : "Карьерные направления"}</h2>
+                <p>{lang === "kk" ? "Бұл — шешім емес, сіздің жауаптарыңызға сәйкес келетін бағыттарды зерттеуге арналған бастапқы нүкте." : "Это не предписание, а стартовая точка для исследования направлений, которые согласуются с вашими ответами."}</p>
+              </div>
+            </header>
+            <ol className="ov-results-ranked ov-results-careers">
+              {careers.slice(0, 5).map((candidate, index) => {
+                const title = typeof candidate.title === "string" ? candidate.title : typeof candidate.professionId === "string" ? candidate.professionId : `#${index + 1}`;
+                const score = typeof candidate.totalScore === "number" ? `${Math.round(candidate.totalScore * 100)}%` : "";
+                return <li key={`${title}-${index}`}><span className="ov-results-rank-num">{typeof candidate.rank === "number" ? candidate.rank : index + 1}</span><span className="ov-results-rank-name">{title}</span><strong>{score}</strong></li>;
+              })}
             </ol>
           </section>
           ) : null}

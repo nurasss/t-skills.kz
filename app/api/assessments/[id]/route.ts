@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, viewerOrResponse } from "@/lib/api-response";
-import { consumeRateLimit, consentSessionForUser, deleteAssessmentForUser, getConsentsForUser, getSessionForUser, nextItemIdForSession, type ConsentChoices } from "@/lib/durable-store";
+import { consumeRateLimit, consentSessionForUser, deleteAssessmentForUser, getConsentsForUser, getOnboardingForUser, getSessionForUser, nextItemIdForSession, type ConsentChoices } from "@/lib/durable-store";
 import { CORE60_BANK } from "@/lib/v2-item-bank";
+import { T_SKILLS_PAIRWISE_ITEM_BY_ID } from "@/lib/t-skills/item-bank";
+import { T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 import { assessmentConsentSchema, assessmentDeleteSchema, parseJsonBody } from "@/lib/request-validation";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -13,6 +15,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const session = await getSessionForUser(id, viewer);
     if (!session) return NextResponse.json({ error: "SESSION_NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     const consents = await getConsentsForUser(id, viewer);
+    const onboarding = await getOnboardingForUser(id, viewer);
     return NextResponse.json({
       id: session.id,
       state: session.state,
@@ -20,7 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       locale: session.locale,
       versions: session.versions,
       next_item_id: nextItemIdForSession(session),
-      core_answered: Object.keys(session.responses).filter((itemId) => session.versions.assessment === "orbita30_ru_v2" ? CORE60_BANK.some((item) => item.id === itemId) : Number(itemId.slice(1)) <= 250).length,
+      core_answered: Object.keys(session.responses).filter((itemId) => session.versions.assessment === T_SKILLS_VERSION_IDS.assessment ? T_SKILLS_PAIRWISE_ITEM_BY_ID.has(itemId) : session.versions.assessment === "orbita30_ru_v2" ? CORE60_BANK.some((item) => item.id === itemId) : Number(itemId.slice(1)) <= 250).length,
       adaptive_item_ids: session.adaptiveItemIds,
       adaptive_items: session.adaptiveItems,
       adaptive_generation_status: session.adaptiveGenerationStatus ?? null,
@@ -31,6 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       profile: session.profile ?? null,
       report_id: session.reportId ?? null,
       consents,
+      onboarding,
       updated_at: session.updatedAt,
     }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {

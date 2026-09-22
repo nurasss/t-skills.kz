@@ -20,7 +20,7 @@ function hash(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-assert(manifest.schema_version === "orbita-30-release-manifest-v2", "manifest schema");
+assert(manifest.schema_version === "t-skills-release-manifest-v3", "manifest schema");
 assert(/^[0-9a-f]{40}$/.test(sourceSha), "source_git_sha");
 assert(requiredNode === "22.13.0", "required Node must be exact 22.13.0");
 assert(process.version === `v${requiredNode}`, `running ${process.version}, expected v${requiredNode}`);

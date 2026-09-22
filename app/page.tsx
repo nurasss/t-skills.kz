@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
 import { OrbitaApp } from "./orbita-app";
+import { MaintenanceScreen } from "./maintenance-screen";
+import { maintenanceModeEnabled } from "@/lib/feature-flags";
 
 export const metadata: Metadata = {
   title: "T-Skills · Профиль ваших сильных сторон",
@@ -8,6 +10,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
 };
 
-export default function Home() {
+export default async function Home() {
+  if (await maintenanceModeEnabled()) return <MaintenanceScreen />;
   return <OrbitaApp initialView="home" />;
 }

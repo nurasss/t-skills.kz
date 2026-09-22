@@ -18,6 +18,9 @@ export type OrbitaRuntimeEnv = {
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
   EMAIL_REPLY_TO?: string;
+  EMAIL_PROVIDER?: string;
+  SMTP_HOST?: string;
+  SMTP_PORT?: string;
   AUTH_SESSION_TTL_SECONDS?: string;
   AUTH_RATE_LIMIT_SECRET?: string;
   ASSESSMENT_PRICE_MINOR?: string;
@@ -39,6 +42,7 @@ export type OrbitaRuntimeEnv = {
   RETENTION_DAYS?: string;
   ORBITA_ENV?: string;
   ORBITA_ADMIN_USER_IDS?: string;
+  TSKILLS_UNLIMITED_ASSESSMENT_EMAILS?: string;
   ORBITA_INTERNAL_TOKEN?: string;
   SECURITY_CONTACT_EMAIL?: string;
   SUPPORT_CONTACT?: string;
@@ -59,6 +63,7 @@ export type OrbitaRuntimeEnv = {
   LEGAL_COOKIE_POLICY?: string;
   RETENTION_DRY_RUN?: string;
   TRUST_PROXY?: string;
+  TEEN_BANK_ENABLED?: string;
   SQLITE_DB_PATH?: string;
   VPS_FILE_DIR?: string;
 };

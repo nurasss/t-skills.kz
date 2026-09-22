@@ -1,27 +1,18 @@
-import { NextResponse } from "next/server";
-
 import { getRuntimeEnv } from "@/db";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * RFC 9116 security.txt. Отдаёт контакт, только если он настроен
+ * (SECURITY_CONTACT_EMAIL); иначе корректный 404, а не заглушка.
+ */
 export async function GET() {
-  const env = getRuntimeEnv();
-  const contact = env.SECURITY_CONTACT_EMAIL?.trim();
-  if (!contact || /[\r\n]/.test(contact) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
-    return new NextResponse("security.txt is not configured.\n", {
-      status: 404,
-      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
-    });
+  const contact = getRuntimeEnv().SECURITY_CONTACT_EMAIL?.trim();
+  if (!contact) {
+    return new Response("Not Found", { status: 404, headers: { "Cache-Control": "no-store" } });
   }
-  const canonicalOrigin = env.APP_BASE_URL?.trim().replace(/\/$/, "");
-  const expires = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString();
-  const lines = [
-    `Contact: mailto:${contact}`,
-    `Expires: ${expires}`,
-    "Preferred-Languages: ru, en",
-    ...(canonicalOrigin ? [`Canonical: ${canonicalOrigin}/.well-known/security.txt`] : []),
-  ];
-  return new NextResponse(`${lines.join("\n")}\n`, {
-    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=3600" },
+  const body = `Contact: mailto:${contact}\nExpires: 2027-09-20T00:00:00.000Z\n`;
+  return new Response(body, {
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=86400" },
   });
 }

@@ -4,6 +4,8 @@ import { errorResponse, isResponse, rateLimitResponse, sameOriginOrResponse, vie
 import { consumeRateLimit, createAssessmentForUser, getAccountOverview, nextItemIdForSession } from "@/lib/durable-store";
 import { canPublishLocale, resolveLocaleInput } from "@/lib/i18n";
 import { assessmentCreateSchema, parseJsonBody } from "@/lib/request-validation";
+import { isSupportedTestId, T_SKILLS_TEST_ID } from "@/lib/t-skills/versions";
+import { maintenanceModeEnabled } from "@/lib/feature-flags";
 
 export async function GET(request: Request) {
   const viewer = await viewerOrResponse(request);
@@ -15,6 +17,7 @@ export async function GET(request: Request) {
   }
 }
 export async function POST(request: Request) {
+  if (await maintenanceModeEnabled()) return NextResponse.json({ error: "MAINTENANCE_MODE" }, { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "300" } });
   const viewer = await viewerOrResponse(request);
   if (isResponse(viewer)) return viewer;
   const originError = sameOriginOrResponse(request);
@@ -22,8 +25,8 @@ export async function POST(request: Request) {
   const parsed = await parseJsonBody(request, assessmentCreateSchema);
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
-  const testId = body.test_id ?? "orbita30";
-  if (testId !== "orbita30") return NextResponse.json({ error: "TEST_NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  const testId = body.test_id ?? T_SKILLS_TEST_ID;
+  if (!isSupportedTestId(testId)) return NextResponse.json({ error: "TEST_NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   const locale = resolveLocaleInput(body.locale).locale;
   if (!canPublishLocale(locale)) return NextResponse.json({ error: "LOCALE_NOT_PUBLISHED", locale }, { status: 422, headers: { "Cache-Control": "no-store" } });
   try {

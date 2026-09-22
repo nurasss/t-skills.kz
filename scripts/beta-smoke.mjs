@@ -55,12 +55,12 @@ try {
 
   const catalog = await fetch(`${baseUrl}/api/catalog`, { headers });
   const catalogBody = await catalog.json();
-  assert(catalog.ok && catalogBody.test?.assessmentVersion === "orbita30_ru_v2" && catalogBody.test?.accessMode === "beta-free" && catalogBody.test?.availableForCheckout === false, "beta catalog access mode and v2 version");
+  assert(catalog.ok && catalogBody.test?.assessmentVersion === "t-skills_pairwise_v1" && catalogBody.test?.accessMode === "beta-free" && catalogBody.test?.availableForCheckout === false, "beta catalog access mode and current T-Skills version");
 
-  const checkout = await fetch(`${baseUrl}/api/checkout`, { method: "POST", headers, body: JSON.stringify({ test_id: "orbita30" }) });
+  const checkout = await fetch(`${baseUrl}/api/checkout`, { method: "POST", headers, body: JSON.stringify({ test_id: "t-skills" }) });
   assert(checkout.status === 503, "checkout is disabled");
 
-  const assessment = await fetch(`${baseUrl}/api/assessments`, { method: "POST", headers, body: JSON.stringify({ test_id: "orbita30" }) });
+  const assessment = await fetch(`${baseUrl}/api/assessments`, { method: "POST", headers, body: JSON.stringify({ test_id: "t-skills" }) });
   const assessmentBody = await assessment.json();
   assert(assessment.status === 201 && assessmentBody.state === "ENTITLED", "free entitlement creates an entitled session");
 

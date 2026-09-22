@@ -1,16 +1,19 @@
 <svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1200" height="630" fill="#F7F4EE"/>
-  <circle cx="1030" cy="-20" r="310" fill="#E4ECE5"/>
-  <circle cx="1090" cy="40" r="190" stroke="#173D32" stroke-opacity=".16" stroke-width="2"/>
-  <circle cx="1090" cy="40" r="120" stroke="#C79A5B" stroke-opacity=".5" stroke-width="2"/>
-  <path d="M0 548C180 500 275 576 450 536C620 496 711 390 866 426C1010 459 1070 564 1200 512V630H0V548Z" fill="#173D32"/>
-  <rect x="76" y="76" width="74" height="74" rx="22" fill="#173D32"/>
-  <ellipse cx="113" cy="113" rx="25" ry="13" transform="rotate(-28 113 113)" stroke="#F7F4EE" stroke-width="3"/>
-  <ellipse cx="113" cy="113" rx="16" ry="8" transform="rotate(28 113 113)" stroke="#C79A5B" stroke-width="2.5"/>
-  <circle cx="113" cy="113" r="5" fill="#F7F4EE"/>
-  <text x="178" y="125" fill="#173D32" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" letter-spacing="4">T-Skills</text>
-  <text x="76" y="278" fill="#173D32" font-family="Georgia, 'Times New Roman', serif" font-size="72">Профиль способа</text>
-  <text x="76" y="360" fill="#173D32" font-family="Georgia, 'Times New Roman', serif" font-size="72">действовать</text>
-  <text x="80" y="422" fill="#5F625E" font-family="Arial, Helvetica, sans-serif" font-size="26">Развивающая оценка для рефлексии и развития.</text>
-  <text x="76" y="582" fill="#F7F4EE" font-family="Arial, Helvetica, sans-serif" font-size="21" letter-spacing="1">НЕ ДИАГНОЗ · НЕ ИНСТРУМЕНТ НАЙМА · PILOT</text>
+  <rect width="1200" height="630" fill="#F6F1E8"/>
+  <circle cx="1030" cy="-20" r="310" fill="#EFE7D8"/>
+  <circle cx="1090" cy="40" r="190" stroke="#1A1815" stroke-opacity=".16" stroke-width="2"/>
+  <circle cx="1090" cy="40" r="120" stroke="#8B6B3D" stroke-opacity=".5" stroke-width="2"/>
+  <path d="M0 548C180 500 275 576 450 536C620 496 711 390 866 426C1010 459 1070 564 1200 512V630H0V548Z" fill="#1A1815"/>
+  <g transform="translate(66 60) scale(0.36)">
+    <circle fill="#8CA78F" cx="104" cy="35" r="24"/>
+    <path fill="#8CA78F" d="M94 83C61 52 21 55 3 64C11 100 37 127 72 138C83 142 92 141 100 139C95 115 91 94 94 83Z"/>
+    <path fill="#2F3A36" d="M116 91C141 56 176 52 206 60C200 94 181 120 150 132C136 137 123 140 109 138C109 116 111 103 116 91Z"/>
+    <path fill="#8CA78F" d="M88 96C96 112 102 128 103 147L103 220C84 215 69 207 60 194C54 185 52 175 52 164C52 142 61 122 76 108C80 103 84 99 88 96Z"/>
+    <path fill="#2F3A36" d="M105 136C119 127 132 120 145 116C139 134 135 152 134 170L133 220C121 216 111 209 104 199L104 148C104 144 104 140 105 136Z"/>
+  </g>
+  <text x="178" y="125" fill="#1A1815" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="34">T-Skills</text>
+  <text x="76" y="278" fill="#1A1815" font-family="Georgia, 'Times New Roman', serif" font-size="72">Профиль способа</text>
+  <text x="76" y="360" fill="#1A1815" font-family="Georgia, 'Times New Roman', serif" font-size="72">действовать</text>
+  <text x="80" y="422" fill="#3A342C" font-family="Arial, Helvetica, sans-serif" font-size="26">Развивающая оценка для рефлексии и развития.</text>
+  <text x="76" y="582" fill="#F6F1E8" font-family="Arial, Helvetica, sans-serif" font-size="21" letter-spacing="1">НЕ ДИАГНОЗ · НЕ ИНСТРУМЕНТ НАЙМА · PILOT</text>
 </svg>

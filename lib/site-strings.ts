@@ -290,6 +290,7 @@ export const DETAIL_STRINGS: Dict<{
 export const CHECKOUT_STRINGS: Dict<{
   back: string; eBeta: string; ePay: string; tBeta: string; tPay: string; bBeta: string; bPay: string;
   noPrice: string; lAssess: string; vAccess: string; lResult: string; vResult: string; lMode: string; lPayType: string;
+  promoLabel: string; promoPlaceholder: string; promoHelp: string;
   vPilot: string; vOnce: string; tCost: string; tToPay: (c: string) => string; vFree: string;
   btnBusy: string; btnBeta: string; btnPay: string; btnOff: string;
   checking: string; paySoon: string;
@@ -307,6 +308,7 @@ export const CHECKOUT_STRINGS: Dict<{
     lAssess: "Оценка", vAccess: "1 доступ",
     lResult: "Результат", vResult: "Dashboard + PDF",
     lMode: "Режим", lPayType: "Тип оплаты", vPilot: "пилотная версия", vOnce: "один раз",
+    promoLabel: "Промокод", promoPlaceholder: "Введите промокод", promoHelp: "Если код действителен, скидка проверится на сервере перед созданием заказа.",
     tCost: "Стоимость участия", tToPay: (c) => `К оплате · ${c}`, vFree: "Бесплатно",
     btnBusy: "Создаём доступ…", btnBeta: "Начать закрытое тестирование",
     btnPay: "Перейти к защищённой оплате", btnOff: "Оплата пока недоступна",
@@ -330,6 +332,7 @@ export const CHECKOUT_STRINGS: Dict<{
     lAssess: "Бағалау", vAccess: "1 қолжетімділік",
     lResult: "Нәтиже", vResult: "Dashboard + PDF",
     lMode: "Режим", lPayType: "Төлем түрі", vPilot: "пилоттық нұсқа", vOnce: "бір рет",
+    promoLabel: "Промокод", promoPlaceholder: "Промокодты енгізіңіз", promoHelp: "Код жарамды болса, жеңілдік тапсырыс жасалмас бұрын серверде тексеріледі.",
     tCost: "Қатысу құны", tToPay: (c) => `Төлеуге · ${c}`, vFree: "Тегін",
     btnBusy: "Қолжетімділік жасалуда…", btnBeta: "Жабық тестілеуді бастау",
     btnPay: "Қорғалған төлемге өту", btnOff: "Төлем әзір қолжетімсіз",

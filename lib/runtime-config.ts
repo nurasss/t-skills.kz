@@ -23,3 +23,18 @@ export function entitlementMode(env: OrbitaRuntimeEnv) {
 export function isBetaFreeMode(env: OrbitaRuntimeEnv) {
   return !paymentsEnabled(env) && entitlementMode(env) === "beta-free";
 }
+
+/**
+ * Explicit, tightly scoped pilot override. Keep this separate from the admin
+ * allowlist so administrative visibility does not accidentally grant unlimited
+ * assessment creation to every admin account.
+ */
+export function hasUnlimitedAssessmentAccess(env: OrbitaRuntimeEnv, email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) return false;
+  return (env.TSKILLS_UNLIMITED_ASSESSMENT_EMAILS ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(normalizedEmail);
+}

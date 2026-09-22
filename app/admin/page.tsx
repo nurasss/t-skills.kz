@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 
-import { OrbitaApp } from "../orbita-app";
 import { requireAppAdmin } from "../app-auth";
+import { AdminConsole } from "./admin-console";
+import { getAdminContext } from "@/lib/admin-rbac";
 
 export const metadata: Metadata = {
   title: "Администрирование · T-Skills",
@@ -12,6 +13,8 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  await requireAppAdmin();
-  return <OrbitaApp initialView="admin" />;
+  const viewer = await requireAppAdmin();
+  const context = await getAdminContext(viewer);
+  if (!context) return null;
+  return <AdminConsole viewer={{ email: viewer.email, fullName: viewer.fullName, displayName: viewer.displayName }} permissions={[...context.permissions]} />;
 }

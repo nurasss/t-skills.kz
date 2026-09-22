@@ -1,6 +1,30 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="64" height="64" rx="16" fill="#173D32"/>
-  <ellipse cx="32" cy="32" rx="21" ry="11" transform="rotate(-28 32 32)" stroke="#F7F4EE" stroke-width="2.5"/>
-  <ellipse cx="32" cy="32" rx="14" ry="7" transform="rotate(28 32 32)" stroke="#C79A5B" stroke-width="2"/>
-  <circle cx="32" cy="32" r="4.5" fill="#F7F4EE"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 230 230" role="img" aria-label="T-Skills">
+  <title>T-Skills icon</title>
+  <g transform="translate(10 0)">
+    <circle fill="#8CA78F" cx="104" cy="35" r="24"/>
+    <path fill="#8CA78F" d="M94 83
+      C61 52, 21 55, 3 64
+      C11 100, 37 127, 72 138
+      C83 142, 92 141, 100 139
+      C95 115, 91 94, 94 83Z"/>
+    <path fill="#2F3A36" d="M116 91
+      C141 56, 176 52, 206 60
+      C200 94, 181 120, 150 132
+      C136 137, 123 140, 109 138
+      C109 116, 111 103, 116 91Z"/>
+    <path fill="#8CA78F" d="M88 96
+      C96 112, 102 128, 103 147
+      L103 220
+      C84 215, 69 207, 60 194
+      C54 185, 52 175, 52 164
+      C52 142, 61 122, 76 108
+      C80 103, 84 99, 88 96Z"/>
+    <path fill="#2F3A36" d="M105 136
+      C119 127, 132 120, 145 116
+      C139 134, 135 152, 134 170
+      L133 220
+      C121 216, 111 209, 104 199
+      L104 148
+      C104 144, 104 140, 105 136Z"/>
+  </g>
 </svg>

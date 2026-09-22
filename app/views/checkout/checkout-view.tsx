@@ -8,12 +8,14 @@ import { CHECKOUT_STRINGS } from "@/lib/site-strings";
 export type CheckoutViewProps = {
   onNavigate: (view: View) => void;
   onCheckout: () => void;
+  promoCode: string;
+  onPromoCodeChange: (value: string) => void;
   busy: boolean;
   error?: string;
   catalog?: PublicCatalog;
 };
 
-export function CheckoutView({ onNavigate, onCheckout, busy, error, catalog }: CheckoutViewProps) {
+export function CheckoutView({ onNavigate, onCheckout, promoCode, onPromoCodeChange, busy, error, catalog }: CheckoutViewProps) {
   const [lang, setLang] = useSiteLang();
   const t = CHECKOUT_STRINGS[lang];
   const test = catalog?.test;
@@ -59,6 +61,21 @@ export function CheckoutView({ onNavigate, onCheckout, busy, error, catalog }: C
               <span>{betaFree ? t.tCost : t.tToPay(test?.currency ?? "—")}</span>
               <strong>{betaFree ? t.vFree : displayedPrice}</strong>
             </div>
+
+            {!betaFree ? (
+              <label className="ov-form-field" style={{ marginBottom: 18 }}>
+                <span>{t.promoLabel}</span>
+                <input
+                  className="ov-form-input"
+                  autoComplete="off"
+                  maxLength={64}
+                  placeholder={t.promoPlaceholder}
+                  value={promoCode}
+                  onChange={(event) => onPromoCodeChange(event.target.value.toUpperCase())}
+                />
+                <small>{t.promoHelp}</small>
+              </label>
+            ) : null}
 
             <button
               className="ov-btn ov-btn-primary ov-btn-block"

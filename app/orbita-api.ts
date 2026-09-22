@@ -42,8 +42,13 @@ export async function apiJson<T>(input: RequestInfo | URL, init?: RequestInit): 
   }
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const response = await fetch(input, { ...init, credentials: "include", headers });
-  const payload = await response.json().catch(() => ({})) as { error?: string; message?: string } & T;
-  if (!response.ok) throw new ApiClientError(payload.error ?? "REQUEST_FAILED", payload.message ?? "Запрос не выполнен.");
+  const payload = await response.json().catch(() => ({})) as { error?: string | { code?: string; message?: string }; message?: string } & T;
+  if (!response.ok) {
+    const error = payload.error;
+    const code = typeof error === "object" ? error.code : error;
+    const message = typeof error === "object" ? error.message : payload.message;
+    throw new ApiClientError(code ?? "REQUEST_FAILED", message ?? "Запрос не выполнен.");
+  }
   return payload as T;
 }
 

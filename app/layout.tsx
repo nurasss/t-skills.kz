@@ -1,23 +1,49 @@
 import type { Metadata } from "next";
-import { Inter, Instrument_Serif } from "next/font/google";
+import { Newsreader, Inter_Tight, JetBrains_Mono, Montserrat } from "next/font/google";
 import "./globals.css";
 import { CookieBanner } from "./cookie-banner";
 import "./views/view-base.css";
 import "./views/views.css";
+import "./brand/brand.css";
 import { configuredAppOrigin, publicIndexingEnabled } from "@/lib/seo-config";
 
-const inter = Inter({
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-landing-sans",
+/**
+ * Типографика T-Skills из дизайн-хендоффа:
+ * Newsreader (заголовки) + Inter Tight (текст) + JetBrains Mono (метки).
+ * Newsreader не имеет кириллического сабсета — русский текст заголовков
+ * рендерится фолбэком Georgia (см. --serif в app/landing/landing.css).
+ * (Legacy Inter/Instrument Serif удалены: тянули битые preload-URL с
+ * абсолютными путями сборки в Link-заголовки.)
+ */
+const tsSerif = Newsreader({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+  style: ["normal", "italic"],
+  variable: "--font-ts-serif",
   display: "swap",
 });
 
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
-  variable: "--font-landing-serif",
+const tsSans = Inter_Tight({
+  subsets: ["latin", "cyrillic"],
+  // 300 нужен лёгким дисплейным заголовкам лендинга: Hanken Grotesk из
+  // прототипа не имеет кириллицы, заменён ближайшим гротеском с ней.
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-ts-sans",
+  display: "swap",
+});
+
+const tsMono = JetBrains_Mono({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500"],
+  variable: "--font-ts-mono",
+  display: "swap",
+});
+
+/** Превью-гарнитура лендинга: Montserrat как ближайший открытый аналог Google Sans. */
+const montserrat = Montserrat({
+  subsets: ["latin", "cyrillic"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-montserrat",
   display: "swap",
 });
 
@@ -42,7 +68,7 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: { card: "summary_large_image", title: "T-Skills", description: "Развивающая оценка для рефлексии и развития.", images: ["/og.svg"] },
     icons: {
       icon: "/favicon.svg",
-      shortcut: "/favicon.svg",
+      shortcut: "/favicon.ico",
     },
   };
 }
@@ -53,7 +79,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" className={`${inter.variable} ${instrumentSerif.variable}`}>
+    <html lang="ru" className={`${tsSerif.variable} ${tsSans.variable} ${tsMono.variable} ${montserrat.variable}`}>
       <body className="antialiased">
         {children}
         <CookieBanner />

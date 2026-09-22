@@ -30,9 +30,18 @@ export type LandingPageProps = {
   onDismissError?: () => void;
 };
 
+type LandingCmsPayload = Partial<Pick<LandingStrings, "heroPre" | "heroAccent" | "heroPost" | "heroLede" | "heroMeta" | "cta" | "finalH2" | "finalP">>;
+
+function landingCmsPayload(value: unknown): LandingCmsPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const allowed = new Set(["heroPre", "heroAccent", "heroPost", "heroLede", "heroMeta", "cta", "finalH2", "finalP"]);
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([key, item]) => allowed.has(key) && typeof item === "string" && item.trim())) as LandingCmsPayload;
+}
+
 export function LandingPage({ onNavigate, onDemo, requestError, onDismissError }: LandingPageProps) {
   useSectionReveal();
   const [lang, setLang] = useState<"ru" | "kk">("ru");
+  const [cms, setCms] = useState<LandingCmsPayload>({});
   useEffect(() => {
     // Локаль из localStorage применяется после хайдрейта, иначе SSR RU ≠ клиент KK.
     try {
@@ -44,7 +53,6 @@ export function LandingPage({ onNavigate, onDemo, requestError, onDismissError }
     } catch {
       // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     try {
@@ -54,7 +62,15 @@ export function LandingPage({ onNavigate, onDemo, requestError, onDismissError }
     }
     document.documentElement.lang = lang === "kk" ? "kk" : "ru";
   }, [lang]);
-  const t: LandingStrings = lang === "kk" ? LANDING_KK : LANDING_RU;
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(`/api/content?content_key=homepage&locale=${encodeURIComponent(lang)}`, { signal: controller.signal })
+      .then(async (response) => response.ok ? response.json() as Promise<Array<{ published?: unknown }>> : [])
+      .then((rows) => setCms(landingCmsPayload(rows[0]?.published)))
+      .catch(() => setCms({}));
+    return () => controller.abort();
+  }, [lang]);
+  const t: LandingStrings = { ...(lang === "kk" ? LANDING_KK : LANDING_RU), ...cms };
   const qualities = lang === "kk" ? LANDING_QUALITIES_KK : LANDING_QUALITIES_RU;
   const mock = lang === "kk" ? MOCK_TOP5_KK : MOCK_TOP5;
   return (
@@ -72,7 +88,7 @@ export function LandingPage({ onNavigate, onDemo, requestError, onDismissError }
       </a>
       <TopBar onNavigate={onNavigate} t={t} lang={lang} onLang={setLang} />
       <main id="main">
-        <Hero onNavigate={onNavigate} onDemo={onDemo} t={t} />
+        <Hero onNavigate={onNavigate} t={t} />
         <StatsStrip t={t} />
         <WhatYouGet t={t} />
         <SampleReport onDemo={onDemo} t={t} mock={mock} />
@@ -191,7 +207,7 @@ function TopBar({ onNavigate, t, lang, onLang }: { onNavigate: (view: View) => v
   );
 }
 
-function Hero({ onNavigate, onDemo, t }: { onNavigate: (view: View) => void; onDemo: () => void; t: LandingStrings }) {
+function Hero({ onNavigate, t }: { onNavigate: (view: View) => void; t: LandingStrings }) {
   return (
     <section className="ev-hero">
       <div className="ev-container ev-hero-grid">

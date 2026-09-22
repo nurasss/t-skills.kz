@@ -19,6 +19,11 @@ export function enqueuePending<T extends RetryQueueItem>(queue: readonly T[], it
   return [...queue, item];
 }
 
+/** Замена pending-записи того же (session, item) — смена ответа до «Продолжить». */
+export function replacePending<T extends RetryQueueItem>(queue: readonly T[], item: T) {
+  return [...queue.filter((current) => !(current.sessionId === item.sessionId && current.itemId === item.itemId)), item];
+}
+
 export function removePending<T extends RetryQueueItem>(queue: readonly T[], idempotencyKey: string) {
   return queue.filter((item) => item.idempotencyKey !== idempotencyKey);
 }

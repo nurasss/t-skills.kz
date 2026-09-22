@@ -60,6 +60,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
     elapsedSeconds,
     checkoutBusy,
     checkoutError,
+    promoCode,
     publicCatalog,
     consents,
     accountOverview,
@@ -72,6 +73,7 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
     go,
     openDemo,
     startCheckout,
+    setPromoCode,
     setConsent,
     beginAssessment,
     saveOnboarding,
@@ -102,6 +104,8 @@ export function OrbitaViewRouter({ controller }: { controller: OrbitaController 
       <LazyCheckout
         onNavigate={go}
         onCheckout={startCheckout}
+        promoCode={promoCode}
+        onPromoCodeChange={setPromoCode}
         busy={checkoutBusy}
         error={checkoutError ?? requestError}
         catalog={publicCatalog}
@@ -234,6 +238,8 @@ function LazyDetail(props: { onNavigate: (view: View) => void; onDemo: () => voi
 function LazyCheckout(props: {
   onNavigate: (view: View) => void;
   onCheckout: () => void;
+  promoCode: string;
+  onPromoCodeChange: (value: string) => void;
   busy: boolean;
   error?: string;
   catalog?: PublicCatalog;

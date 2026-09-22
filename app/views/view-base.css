@@ -1,30 +1,38 @@
 /* T-Skills view base design system
- * Editorial/scientific premium styling for shell-wrapped views
+ * Empirical Vanguard (единая с лендингом):
+ * белый канвас #ffffff, текст #111111, зелень #009d4e,
+ * Inter Tight единственным семейством, линейки 1px, radius 16/10px.
  * Used by: catalog, detail, checkout, consent, account, methodology, admin, info
- *
- * Tokens mirror landing.css (orbita-landing) for visual continuity.
  */
 
+/* Токены висят и на .orbita-app: шапка/подвал шелла рендерятся
+ * вне .orbita-view и иначе не видят переменные. */
+.orbita-app,
 .orbita-view {
-  --bg-main: #F7F4EE;
-  --bg-white: #FCFBF8;
-  --bg-soft: #F1EEE6;
-  --text-primary: #171A18;
-  --text-secondary: #5F625E;
-  --text-muted: #5F625E;
-  --primary: #173D32;
-  --primary-hover: #102F27;
-  --primary-soft: #E4ECE5;
-  --border: rgba(23, 26, 24, 0.12);
-  --border-strong: rgba(23, 26, 24, 0.20);
+  --bg-main: #ffffff;
+  --bg-white: #ffffff;
+  --bg-soft: #fafafa;
+  --paper-3: #efeded;
+  --text-primary: #111111;
+  --text-secondary: #555555;
+  --text-muted: #767676;
+  --primary: #009d4e;
+  --primary-hover: #008743;
+  --primary-soft: #e6f5ed;
+  --accent: #009d4e;
+  --accent-2: #00754a;
+  --danger: #ba1a1a;
+  --border: #f1f1f1;
+  --border-strong: #e5e5e5;
+  --coral: #00754a;
   --sage: #8FA888;
   --blue: #7C93A8;
   --amber: #C79A5B;
-  --coral: #C1836F;
   --rose: #B78D97;
   --lavender: #9B93B5;
-  --font-serif: var(--font-landing-serif), Georgia, serif;
-  --font-sans: var(--font-landing-sans), -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-serif: var(--font-ts-sans), "Inter Tight", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: var(--font-ts-sans), "Inter Tight", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: var(--font-ts-mono), "JetBrains Mono", ui-monospace, monospace;
   --container-max: 1100px;
   --pad-desktop: 56px;
   --pad-1280: 40px;
@@ -60,16 +68,34 @@
 
 @media (max-width: 767px) {
   .orbita-view .ov-container {
-    padding-inline: var(--pad-mobile);
+    padding-inline: 22px;
   }
 }
 
 .orbita-view .ov-container.wide {
-  max-width: 1280px;
+  max-width: 1240px;
+}
+
+@media (max-width: 1279px) {
+  .orbita-view .ov-container {
+    padding-inline: var(--pad-1280);
+  }
+}
+
+@media (max-width: 1023px) {
+  .orbita-view .ov-container {
+    padding-inline: var(--pad-tablet);
+  }
+}
+
+@media (max-width: 767px) {
+  .orbita-view .ov-container {
+    padding-inline: 22px;
+  }
 }
 
 .orbita-view :focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: 4px;
 }
@@ -90,9 +116,9 @@
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--primary);
+  color: var(--text-muted);
 }
 
 .orbita-view p {
@@ -120,16 +146,12 @@
   margin-bottom: 14px;
 }
 
+.orbita-view .ov-section-head h1,
 .orbita-view .ov-section-head h2 {
-  font-size: 42px;
-  line-height: 1.06;
+  font-size: clamp(32px, 4vw, 52px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
   margin-bottom: 16px;
-}
-
-@media (max-width: 767px) {
-  .orbita-view .ov-section-head h2 {
-    font-size: 32px;
-  }
 }
 
 .orbita-view .ov-section-head p {
@@ -138,28 +160,32 @@
   line-height: 1.6;
 }
 
-/* Buttons */
+/* Buttons — прямоугольные 10px, primary зелёный (Empirical Vanguard) */
 .orbita-view .ov-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 48px;
-  padding: 0 22px;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 600;
+  gap: 10px;
+  min-height: 48px;
+  padding: 12px 22px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
   font-family: var(--font-sans);
   white-space: nowrap;
-  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
   background: none;
   border: 1px solid transparent;
   cursor: pointer;
   text-decoration: none;
 }
 
+.orbita-view .ov-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 .orbita-view .ov-btn-primary {
   background: var(--primary);
-  color: var(--bg-white);
+  color: var(--bg-main);
   border-color: var(--primary);
 }
 
@@ -174,14 +200,15 @@
 }
 
 .orbita-view .ov-btn-secondary {
-  background: var(--bg-white);
+  background: transparent;
   color: var(--text-primary);
   border-color: var(--border-strong);
 }
 
 .orbita-view .ov-btn-secondary:hover:not(:disabled) {
-  background: var(--bg-soft);
-  border-color: var(--text-primary);
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .orbita-view .ov-btn-ghost {
@@ -288,7 +315,7 @@
   line-height: 1.55;
 }
 
-/* Badges */
+/* Badges — mono-метки как на лендинге */
 .orbita-view .ov-badge {
   display: inline-flex;
   align-items: center;
@@ -296,27 +323,25 @@
   height: 26px;
   padding: 0 10px;
   border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   font-family: var(--font-sans);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   border: 1px solid var(--border-strong);
   color: var(--text-secondary);
-  background: transparent;
+  background: var(--bg-soft);
   white-space: nowrap;
 }
 
 .orbita-view .ov-badge-primary {
   background: var(--primary);
-  color: var(--bg-white);
+  color: var(--bg-main);
   border-color: var(--primary);
 }
 
 .orbita-view .ov-badge-soft {
-  background: var(--primary-soft);
-  color: var(--primary);
-  border-color: var(--primary-soft);
+  background: var(--bg-soft);
+  color: var(--text-primary);
+  border-color: var(--bg-soft);
 }
 
 .orbita-view .ov-badge-outline {
@@ -325,13 +350,13 @@
   border-color: var(--border-strong);
 }
 
-/* Domain color tags */
-.orbita-view .ov-tag-sage { background: var(--sage); color: var(--bg-white); border-color: var(--sage); }
-.orbita-view .ov-tag-blue { background: var(--blue); color: var(--bg-white); border-color: var(--blue); }
-.orbita-view .ov-tag-amber { background: var(--amber); color: var(--bg-white); border-color: var(--amber); }
-.orbita-view .ov-tag-coral { background: var(--coral); color: var(--bg-white); border-color: var(--coral); }
-.orbita-view .ov-tag-rose { background: var(--rose); color: var(--bg-white); border-color: var(--rose); }
-.orbita-view .ov-tag-lavender { background: var(--lavender); color: var(--bg-white); border-color: var(--lavender); }
+/* Domain color tags — приглушённая заливка + ink-текст (читаемо на бумаге) */
+.orbita-view .ov-tag-sage { background: var(--sage); color: var(--text-primary); border-color: var(--sage); }
+.orbita-view .ov-tag-blue { background: var(--blue); color: var(--text-primary); border-color: var(--blue); }
+.orbita-view .ov-tag-amber { background: var(--amber); color: var(--text-primary); border-color: var(--amber); }
+.orbita-view .ov-tag-coral { background: var(--coral); color: var(--bg-main); border-color: var(--coral); }
+.orbita-view .ov-tag-rose { background: var(--rose); color: var(--text-primary); border-color: var(--rose); }
+.orbita-view .ov-tag-lavender { background: var(--lavender); color: var(--text-primary); border-color: var(--lavender); }
 
 /* Dividers */
 .orbita-view .ov-divider {
@@ -466,6 +491,41 @@
 }
 
 /* ============================================================
+ * Лёгкие анимации переходов и отклика
+ * ============================================================ */
+@keyframes ts-view-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Перезапускается сменой key={view} в OrbitaApp */
+.ts-view-enter {
+  animation: ts-view-in 0.32s ease;
+}
+
+@keyframes ts-question-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Перезапускается сменой key={displayQuestion} в AssessmentView */
+.ov-question-enter {
+  animation: ts-question-in 0.28s ease;
+}
+
+/* Тактильный отклик кнопок */
+.orbita-view .ov-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts-view-enter,
+  .ov-question-enter {
+    animation: none;
+  }
+}
+
+/* ============================================================
  * SHELL (AppHeader + Footer used by OrbitaApp for non-home views)
  * ============================================================ */
 .ov-shell-header {
@@ -475,17 +535,12 @@
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  min-height: 76px;
+  min-height: 64px;
   padding: 0 52px;
-  background: rgba(247, 244, 238, 0.92);
-  border-bottom: 1px solid transparent;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: border-color 0.25s ease;
-}
-
-.ov-shell-header:hover {
-  border-bottom-color: var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: saturate(1.1) blur(8px);
+  -webkit-backdrop-filter: saturate(1.1) blur(8px);
 }
 
 @media (max-width: 1023px) {
@@ -511,10 +566,16 @@
   padding: 0;
   cursor: pointer;
   font-family: var(--font-serif);
-  font-size: 20px;
-  letter-spacing: 0.01em;
+  font-size: 24px;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
   justify-self: start;
+  text-decoration: none;
+}
+
+.ov-shell-brand svg {
+  flex-shrink: 0;
+  transform: translateY(-2px);
 }
 
 .ov-shell-brand-text {
@@ -539,11 +600,12 @@
   border: none;
   padding: 6px 0;
   cursor: pointer;
-  font-size: 14.5px;
+  font-size: 14px;
   color: var(--text-secondary);
   position: relative;
   font-family: var(--font-sans);
   transition: color 0.15s ease;
+  text-decoration: none;
 }
 
 .ov-shell-nav-link::after {
@@ -561,7 +623,7 @@
 
 .ov-shell-nav-link:hover,
 .ov-shell-nav-link.active {
-  color: var(--text-primary);
+  color: var(--accent-2);
 }
 
 .ov-shell-nav-link:hover::after,
@@ -579,10 +641,10 @@
 .ov-shell-locale {
   display: inline-flex;
   align-items: center;
-  font-size: 12px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 11px;
   letter-spacing: 0.08em;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   padding: 4px 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -601,6 +663,7 @@
   font-family: var(--font-sans);
   border-radius: 999px;
   transition: background-color 0.15s ease, color 0.15s ease;
+  text-decoration: none;
 }
 
 .ov-shell-account:hover,
@@ -613,8 +676,9 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--primary);
-  color: var(--bg-white);
+  background: var(--bg-soft);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -643,6 +707,16 @@
   color: var(--text-primary);
 }
 
+.ov-shell-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+
 .ov-shell-mobile-nav {
   background: var(--bg-white);
   border: 1px solid var(--border);
@@ -655,6 +729,7 @@
   right: 20px;
   top: calc(100% + 8px);
   width: min(280px, calc(100vw - 40px));
+  z-index: 41;
 }
 
 .ov-shell-mobile-nav button,
@@ -685,7 +760,7 @@
   align-items: center;
   gap: 20px;
   padding: 32px 52px;
-  background: var(--bg-white);
+  background: var(--bg-main);
   border-top: 1px solid var(--border);
   margin-top: 80px;
 }
@@ -707,9 +782,9 @@
 
 .ov-shell-footer-name {
   font-family: var(--font-serif);
-  font-size: 18px;
+  font-size: 20px;
   color: var(--text-primary);
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
 }
 
 .ov-shell-footer-note {
@@ -746,14 +821,15 @@
 
 .ov-shell-footer-links button:hover,
 .ov-shell-footer-links a:hover {
-  color: var(--text-primary);
+  color: var(--accent-2);
 }
 
 .ov-shell-footer-version {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   justify-self: end;
-  font-family: var(--font-mono, ui-monospace);
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
 }
 
 @media (max-width: 1023px) {

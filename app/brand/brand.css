@@ -1,0 +1,53 @@
+/* Фирменный локап T-Skills: знак + вордмарк + двухстрочный теглайн (по эталону). */
+.tsb-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  color: #1F2724;
+}
+
+.tsb-lockup svg {
+  flex-shrink: 0;
+}
+
+.tsb-lockup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tsb-lockup-word {
+  font-family: var(--font-ts-serif), "Newsreader", Georgia, serif;
+  font-size: var(--tsb-word, 42px);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: #1F2724;
+}
+
+.tsb-lockup-tag {
+  font-family: var(--font-ts-sans), "Inter Tight", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: var(--tsb-tag, 10.5px);
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  line-height: 1.9;
+  color: #2F3A36;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .tsb-lockup {
+    gap: 12px;
+  }
+  .tsb-lockup-icon {
+    width: 38px;
+    height: auto;
+  }
+  .tsb-lockup-word {
+    font-size: 30px;
+  }
+  .tsb-lockup-tag {
+    font-size: 8.5px;
+    letter-spacing: 0.24em;
+  }
+}

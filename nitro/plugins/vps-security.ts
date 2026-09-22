@@ -32,6 +32,10 @@ const STRIPPED_HEADERS = [
 type NodeHeaders = Record<string, string | string[] | undefined>;
 
 type NodeEvent = {
+  // Nitro/H3 exposes the Fetch-compatible request used by the renderer in
+  // addition to the underlying Node request. Keep both views in sync: Vinext
+  // reads the former when extracting the CSP nonce for SSR inline scripts.
+  req?: Request;
   node: {
     req: { headers: NodeHeaders };
     res: { setHeader: (name: string, value: string) => void; headersSent?: boolean };
@@ -52,14 +56,76 @@ function snapshotRequest(headers: NodeHeaders): Request {
   return new Request("http://localhost/", { headers: init });
 }
 
+function synchronizeFetchRequestHeaders(
+  nodeEvent: NodeEvent,
+  remove: readonly string[],
+  set: Record<string, string>,
+) {
+  const request = nodeEvent.req;
+  if (!request) return;
+
+  const apply = (headers: Headers) => {
+    for (const name of remove) headers.delete(name);
+    for (const [name, value] of Object.entries(set)) headers.set(name, value);
+  };
+  const synchronized = (headers: Headers) =>
+    remove.every((name) => !headers.has(name)) &&
+    Object.entries(set).every(([name, value]) => headers.get(name) === value);
+
+  // Some runtimes expose a mutable Headers object, while incoming Fetch
+  // Requests in other runtimes expose an immutable one. Try the cheap path
+  // first, but never let an immutable request abort the whole HTTP request.
+  try {
+    apply(request.headers);
+    if (synchronized(request.headers)) return;
+  } catch {
+    // Fall through to a replacement Request with a mutable Headers instance.
+  }
+
+  try {
+    const headers = new Headers(request.headers);
+    apply(headers);
+    const replacement = new Request(request, { headers });
+
+    // H3/Nitro may attach runtime-only properties to the request. Preserve
+    // the common ones when replacing an immutable Fetch Request.
+    const source = request as unknown as Record<string, unknown>;
+    const target = replacement as unknown as Record<string, unknown>;
+    for (const key of ["context", "runtime", "waitUntil", "ip", "originalUrl"]) {
+      if (!(key in source)) continue;
+      try {
+        Object.defineProperty(target, key, {
+          configurable: true,
+          enumerable: false,
+          value: source[key],
+          writable: true,
+        });
+      } catch {
+        // The standard Request surface is still valid without this metadata.
+      }
+    }
+    nodeEvent.req = replacement;
+  } catch {
+    // The raw Node request has already been sanitized. If this runtime also
+    // forbids cloning the Fetch Request, keep serving from that safe view.
+  }
+}
+
+function setRequestCsp(nodeEvent: NodeEvent, csp: string) {
+  nodeEvent.node.req.headers["content-security-policy"] = csp;
+  synchronizeFetchRequestHeaders(nodeEvent, STRIPPED_HEADERS, { "content-security-policy": csp });
+}
+
 export default function vpsSecurity(nitroApp: NitroApp) {
   nitroApp.hooks?.hook("request", (event) => {
     const nodeEvent = asNodeEvent(event);
     const rawHeaders = nodeEvent.node.req.headers;
-    for (const header of STRIPPED_HEADERS) delete rawHeaders[header];
+    for (const headerName of Object.keys(rawHeaders)) {
+      if (STRIPPED_HEADERS.includes(headerName.toLowerCase())) delete rawHeaders[headerName];
+    }
     const requestId = requestIdFrom(snapshotRequest(rawHeaders));
     const nonce = createCspNonce();
-    rawHeaders["content-security-policy"] = contentSecurityPolicy(nonce);
+    setRequestCsp(nodeEvent, contentSecurityPolicy(nonce));
     nodeEvent.context.vpsRequestId = requestId;
     nodeEvent.context.vpsCspNonce = nonce;
     nodeEvent.context.vpsStartedAt = Date.now();

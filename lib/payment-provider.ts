@@ -1,10 +1,11 @@
-import { getRuntimeEnv } from "@/db";
+import { getD1, getRuntimeEnv } from "@/db";
 import { attachCheckoutSession, createPendingOrder, findOrderIdByPaymentId, markOrderPaymentFailed, handlePaymentEvent } from "@/lib/durable-store";
 import type { PaymentEventStatus } from "@/lib/payment-event-policy";
-import { V2_VERSION_IDS } from "@/lib/assessment-engine";
+import { T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 import { verifyStripeSignature } from "@/lib/stripe-signature";
 import type { Viewer } from "@/lib/server-auth";
 import { paymentsEnabled } from "@/lib/runtime-config";
+import { paymentsFeatureEnabled } from "@/lib/feature-flags";
 import { trustedAppBaseUrl } from "@/lib/app-auth";
 import { readBoundedResponseJson, readBoundedResponseText } from "@/lib/provider-contract";
 import { isHostedStripeCheckoutUrl } from "@/lib/payment-url";
@@ -29,7 +30,7 @@ function currency() {
 }
 
 export type PublicTestConfig = {
-  id: "orbita30";
+  id: typeof T_SKILLS_TEST_ID;
   name: string;
   assessmentVersion: string;
   amountMinor: number | null;
@@ -50,45 +51,88 @@ export function getPublicTestConfig(): PublicTestConfig {
   const validCurrency = /^[A-Z]{3}$/.test(configuredCurrency);
   const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
   return {
-    id: "orbita30",
+    id: T_SKILLS_TEST_ID,
     name: "T-Skills",
-    assessmentVersion: V2_VERSION_IDS.assessment,
+    assessmentVersion: T_SKILLS_VERSION_IDS.assessment,
     amountMinor,
     currency: validCurrency ? configuredCurrency : "KZT",
     availableForCheckout: paymentFlowEnabled && amountMinor !== null && validCurrency && provider === "stripe" && Boolean(runtimeEnv.STRIPE_SECRET_KEY?.trim() && runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim() && runtimeEnv.PDF_SIGNING_SECRET?.trim()),
     accessMode: paymentFlowEnabled ? "payment" : "beta-free",
     includesPdf: true,
     oneTime: true,
-    description: "Развивающий профиль способа действовать",
+    description: "67 парных сравнений 25 качеств и 8 коротких карьерных ситуаций",
   };
 }
 
-export async function createCheckout(input: { viewer: Viewer; testId: string; request: Request; idempotencyKey: string }) {
+type RegistryPricing = { amountMinor: number; currency: string };
+
+async function registryPricing(testId: string): Promise<RegistryPricing | null> {
+  try {
+    const row = await getD1().prepare(
+      `SELECT amount_minor, currency FROM products WHERE test_id = ? AND status = 'ACTIVE' LIMIT 1`,
+    ).bind(testId).first<{ amount_minor: number; currency: string }>();
+    const amountMinor = Number(row?.amount_minor);
+    const configuredCurrency = String(row?.currency ?? "").trim().toUpperCase();
+    if (!row || !Number.isSafeInteger(amountMinor) || amountMinor <= 0 || !/^[A-Z]{3}$/.test(configuredCurrency)) return null;
+    return { amountMinor, currency: configuredCurrency };
+  } catch {
+    // The environment fallback keeps catalog rendering and local development
+    // usable before the additive product/pricing migration is applied.
+    return null;
+  }
+}
+
+export async function getPublicTestConfigAsync(): Promise<PublicTestConfig> {
+  const base = getPublicTestConfig();
+  const pricing = await registryPricing(T_SKILLS_TEST_ID);
   const runtimeEnv = getRuntimeEnv();
-  if (!paymentsEnabled(runtimeEnv)) throw new PaymentProviderError("PAYMENTS_DISABLED");
+  const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
+  const paymentFlowEnabled = await paymentsFeatureEnabled();
+  if (!pricing) return { ...base, availableForCheckout: paymentFlowEnabled && base.availableForCheckout, accessMode: paymentFlowEnabled ? "payment" : "beta-free" };
+  return {
+    ...base,
+    amountMinor: pricing.amountMinor,
+    currency: pricing.currency,
+    availableForCheckout: paymentFlowEnabled && provider === "stripe" && Boolean(
+      runtimeEnv.STRIPE_SECRET_KEY?.trim() && runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim() && runtimeEnv.PDF_SIGNING_SECRET?.trim(),
+    ),
+    accessMode: paymentFlowEnabled ? "payment" : "beta-free",
+  };
+}
+
+async function currentPricing(testId: string) {
+  const pricing = await registryPricing(testId);
+  if (pricing) return pricing;
+  return { amountMinor: requiredAmount(), currency: currency() };
+}
+
+export async function createCheckout(input: { viewer: Viewer; testId: string; request: Request; idempotencyKey: string; promoCode?: string }) {
+  const runtimeEnv = getRuntimeEnv();
+  if (!await paymentsFeatureEnabled()) throw new PaymentProviderError("PAYMENTS_DISABLED");
   const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
   if (provider !== "stripe") throw new PaymentProviderError("PAYMENT_PROVIDER_UNSUPPORTED");
+  const pricing = await currentPricing(input.testId);
+  const orderResult = await createPendingOrder({
+    viewer: input.viewer,
+    testId: input.testId,
+    amountMinor: pricing.amountMinor,
+    currency: pricing.currency,
+    provider: "stripe",
+    idempotencyKey: input.idempotencyKey,
+    promoCode: input.promoCode,
+  });
+  if (orderResult.order.freeAccess) return { ...orderResult, checkoutUrl: null };
   const secret = runtimeEnv.STRIPE_SECRET_KEY?.trim();
   if (!secret) throw new PaymentProviderError("STRIPE_SECRET_KEY_MISSING");
   if (!runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim()) throw new PaymentProviderError("STRIPE_WEBHOOK_SECRET_MISSING");
   if (!runtimeEnv.PDF_SIGNING_SECRET?.trim()) throw new PaymentProviderError("PDF_SIGNING_SECRET_MISSING");
-
-  const amountMinor = requiredAmount();
-  const orderResult = await createPendingOrder({
-    viewer: input.viewer,
-    testId: input.testId,
-    amountMinor,
-    currency: currency(),
-    provider: "stripe",
-    idempotencyKey: input.idempotencyKey,
-  });
   if (orderResult.order.checkoutUrl) return { ...orderResult, checkoutUrl: orderResult.order.checkoutUrl };
 
   const baseUrl = trustedAppBaseUrl(input.request);
   const form = new URLSearchParams();
   form.set("mode", "payment");
-  form.set("line_items[0][price_data][currency]", input.testId === "orbita30" ? currency().toLowerCase() : currency().toLowerCase());
-  form.set("line_items[0][price_data][unit_amount]", String(amountMinor));
+  form.set("line_items[0][price_data][currency]", pricing.currency.toLowerCase());
+  form.set("line_items[0][price_data][unit_amount]", String(orderResult.order.amountMinor));
   form.set("line_items[0][price_data][product_data][name]", "T-Skills");
   form.set("line_items[0][price_data][product_data][description]", "Развивающий профиль способа действовать");
   form.set("line_items[0][quantity]", "1");
