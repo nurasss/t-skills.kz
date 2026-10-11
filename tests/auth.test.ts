@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { constantTimeTokenEqual, safeReturnTo } from "@/lib/auth-utils";
+import { constantTimeTokenEqual, isLocalAuthEnvironment, safeReturnTo, shouldUseSecureSessionCookie } from "@/lib/auth-utils";
 import { buildAuthActionUrl } from "@/lib/auth-links";
 import { hashPassword, passwordHashPolicy, validatePassword, verifyPassword } from "@/lib/password";
 
@@ -26,6 +26,20 @@ test("redirect targets remain same-origin and token comparisons are length-safe"
   assert.equal(constantTimeTokenEqual("same-token", "same-token"), true);
   assert.equal(constantTimeTokenEqual("same-token", "different"), false);
   assert.equal(constantTimeTokenEqual("same-token", null), false);
+});
+
+test("development preview identities fail closed when app/runtime environment markers disagree", () => {
+  assert.equal(isLocalAuthEnvironment({ ORBITA_ENV: "development" }), true);
+  assert.equal(isLocalAuthEnvironment({ APP_ENV: "test", ORBITA_ENV: "local" }), true);
+  assert.equal(isLocalAuthEnvironment({ APP_ENV: "production", ORBITA_ENV: "development" }), false);
+  assert.equal(isLocalAuthEnvironment({ APP_ENV: "development", ORBITA_ENV: "production" }), false);
+  assert.equal(isLocalAuthEnvironment({ APP_ENV: "production" }), false);
+  assert.equal(isLocalAuthEnvironment({}), false);
+  assert.equal(shouldUseSecureSessionCookie({ APP_ENV: "development" }, "http://127.0.0.1:3000"), false);
+  assert.equal(shouldUseSecureSessionCookie({ APP_ENV: "development" }, "https://local.example.test"), true);
+  assert.equal(shouldUseSecureSessionCookie({ APP_ENV: "production" }, "http://app.internal"), true);
+  assert.equal(shouldUseSecureSessionCookie({ APP_ENV: "development", ORBITA_ENV: "production" }, "http://app.internal"), true);
+  assert.equal(shouldUseSecureSessionCookie({}, "http://app.internal"), true);
 });
 
 test("one-time auth links keep tokens in the fragment", () => {

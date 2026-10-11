@@ -1,5 +1,6 @@
 import { getD1, getRuntimeEnv } from "@/db";
 import { getSessionViewer } from "@/lib/app-auth";
+import { isLocalAuthEnvironment } from "@/lib/auth-utils";
 
 export type Viewer = {
   userId: string;
@@ -31,11 +32,8 @@ const DevelopmentProvider: AuthProvider = {
 function viewerFromRequest(request: Request): Viewer | null {
   const runtimeEnv = getRuntimeEnv();
   const authProvider = runtimeEnv.AUTH_PROVIDER?.trim().toLowerCase();
-  if (authProvider === "app-password") {
-    if (runtimeEnv.ORBITA_ENV === "development") return DevelopmentProvider.viewerFromRequest(request);
-    return null;
-  }
-  if (authProvider === "development" || (!authProvider && runtimeEnv.ORBITA_ENV === "development")) {
+  if (!isLocalAuthEnvironment(runtimeEnv)) return null;
+  if (authProvider === "app-password" || authProvider === "development" || !authProvider) {
     return DevelopmentProvider.viewerFromRequest(request);
   }
   return null;

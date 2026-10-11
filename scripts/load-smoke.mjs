@@ -1,5 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
-import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = process.cwd();
@@ -81,14 +83,23 @@ async function waitForServer() {
 
 // Always rebuild so this gate verifies the current working tree rather than a
 // stale dist/ artifact left by an earlier release.
-execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
+// Portable: build via the current node binary instead of the `npm` shim.
+execFileSync(process.execPath, ["scripts/run-framework.mjs", "build"], { cwd: root, stdio: "inherit" });
 rmSync(state, { recursive: true, force: true });
 const migrationSql = readdirSync("drizzle")
   .filter((entry) => /^\d+_.*\.sql$/.test(entry))
   .sort()
   .map((entry) => readFileSync(`drizzle/${entry}`, "utf8"))
   .join("\n");
-wrangler(["d1", "execute", "DB", "--local", "--config", config, "--persist-to", state, "--command", migrationSql]);
+// Portable: migrations go through --file (command-line length limits vary).
+const loadMigrationDir = mkdtempSync(join(tmpdir(), "orbita-load-migrations-"));
+const loadMigrationFile = join(loadMigrationDir, "migrations.sql");
+writeFileSync(loadMigrationFile, migrationSql);
+try {
+  wrangler(["d1", "execute", "DB", "--local", "--config", config, "--persist-to", state, "--file", loadMigrationFile]);
+} finally {
+  rmSync(loadMigrationDir, { recursive: true, force: true });
+}
 
 const now = Date.now();
 wrangler([
@@ -104,7 +115,7 @@ wrangler([
 const child = spawn(process.execPath, [
   "--import", "./scripts/sites-env.mjs", "./node_modules/wrangler/bin/wrangler.js", "dev",
   "--config", config, "--local", "--persist-to", state, "--ip", "127.0.0.1", "--inspector-port", "0",
-  "--port", String(port), "--var", "ORBITA_ENV:development",
+  "--port", String(port), "--var", "APP_ENV:development", "--var", "ORBITA_ENV:development", "--var", "LEGAL_DOCUMENTS_APPROVED:false",
 ], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
 child.stdout.on("data", (chunk) => { serverOutput += chunk; });
 child.stderr.on("data", (chunk) => { serverOutput += chunk; });
@@ -176,6 +187,13 @@ try {
   }
   console.log("LOAD_GATE=PASS lost=0 duplicated=0 idempotency=PASS state=ADAPTIVE_FALLBACK");
 } finally {
+  // Portable shutdown: the worker holds the SQLite state files open, so the
+  // state dir can only be removed after the child has actually exited
+  // (POSIX tolerates unlinking open files, Windows raises EPERM).
   child.kill("SIGTERM");
+  await Promise.race([
+    new Promise((resolve) => child.once("exit", () => resolve())),
+    delay(15000),
+  ]);
   rmSync(state, { recursive: true, force: true });
 }

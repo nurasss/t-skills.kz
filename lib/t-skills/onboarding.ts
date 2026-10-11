@@ -52,6 +52,7 @@ export function validateOnboarding(input: unknown): ValidationResult<OnboardingC
     age: typeof age === "number" ? age : 0,
     educationLevel,
     favoriteSubjects,
+    valueRanking: input.valueRanking === undefined ? undefined : cleanList(input.valueRanking, "valueRanking", issues, true),
     interests: input.interests === undefined ? undefined : cleanList(input.interests, "interests", issues, false),
     hobbies: input.hobbies === undefined ? undefined : cleanList(input.hobbies, "hobbies", issues, false),
     preferredActivities: input.preferredActivities === undefined ? undefined : cleanList(input.preferredActivities, "preferredActivities", issues, false),

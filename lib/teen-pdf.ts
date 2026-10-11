@@ -5,7 +5,9 @@
 import { PDFDocument, PageSizes, rgb, type PDFDocument as PDFDoc, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 
-import { TEEN_VERSION_IDS } from "@/lib/t-skills/teen/taxonomy";
+import { TEEN_SUBJECTS, TEEN_TRAIT_IDS, TEEN_V1_FIX_VERSION_IDS, TEEN_V1_VERSION_IDS, TEEN_V3_VERSION_IDS, TEEN_V4_VERSION_IDS, TEEN_VALUES, TEEN_VERSION_IDS } from "@/lib/t-skills/teen/taxonomy";
+import { teenRuntimeContent, type TeenRuntimeLocale } from "@/lib/t-skills/teen/runtime";
+import { TEEN_CAREER_CATALOG_V1, teenCareerEntry } from "@/lib/t-skills/teen/careers";
 import type { TeenReport } from "@/lib/t-skills/teen/report";
 
 /** Шрифты инжектятся (Next `?inline` не работает под tsx-тестами). */
@@ -79,16 +81,62 @@ function newPage(pdf: PDFDoc, fonts: Fonts) {
   return { page, width, height };
 }
 
-export function validateTeenReportPayload(value: unknown): asserts value is TeenReport {
-  if (!value || typeof value !== "object") throw new Error("TEEN_PDF:shape");
+export function validateTeenReportPayload(value: unknown, locale: TeenRuntimeLocale = "ru"): asserts value is TeenReport {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("TEEN_PDF:shape");
   const report = value as TeenReport;
-  for (const [key, expected] of Object.entries(TEEN_VERSION_IDS)) {
+  const expectedVersions = report.versions?.assessment === TEEN_V1_VERSION_IDS.assessment
+    ? TEEN_V1_VERSION_IDS
+    : report.versions?.assessment === TEEN_V1_FIX_VERSION_IDS.assessment
+      ? TEEN_V1_FIX_VERSION_IDS
+      : report.versions?.assessment === TEEN_VERSION_IDS.assessment ? TEEN_VERSION_IDS
+        : report.versions?.assessment === TEEN_V4_VERSION_IDS.assessment ? TEEN_V4_VERSION_IDS
+        : report.versions?.assessment === TEEN_V3_VERSION_IDS.assessment ? TEEN_V3_VERSION_IDS : null;
+  if (!expectedVersions) throw new Error("TEEN_PDF:version:assessment");
+  const content = teenRuntimeContent(locale, expectedVersions.assessment);
+  const catalogVersion = (expectedVersions as { careerCatalog?: unknown }).careerCatalog;
+  const careerCatalogVersion = typeof catalogVersion === "string" ? catalogVersion : TEEN_CAREER_CATALOG_V1;
+  for (const [key, expected] of Object.entries(expectedVersions)) {
     if ((report.versions as Record<string, string> | undefined)?.[key] !== expected) throw new Error(`TEEN_PDF:version:${key}`);
   }
-  if (!Array.isArray(report.careers) || report.careers.length === 0) throw new Error("TEEN_PDF:careers");
+  if (report.contentStatus !== content.status || report.contentStatus !== "PUBLISHED") throw new Error("TEEN_PDF:content_status");
+  if (!Array.isArray(report.careers) || report.careers.length === 0 || report.careers.length > 5) throw new Error("TEEN_PDF:careers");
   if (!Array.isArray(report.traits) || report.traits.length !== 25) throw new Error("TEEN_PDF:traits");
+  const traitIds = new Set<string>();
   for (const career of report.careers) {
-    if (!career.professionId || !career.title) throw new Error("TEEN_PDF:career:shape");
+    if (!career || typeof career !== "object") throw new Error("TEEN_PDF:career:shape");
+    if (typeof career.professionId !== "string" || !career.professionId.trim() || career.professionId.length > 128) throw new Error("TEEN_PDF:career:id");
+    if (typeof career.title !== "string" || !career.title.trim() || career.title.length > 256) throw new Error("TEEN_PDF:career:title");
+    const textFields = [career.sphere, career.klimovType, career.education, career.description];
+    if (textFields.some((field) => typeof field !== "string" || field.length > 2_048)) throw new Error("TEEN_PDF:career:text");
+    const profession = teenCareerEntry(careerCatalogVersion, career.professionId, locale);
+    if (!profession || career.title !== profession.title || career.sphere !== profession.sphere || career.klimovType !== profession.klimovType || career.education !== profession.education || career.description !== profession.description) {
+      throw new Error("TEEN_PDF:career:content");
+    }
+    for (const score of [career.totalScore, career.traitScore, career.valueBonus, career.subjectBonus]) {
+      if (typeof score !== "number" || !Number.isFinite(score)) throw new Error("TEEN_PDF:career:score");
+    }
+  }
+  for (const trait of report.traits) {
+    if (!trait || typeof trait !== "object" || !(TEEN_TRAIT_IDS as readonly string[]).includes(trait.traitId) || traitIds.has(trait.traitId) || trait.name !== content.traitNames[trait.traitId]) {
+      throw new Error("TEEN_PDF:trait:shape");
+    }
+    traitIds.add(trait.traitId);
+    if (typeof trait.total !== "number" || !Number.isFinite(trait.total) || typeof trait.normalized !== "number" || !Number.isFinite(trait.normalized)) {
+      throw new Error("TEEN_PDF:trait:score");
+    }
+  }
+  if (!Array.isArray(report.topTraits) || report.topTraits.length > 5 || report.topTraits.some((trait) => !trait || typeof trait !== "object" || !traitIds.has(trait.traitId) || trait.name !== content.traitNames[trait.traitId])) throw new Error("TEEN_PDF:top_traits");
+  if (!Array.isArray(report.topValues) || report.topValues.length > 3) throw new Error("TEEN_PDF:top_values");
+  if (!Array.isArray(report.subjects) || report.subjects.length > 13) throw new Error("TEEN_PDF:subjects");
+  for (const value of report.topValues) {
+    if (!value || typeof value !== "object") throw new Error("TEEN_PDF:value:shape");
+    const valueId = value.id as (typeof TEEN_VALUES)[number];
+    if (!(TEEN_VALUES as readonly string[]).includes(value.id) || value.name !== content.valueNames[valueId]) throw new Error("TEEN_PDF:value:shape");
+  }
+  for (const subject of report.subjects) {
+    if (!subject || typeof subject !== "object") throw new Error("TEEN_PDF:subject:shape");
+    const subjectId = subject.id as (typeof TEEN_SUBJECTS)[number];
+    if (!(TEEN_SUBJECTS as readonly string[]).includes(subject.id) || subject.name !== content.subjectNames[subjectId]) throw new Error("TEEN_PDF:subject:shape");
   }
 }
 
@@ -128,7 +176,7 @@ const TEEN_PDF_STRINGS: Record<TeenPdfLocale, {
 };
 
 export async function renderTeenPdf(report: TeenReport, fontData: TeenPdfFontData, locale: TeenPdfLocale = "ru"): Promise<Uint8Array> {
-  validateTeenReportPayload(report);
+  validateTeenReportPayload(report, locale);
   const t = TEEN_PDF_STRINGS[locale];
   const pdf = await PDFDocument.create();
   const fonts = await loadFonts(pdf, fontData);

@@ -1,5 +1,6 @@
 import { getD1, getRuntimeEnv } from "@/db";
 import type { Viewer } from "@/lib/server-auth";
+import { isLocalAuthEnvironment, shouldUseSecureSessionCookie } from "@/lib/auth-utils";
 
 export { constantTimeTokenEqual, safeReturnTo } from "@/lib/auth-utils";
 
@@ -10,24 +11,17 @@ const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
 
 function isProduction() {
   const env = getRuntimeEnv();
-  return (env.APP_ENV ?? env.ORBITA_ENV ?? "").toLowerCase().includes("production");
+  return [env.APP_ENV, env.ORBITA_ENV].some((value) => value?.trim().toLowerCase().includes("production"));
 }
 
 function isLocalEnvironment() {
   const env = getRuntimeEnv();
-  return ["development", "test", "local"].includes((env.APP_ENV ?? env.ORBITA_ENV ?? "").trim().toLowerCase());
+  return isLocalAuthEnvironment(env);
 }
 
 function usesSecureCookies() {
-  const configured = getRuntimeEnv().APP_BASE_URL?.trim();
-  if (configured) {
-    try {
-      return new URL(configured).protocol === "https:";
-    } catch {
-      return !isLocalEnvironment();
-    }
-  }
-  return !isLocalEnvironment();
+  const env = getRuntimeEnv();
+  return shouldUseSecureSessionCookie(env, env.APP_BASE_URL);
 }
 
 function sessionTtlSeconds() {

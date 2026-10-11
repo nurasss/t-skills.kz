@@ -155,6 +155,41 @@
       "when": 1790053150358,
       "tag": "0021_promo_lifecycle_runtime_safety",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1790317325693,
+      "tag": "0022_wonderful_sinister_six",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1790405279197,
+      "tag": "0023_teen_assessment_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791086400000,
+      "tag": "0024_teen_scoring_direction_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791105600000,
+      "tag": "0025_teen_v3_corrected_wording",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791187200000,
+      "tag": "0026_teen_v4_catalog_111",
+      "breakpoints": true
     }
   ]
 }

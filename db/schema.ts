@@ -683,6 +683,30 @@ export const campaignMembers = sqliteTable(
   ],
 );
 
+export const campaignSeatReservations = sqliteTable(
+  "campaign_seat_reservations",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id").notNull().references(() => campaigns.id),
+    userId: text("user_id").notNull().references(() => users.id),
+    orderId: text("order_id").notNull().references(() => orders.id),
+    checkoutSessionId: text("checkout_session_id"),
+    status: text("status").notNull().default("RESERVED"),
+    reservedAt: integer("reserved_at", { mode: "number" }).notNull(),
+    expiresAt: integer("expires_at", { mode: "number" }).notNull(),
+    claimedAt: integer("claimed_at", { mode: "number" }),
+    releasedAt: integer("released_at", { mode: "number" }),
+    createdAt: integer("created_at", { mode: "number" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("campaign_seat_reservations_order_unique").on(table.orderId),
+    index("campaign_seat_reservations_campaign_status_idx").on(table.campaignId, table.status, table.expiresAt),
+    index("campaign_seat_reservations_user_campaign_idx").on(table.userId, table.campaignId),
+    index("campaign_seat_reservations_checkout_session_idx").on(table.checkoutSessionId),
+  ],
+);
+
 export const promoRedemptions = sqliteTable(
   "promo_redemptions",
   {

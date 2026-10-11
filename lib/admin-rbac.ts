@@ -157,6 +157,18 @@ function publicErrorMessage(code: string) {
     ADMIN_REQUIRED: "Недостаточно прав для административного раздела.",
     ADMIN_PERMISSION_REQUIRED: "У этой роли нет разрешения на действие.",
     RESOURCE_CHANGED: "Запись была изменена другим администратором.",
+    ADMIN_LAST_SUPER_ADMIN: "Нельзя отключить последнего SUPER_ADMIN — сначала назначьте роль другому администратору.",
+    CAMPAIGN_VERSION_CONFLICT: "Кампания была изменена другим администратором. Обновите страницу и повторите изменения.",
+    ORDER_ALREADY_REFUNDED: "Заказ уже был возвращён ранее.",
+    ORDER_REFUND_IN_PROGRESS: "Возврат уже отправлен в платёжный шлюз и ожидает подтверждения.",
+    ORDER_NOT_REFUNDABLE: "Заказ не может быть возвращён (он не оплачен).",
+    REFUND_PROVIDER_UNSUPPORTED: "Для этого заказа не настроен поддерживаемый платёжный возврат.",
+    STRIPE_SECRET_KEY_MISSING: "Ключ Stripe для возврата не настроен.",
+    STRIPE_REFUND_LOOKUP_FAILED: "Не удалось проверить предыдущие возвраты в Stripe; новый запрос не отправлен.",
+    STRIPE_REFUND_FAILED: "Ошибка обработки возврата на стороне платежного шлюза.",
+    STRIPE_REFUND_PENDING: "Stripe принял или мог принять возврат. Статус обновится по webhook после проверки результата.",
+    CONTENT_VERSION_NOT_CURRENT: "Черновик уже изменён. Обновите CMS и проверьте последнюю версию перед публикацией.",
+    ASSESSMENT_VERSION_NOT_PUBLISHABLE: "Эта версия оценки больше не является черновиком для публикации.",
     INVALID_REQUEST: "Проверьте заполненные поля.",
   };
   return messages[code] ?? "Не удалось выполнить административное действие.";
@@ -205,6 +217,20 @@ async function digest(value: string) {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function sanitizeAuditValue(val: unknown): unknown {
+  if (val === null || ["string", "number", "boolean"].includes(typeof val)) return val;
+  if (Array.isArray(val)) return val.map(sanitizeAuditValue).filter((item) => item !== undefined);
+  if (val && typeof val === "object") {
+    return Object.fromEntries(
+      Object.entries(val as Record<string, unknown>)
+        .filter(([key]) => !/password|token|secret|answer|payload|card|cvv|hash/i.test(key))
+        .map(([key, child]) => [key, sanitizeAuditValue(child)])
+        .filter(([, child]) => child !== undefined)
+    );
+  }
+  return undefined;
+}
+
 export async function writeAdminAudit(input: {
   context: AdminContext;
   action: string;
@@ -215,13 +241,12 @@ export async function writeAdminAudit(input: {
   reason?: string | null;
 }) {
   const requestId = input.request ? requestIdFrom(input.request) : null;
-  const secret = getRuntimeEnv().AUTH_RATE_LIMIT_SECRET?.trim() ?? "local-admin-audit-salt";
-  const ipHash = input.request ? await digest(`${secret}:${safeIp(input.request)}`) : null;
+  const secret = getRuntimeEnv().AUTH_RATE_LIMIT_SECRET?.trim();
+  // Keep the audit trail useful when the deployment is misconfigured, but do
+  // not produce a guessable hash of the client's address with a public salt.
+  const ipHash = input.request && secret ? await digest(`${secret}:${safeIp(input.request)}`) : null;
   const metadata = jsonObject(input.metadata);
-  const sanitized = Object.fromEntries(Object.entries(metadata).filter(([key, value]) => {
-    if (/password|token|secret|answer|payload|card/i.test(key)) return false;
-    return ["string", "number", "boolean"].includes(typeof value) || value === null;
-  }));
+  const sanitized = sanitizeAuditValue(metadata) as Record<string, unknown> | undefined;
   await getD1().prepare(
     `INSERT INTO audit_events
        (id, actor_user_id, actor_role, action, entity_type, entity_id, metadata_json, reason, request_id, ip_hash, created_at)
@@ -233,7 +258,7 @@ export async function writeAdminAudit(input: {
     input.action,
     input.entityType,
     input.entityId ?? null,
-    Object.keys(sanitized).length ? JSON.stringify(sanitized) : null,
+    sanitized && Object.keys(sanitized).length ? JSON.stringify(sanitized) : null,
     input.reason ?? null,
     requestId,
     ipHash,

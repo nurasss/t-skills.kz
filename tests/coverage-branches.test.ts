@@ -103,6 +103,9 @@ test("payment and utility branches reject every incomplete snapshot", () => {
   assert.equal(validatePaymentSnapshot({ ...validOrder, currency: "" }, validEvent), false);
   assert.equal(validatePaymentSnapshot(validOrder, { ...validEvent, currency: null }), false);
   assert.equal(nextPaymentStatus("DISPUTED", "REFUNDED"), "DISPUTED");
+  assert.equal(nextPaymentStatus("PAID", "PARTIALLY_REFUNDED"), "PARTIALLY_REFUNDED");
+  assert.equal(nextPaymentStatus("PARTIALLY_REFUNDED", "REFUND_FAILED"), "PARTIALLY_REFUNDED");
+  assert.equal(paymentTelemetryEvent("PARTIALLY_REFUNDED"), "payment_partially_refunded");
   assert.equal(nextPaymentStatus("PAID", "DISPUTE_CLOSED"), "PAID");
   assert.equal(paymentTelemetryEvent("PAID"), "payment_confirmed");
   assert.equal(paymentTelemetryEvent("PAYMENT_FAILED"), null);

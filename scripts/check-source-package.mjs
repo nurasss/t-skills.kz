@@ -11,7 +11,7 @@ const forbidden = /^(?:\.git\/|node_modules\/|dist\/|\.next\/|\.output\/|\.wrang
 
 try {
   execFileSync(process.execPath, ["scripts/package-source.mjs", archive, source], { cwd: root, stdio: "inherit" });
-  const files = execFileSync("tar", ["-tzf", archive], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean);
+  const files = execFileSync("tar", ["-tzf", archive], { cwd: root, encoding: "utf8" }).split(/\r?\n/).map((file) => file.trim()).filter(Boolean);
   const found = files.filter((file) => forbidden.test(file));
   if (found.length) throw new Error(`SOURCE_PACKAGE_FORBIDDEN_PATHS:${found.join(",")}`);
   if (!files.includes("package-lock.json")) throw new Error("SOURCE_PACKAGE_LOCKFILE_MISSING");

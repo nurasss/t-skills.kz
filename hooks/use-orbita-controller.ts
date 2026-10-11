@@ -4,21 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClientError, apiJson, topLevelNavigate, trackOptionalAnalytics, writePendingResponses } from "@/app/orbita-api";
 import type { AccountOverview, AdminMetrics, AssessmentItem, PendingResponse, Phase, PublicCatalog, ReportPayload, SessionPayload, View } from "@/app/orbita-view-types";
 import {
-  buildReport,
   getItemById,
   type AdaptiveSelection,
   type ReportJSON,
   type ResponseMap,
   type ScoreProfile,
 } from "@/lib/assessment-engine";
-import { buildAdaptiveContext, buildV2DemoResponses, scoreCore60 } from "@/lib/orbita-v2-engine";
 import { ITEM_BANK, type Item } from "@/lib/item-bank";
 import { CORE60_BANK } from "@/lib/v2-item-bank";
-import { fallbackAdaptiveQuestions, type GeneratedAdaptiveQuestion } from "@/lib/mercury-adaptive-provider";
+import { type GeneratedAdaptiveQuestion } from "@/lib/mercury-adaptive-provider";
 import { T_SKILLS_PAIRWISE_BANK_V1 } from "@/lib/t-skills/content-v4";
-import { T_SKILLS_VERSION_IDS, T_SKILLS_TEST_ID } from "@/lib/t-skills/versions";
+import { T_SKILLS_TEEN_VERSION_IDS, T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS, isTSkillsTeenVersion } from "@/lib/t-skills/versions";
+import { buildTeenDemoData, teenPairwiseItemsForAssessmentVersion } from "@/lib/t-skills/teen/runtime";
 import { useSiteLang } from "@/lib/site-lang";
-import { CTRL_STRINGS } from "@/lib/site-strings";
+import { CTRL_STRINGS, translateControllerStatus } from "@/lib/site-strings";
 import type { AdaptiveQuestion, OnboardingContext } from "@/lib/t-skills/contracts";
 import { findPendingItem, pendingForSession, replacePending } from "@/lib/response-retry-queue";
 import { metadataForView, routeForView, viewStateForPath } from "@/lib/view-routing";
@@ -26,6 +25,10 @@ import { useAssessmentQueue } from "@/hooks/use-assessment-queue";
 
 const LEGACY_CORE_ITEMS = ITEM_BANK.filter((item) => Number(item.id.slice(1)) <= 250);
 const itemKey = (item: AssessmentItem) => "questionId" in item ? item.questionId : item.id;
+const coreItemsForVersion = (assessmentVersion: string): readonly AssessmentItem[] => isTSkillsTeenVersion(assessmentVersion)
+  ? teenPairwiseItemsForAssessmentVersion(assessmentVersion)
+  : assessmentVersion === T_SKILLS_VERSION_IDS.assessment ? T_SKILLS_PAIRWISE_BANK_V1 : assessmentVersion === "orbita30_ru_v2" ? CORE60_BANK : LEGACY_CORE_ITEMS;
+const needsTSkillsOnboarding = (assessmentVersion: string) => isTSkillsTeenVersion(assessmentVersion) || assessmentVersion === T_SKILLS_VERSION_IDS.assessment;
 
 export type OrbitaControllerOptions = {
   initialView?: View;
@@ -108,6 +111,15 @@ export function useOrbitaController({
   const [siteLang] = useSiteLang();
   const st = CTRL_STRINGS[siteLang];
   const [autosaveStatus, setAutosaveStatus] = useState(st.ready);
+  const siteLangRef = useRef(siteLang);
+  useEffect(() => {
+    // Переключение РУ/ҚЗ во время теста: перевести уже показанный статус
+    // автосохранения, не трогая вопрос, ответы, прогресс и сессию.
+    const prev = siteLangRef.current;
+    siteLangRef.current = siteLang;
+    if (prev === siteLang) return;
+    setAutosaveStatus((current) => translateControllerStatus(current, prev, siteLang));
+  }, [siteLang]);
   const [requestError, setRequestError] = useState<string>();
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string>();
@@ -176,7 +188,7 @@ export function useOrbitaController({
     serverSavedRef.current = new Set(Object.keys(payload.responses));
     setResponses({ ...payload.responses, ...pendingResponses });
     setOnboarding(payload.onboarding ?? null);
-    setCoreItems(payload.versions.assessment === T_SKILLS_VERSION_IDS.assessment ? [...T_SKILLS_PAIRWISE_BANK_V1] : payload.versions.assessment === "orbita30_ru_v2" ? [...CORE60_BANK] : [...LEGACY_CORE_ITEMS]);
+    setCoreItems([...coreItemsForVersion(payload.versions.assessment)]);
     setAdaptiveQuestionSnapshots(payload.adaptive_items ?? []);
     if (payload.consents?.length) {
       setConsents((current) => payload.consents!.reduce((next, consent) => ({ ...next, [consent.consentType]: consent.granted }), current));
@@ -199,8 +211,8 @@ export function useOrbitaController({
     else if (payload.state === "REPORT_GENERATING") setProcessingStatus("REPORT_GENERATING");
     else if (payload.state === "REPORT_FAILED_RETRYABLE") setProcessingStatus("REPORT_FAILED_RETRYABLE");
     else if (payload.state === "COMPLETE") setProcessingStatus("COMPLETE");
-    const currentCoreItems = payload.versions.assessment === T_SKILLS_VERSION_IDS.assessment ? T_SKILLS_PAIRWISE_BANK_V1 : payload.versions.assessment === "orbita30_ru_v2" ? CORE60_BANK : LEGACY_CORE_ITEMS;
-    const coreIndex = currentCoreItems.findIndex((item) => typeof payload.responses[item.id] !== "number");
+    const currentCoreItems = coreItemsForVersion(payload.versions.assessment);
+    const coreIndex = currentCoreItems.findIndex((item) => typeof payload.responses[itemKey(item)] !== "number");
     setQuestionIndex(coreIndex >= 0 ? coreIndex : currentCoreItems.length - 1);
     const adaptiveIndexFromServer = (payload.adaptive_items ?? []).findIndex((item) => typeof payload.responses[itemKey(item)] !== "number");
     setAdaptiveIndex(adaptiveIndexFromServer >= 0 ? adaptiveIndexFromServer : 0);
@@ -238,7 +250,7 @@ export function useOrbitaController({
       let nextView: View | undefined;
       if (payload.state === "PAID" || payload.state === "ENTITLED") nextView = "consent";
       else if (payload.state === "CONSENTED" || payload.state === "CORE_IN_PROGRESS") {
-        const needsOnboarding = payload.versions.assessment === T_SKILLS_VERSION_IDS.assessment && !payload.onboarding;
+        const needsOnboarding = needsTSkillsOnboarding(payload.versions.assessment) && !payload.onboarding;
         nextView = needsOnboarding ? "onboarding" : "assessment";
       }
       else if (["ADAPTIVE_GENERATING", "ADAPTIVE_PROVIDER_FAILED"].includes(payload.state)) nextView = "processing";
@@ -282,7 +294,7 @@ export function useOrbitaController({
   }, []);
 
   useEffect(() => {
-    const metadata = metadataForView(view, phase);
+    const metadata = metadataForView(view, phase, siteLang);
     document.title = metadata.title;
     let description = document.head.querySelector('meta[name="description"]');
     if (!description) {
@@ -291,7 +303,7 @@ export function useOrbitaController({
       document.head.appendChild(description);
     }
     description.setAttribute("content", metadata.description);
-  }, [view, phase]);
+  }, [view, phase, siteLang]);
 
   const finishCore = async () => {
     if (!sessionIdRef.current) return;
@@ -406,6 +418,7 @@ export function useOrbitaController({
           age: value.age,
           education_level: value.educationLevel,
           favorite_subjects: value.favoriteSubjects,
+          ...(value.valueRanking ? { value_ranking: value.valueRanking } : {}),
         }),
       });
       setOnboarding(result.onboarding);
@@ -461,11 +474,12 @@ export function useOrbitaController({
   };
 
   const startCheckout = async () => {
-    if (publicCatalog?.test.accessMode === "beta-free") {
+    const code = promoCode.trim();
+    if (publicCatalog?.test.accessMode === "beta-free" && !code) {
       await startAssessmentFromAccount();
       return;
     }
-    if (!publicCatalog?.test.availableForCheckout) {
+    if (publicCatalog?.test.accessMode !== "beta-free" && !publicCatalog?.test.availableForCheckout && !code) {
       setCheckoutError(st.errCheckoutOff);
       return;
     }
@@ -476,7 +490,7 @@ export function useOrbitaController({
       const result = await apiJson<{ checkout_url: string | null; free_access?: boolean }>('/api/checkout', {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ test_id: T_SKILLS_TEST_ID, promo_code: promoCode.trim() || undefined }),
+        body: JSON.stringify({ test_id: T_SKILLS_TEST_ID, promo_code: code || undefined }),
       });
       if (result.free_access) {
         await startAssessmentFromAccount();
@@ -544,7 +558,7 @@ export function useOrbitaController({
       setProfile(undefined);
       setReport(undefined);
       setSelection(undefined);
-      setCoreItems([...T_SKILLS_PAIRWISE_BANK_V1]);
+      setCoreItems([...teenPairwiseItemsForAssessmentVersion(T_SKILLS_TEEN_VERSION_IDS.assessment)]);
       setAdaptiveQuestionSnapshots([]);
       setResponses({});
       serverSavedRef.current = new Set();
@@ -611,25 +625,12 @@ export function useOrbitaController({
   };
 
   const openDemo = () => {
-    const demoResponses = buildV2DemoResponses();
-    const demoProfile = scoreCore60(demoResponses);
-    const demoQuestions = fallbackAdaptiveQuestions(buildAdaptiveContext(demoProfile, Object.keys(demoResponses)));
-    const demoSelection: AdaptiveSelection = {
-      selectedItemIds: demoQuestions.map((question) => question.questionId),
-      targetCount: demoQuestions.length,
-      mode: "approved-fallback",
-      validation: "passed",
-      reasonCodes: Object.fromEntries(demoQuestions.map((question) => [question.questionId, [question.reasonCode]])),
-    };
+    const { profile: demoProfile, report: demoReport } = buildTeenDemoData();
     activateSession(undefined);
     activateReport(undefined);
     setDemoMode(true);
-    setCoreItems([...CORE60_BANK]);
-    setAdaptiveQuestionSnapshots(demoQuestions);
-    setResponses(demoResponses);
-    setSelection(demoSelection);
     setProfile(demoProfile);
-    setReport(buildReport(demoProfile));
+    setReport(demoReport);
     setPhase("adaptive");
     go("results");
   };

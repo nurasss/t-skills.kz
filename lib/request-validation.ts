@@ -90,15 +90,15 @@ export const adminInviteSchema = z.object({
 const nullableInt = z.number().int().min(0).nullable().optional();
 const localeSchema = z.enum(["ru", "kk"]);
 
-export const createPromoSchema = z.object({
-  code: z.string().trim().min(3).max(64),
+const basePromoFields = z.object({
+  code: z.string().trim().min(3).max(64).transform((v) => v.toUpperCase()),
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2_000).optional(),
   discount_type: z.enum(["PERCENT", "FIXED_AMOUNT", "FREE_ACCESS"]),
   discount_value: z.number().int().min(0),
-  currency: z.string().trim().regex(/^[A-Za-z]{3}$/),
-  max_total_uses: nullableInt,
-  max_uses_per_user: nullableInt,
+  currency: z.string().trim().regex(/^[A-Za-z]{3}$/).transform((v) => v.toUpperCase()),
+  max_total_uses: z.number().int().min(1).nullable().optional(),
+  max_uses_per_user: z.number().int().min(1).nullable().optional(),
   valid_from: z.number().int().nullable().optional(),
   valid_until: z.number().int().nullable().optional(),
   minimum_order_amount: nullableInt,
@@ -107,13 +107,69 @@ export const createPromoSchema = z.object({
   allowed_email_domains: z.array(z.string().trim().min(1).max(254)).max(100).optional(),
   allowed_user_ids: z.array(z.string().trim().min(1).max(128)).max(500).optional(),
   campaign_id: z.string().trim().max(128).nullable().optional(),
-}).strict();
+});
 
-export const updatePromoSchema = createPromoSchema.partial().extend({
+export const createPromoSchema = basePromoFields.strict().superRefine((data, ctx) => {
+  if (data.discount_type === "PERCENT") {
+    if (data.discount_value < 1 || data.discount_value > 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "discount_value must be between 1 and 100 for PERCENT",
+        path: ["discount_value"],
+      });
+    }
+  } else if (data.discount_type === "FIXED_AMOUNT") {
+    if (data.discount_value <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "discount_value must be greater than 0 for FIXED_AMOUNT",
+        path: ["discount_value"],
+      });
+    }
+  }
+  if (typeof data.valid_from === "number" && typeof data.valid_until === "number") {
+    if (data.valid_until < data.valid_from) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "valid_until must be greater than or equal to valid_from",
+        path: ["valid_until"],
+      });
+    }
+  }
+});
+
+export const updatePromoSchema = basePromoFields.partial().extend({
   status: z.enum(["ACTIVE", "DISABLED", "DRAFT"]).optional(),
   expected_updated_at: z.number().int().optional(),
   reason: z.string().trim().min(1).max(2_000).optional(),
-}).strict();
+}).strict().superRefine((data, ctx) => {
+  if (data.discount_type === "PERCENT" && data.discount_value !== undefined) {
+    if (data.discount_value < 1 || data.discount_value > 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "discount_value must be between 1 and 100 for PERCENT",
+        path: ["discount_value"],
+      });
+    }
+  } else if (data.discount_type === "FIXED_AMOUNT" && data.discount_value !== undefined) {
+    if (data.discount_value <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "discount_value must be greater than 0 for FIXED_AMOUNT",
+        path: ["discount_value"],
+      });
+    }
+  }
+  if (typeof data.valid_from === "number" && typeof data.valid_until === "number") {
+    if (data.valid_until < data.valid_from) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "valid_until must be greater than or equal to valid_from",
+        path: ["valid_until"],
+      });
+    }
+  }
+});
 
 export const createCampaignSchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -157,7 +213,7 @@ export const contentUpdateSchema = z.object({
     const serialized = JSON.stringify(payload);
     if (serialized.length > 100_000) context.addIssue({ code: z.ZodIssueCode.custom, message: "Content payload is too large." });
   }),
-  expected_version: z.number().int().min(0).optional(),
+  expected_version: z.number().int().min(0),
 }).strict();
 
 export const contentPublishSchema = z.object({
@@ -177,7 +233,7 @@ export const pricingUpdateSchema = z.object({
   name: z.string().trim().min(1).max(200),
   amount_minor: z.number().int().min(1).max(100_000_000),
   currency: z.string().trim().regex(/^[A-Za-z]{3}$/),
-  expected_updated_at: z.number().int().optional(),
+  expected_updated_at: z.number().int().min(0),
   reason: z.string().trim().min(1).max(2_000),
 }).strict();
 
@@ -258,6 +314,7 @@ export const assessmentOnboardingSchema = z.object({
   age: z.number().int().min(10).max(100),
   education_level: z.string().trim().min(1).max(160),
   favorite_subjects: onboardingList.min(1),
+  value_ranking: onboardingList.optional(),
   interests: onboardingList.optional(),
   hobbies: onboardingList.optional(),
   preferred_activities: onboardingList.optional(),

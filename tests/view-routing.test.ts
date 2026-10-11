@@ -36,3 +36,9 @@ test("client-shell metadata stays specific to the active view", () => {
   assert.equal(metadataForView("home").title, "T-Skills · Профиль ваших сильных сторон");
   assert.equal(metadataForView("detail").title, "Тест T-Skills");
 });
+
+test("client-shell metadata supports localized titles", () => {
+  assert.equal(metadataForView("home", "core", "kk").title, "T-Skills · Сіздің мықты жақтарыңыздың бейіні");
+  assert.equal(metadataForView("support", "core", "kk").title, "Қолдау · T-Skills");
+  assert.equal(metadataForView("account", "core", "kk").title, "Жеке кабинет · T-Skills");
+});

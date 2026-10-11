@@ -1,4 +1,5 @@
 import { getRuntimeEnv } from "@/db";
+import { isLocalAuthEnvironment } from "@/lib/auth-utils";
 
 export class EmailDeliveryError extends Error {
   constructor(message = "Email delivery failed") {
@@ -31,7 +32,7 @@ export async function sendTransactionalEmail(input: {
   } catch {
     throw new EmailDeliveryError("Transactional email action URL is invalid.");
   }
-  if (!['http:', 'https:'].includes(actionUrl.protocol) || ((env.APP_ENV ?? env.ORBITA_ENV ?? "").toLowerCase().includes("production") && actionUrl.protocol !== "https:")) {
+  if (!['http:', 'https:'].includes(actionUrl.protocol) || (!isLocalAuthEnvironment(env) && actionUrl.protocol !== "https:")) {
     throw new EmailDeliveryError("Transactional email action URL is invalid.");
   }
   if (actionUrl.searchParams.has("token") || actionUrl.searchParams.has("invite_token")) {
@@ -48,7 +49,7 @@ export async function sendTransactionalEmail(input: {
   }
   const from = env.EMAIL_FROM?.trim();
   if (!from) {
-    if ((env.ORBITA_ENV ?? "").toLowerCase() === "development") return { delivered: false };
+    if (isLocalAuthEnvironment(env)) return { delivered: false };
     throw new EmailDeliveryError("Transactional email is not configured.");
   }
   const provider = (env.EMAIL_PROVIDER ?? "resend").trim().toLowerCase();
@@ -59,7 +60,7 @@ export async function sendTransactionalEmail(input: {
   }
   const apiKey = env.RESEND_API_KEY?.trim();
   if (!apiKey) {
-    if ((env.ORBITA_ENV ?? "").toLowerCase() === "development") return { delivered: false };
+    if (isLocalAuthEnvironment(env)) return { delivered: false };
     throw new EmailDeliveryError("Transactional email is not configured.");
   }
 

@@ -1,3 +1,23 @@
+const LOCAL_AUTH_ENVIRONMENTS = new Set(["development", "test", "local"]);
+
+/** Preview identities are allowed only when every configured app/runtime marker is local. */
+export function isLocalAuthEnvironment(environment: { APP_ENV?: string; ORBITA_ENV?: string }) {
+  const configured = [environment.APP_ENV, environment.ORBITA_ENV]
+    .map((value) => value?.trim().toLowerCase() ?? "")
+    .filter(Boolean);
+  return configured.length > 0 && configured.every((value) => LOCAL_AUTH_ENVIRONMENTS.has(value));
+}
+
+export function shouldUseSecureSessionCookie(environment: { APP_ENV?: string; ORBITA_ENV?: string }, appBaseUrl?: string) {
+  if (!isLocalAuthEnvironment(environment)) return true;
+  if (!appBaseUrl?.trim()) return false;
+  try {
+    return new URL(appBaseUrl).protocol === "https:";
+  } catch {
+    return true;
+  }
+}
+
 export function constantTimeTokenEqual(left: string | null, right: string | null) {
   if (!left || !right) return false;
   const leftBytes = new TextEncoder().encode(left);

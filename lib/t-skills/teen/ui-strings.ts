@@ -52,9 +52,6 @@ type TeenUiStrings = {
   whatCloser: string;
   back: string;
   clarification: string;
-  whichDirection: string;
-  pairOf: (n: number, total: number) => string;
-  closerEyebrow: string;
   staticLabels: [string, string, string, string, string];
   yourResult: string;
   reportTitle: string;
@@ -88,9 +85,6 @@ export const TEEN_UI: Record<TeenLocale, TeenUiStrings> = {
     whatCloser: "Что тебе ближе?",
     back: "← Назад",
     clarification: "Уточнение",
-    whichDirection: "Какое направление тебе интереснее?",
-    pairOf: (n, total) => `Пара ${n} из ${total}`,
-    closerEyebrow: "Что ближе?",
     staticLabels: ["Сильно левое", "Скорее левое", "Одинаково", "Скорее правое", "Сильно правое"],
     yourResult: "Твой результат",
     reportTitle: "Направления, где твои качества раскрываются сильнее",
@@ -122,9 +116,6 @@ export const TEEN_UI: Record<TeenLocale, TeenUiStrings> = {
     whatCloser: "Саған қайсысы жақынырақ?",
     back: "← Артқа",
     clarification: "Нақтылау",
-    whichDirection: "Қай бағыт саған қызығырақ?",
-    pairOf: (n, total) => `Жұп ${n} / ${total}`,
-    closerEyebrow: "Қайсысы жақынырақ?",
     staticLabels: ["Сол жақтағы", "Көбінесе сол жақтағы", "Бірдей", "Көбінесе оң жақтағы", "Оң жақтағы"],
     yourResult: "Сенің нәтижең",
     reportTitle: "Қасиеттерің жарқырай көрінетін бағыттар",

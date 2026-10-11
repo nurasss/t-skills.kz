@@ -1,25 +1,37 @@
 import type { ReportJSON, ScoreProfile } from "@/lib/assessment-engine";
-import { T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import { isTSkillsTeenVersion, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+
+import { getTeenTraitInterpretation } from "@/lib/t-skills/teen/trait-interpretations";
+import type { TeenTraitId } from "@/lib/t-skills/teen/taxonomy";
 
 function traitCode(value: string) {
   return value as unknown as ReportJSON["topStrengths"][number]["trait"];
 }
 
 /** Deterministic narrative fallback for the new 25-trait pathway. */
-export function buildTSkillsReport(profile: ScoreProfile, adaptiveQuestionCount: number): ReportJSON {
+type TSkillsReportOptions = {
+  coreQuestionCount?: number;
+  versions?: { assessment: string; adaptive: string; report: string };
+  locale?: "ru" | "kk";
+};
+
+export function buildTSkillsReport(profile: ScoreProfile, adaptiveQuestionCount: number, options: TSkillsReportOptions = {}): ReportJSON {
+  const coreQuestionCount = options.coreQuestionCount ?? 75;
+  const versions = options.versions ?? T_SKILLS_VERSION_IDS;
+  const locale = options.locale ?? "ru";
   const top = profile.traits.slice(0, 5);
   const topNames = top.map((trait) => trait.name).join(", ");
-  const topStrengths = top.map((trait) => ({
-    trait: traitCode(trait.code),
-    contribution: `${trait.name} занимает ${trait.rank}-е место в вашем текущем профиле и может чаще проявляться в подходящих условиях.`,
-    manifestations: [
-      "Вы можете опираться на это качество в учебных и проектных задачах.",
-      "Полезно проверять его проявление на конкретных действиях, а не только по самоощущению.",
-    ],
-    bestConditions: ["Понятная задача с возможностью выбрать подходящий способ работы."],
-    overuseRisk: "Даже выраженное качество не работает одинаково хорошо во всех ситуациях; учитывайте контекст и обратную связь.",
-    developmentActions: ["Выберите один небольшой проект, где это качество можно наблюдать.", "После проекта запишите, что помогло и что потребовало поддержки."],
-  }));
+  const topStrengths = top.map((trait) => {
+    const interp = getTeenTraitInterpretation(trait.code as TeenTraitId, locale);
+    return {
+      trait: traitCode(trait.code),
+      contribution: interp.contribution,
+      manifestations: interp.manifestations,
+      bestConditions: interp.bestConditions,
+      overuseRisk: interp.overuseRisk,
+      developmentActions: interp.developmentActions,
+    };
+  });
   const sourceKeys = {
     executiveSummary: ["t-skills.pairwise.summary"],
     topStrengths: topStrengths.map((strength) => ({ trait: strength.trait, keys: ["t-skills.pairwise.trait"] })),
@@ -38,13 +50,13 @@ export function buildTSkillsReport(profile: ScoreProfile, adaptiveQuestionCount:
     confidenceNote: ["t-skills.pairwise.confidence"],
   } satisfies ReportJSON["sourceKeys"];
   return {
-    assessmentVersion: T_SKILLS_VERSION_IDS.assessment,
-    coreQuestionCount: 67,
+    assessmentVersion: versions.assessment,
+    coreQuestionCount,
     adaptiveQuestionCount,
-    adaptiveProvider: "approved-fallback",
-    adaptiveFallbackUsed: true,
-    adaptiveVersion: T_SKILLS_VERSION_IDS.adaptive,
-    reportVersion: T_SKILLS_VERSION_IDS.report,
+    adaptiveProvider: options.versions ? "approved-bank" : "approved-fallback",
+    adaptiveFallbackUsed: !options.versions,
+    adaptiveVersion: versions.adaptive,
+    reportVersion: versions.report,
     interpretationLibraryVersion: "t-skills-pairwise-v1",
     executiveSummary: `Ваш текущий профиль строится вокруг сочетания качеств: ${topNames}. Это развивающий срез, который лучше проверять небольшими карьерными и учебными экспериментами.`,
     topStrengths,
@@ -63,7 +75,11 @@ export function buildTSkillsReport(profile: ScoreProfile, adaptiveQuestionCount:
     stressAndBlindSpots: "Позиции 16–25 — менее выраженные качества в ipsative-рейтинге, а не автоматически слабости или дефициты.",
     workEnvironments: ["Среда с понятной задачей и возможностью получать обратную связь.", "Проекты, где можно проверять гипотезы небольшими шагами."],
     development30Days: ["Выберите небольшой проект и зафиксируйте, какие качества проявлялись.", "Поговорите с человеком, который видел вашу работу, и сравните наблюдения.", "Запишите один следующий карьерный эксперимент."],
-    confidenceNote: "Это детерминированный рабочий срез по 67 парным сравнениям. Он не является диагнозом, прогнозом или абсолютным карьерным решением.",
+    confidenceNote: isTSkillsTeenVersion(versions.assessment)
+      ? `Это пилотный относительный профиль по ${coreQuestionCount} фиксированным парам и ${adaptiveQuestionCount} ситуативным уточнениям. Числа не являются процентилями или сравнением с нормой; статистический интервал неопределённости не калиброван. Это не диагноз, прогноз или основание для окончательного карьерного решения.`
+      : options.versions
+      ? `Это детерминированный рабочий срез по ${coreQuestionCount} парным сравнениям и ${adaptiveQuestionCount} ситуативным уточнениям. Он не является диагнозом, прогнозом или абсолютным карьерным решением.`
+      : "Это детерминированный рабочий срез по 67 парным сравнениям. Он не является диагнозом, прогнозом или абсолютным карьерным решением.",
     sourceKeys,
   };
 }

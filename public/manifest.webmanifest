@@ -1,0 +1,24 @@
+{
+  "name": "T-Skills · Профиль ваших сильных сторон",
+  "short_name": "T-Skills",
+  "description": "Развивающая оценка устойчивых поведенческих предпочтений и сильных сторон.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#8CA78F",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}

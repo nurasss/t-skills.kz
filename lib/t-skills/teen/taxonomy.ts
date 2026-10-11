@@ -1,16 +1,62 @@
-/**
- * Teen-банк v1: 25 качеств, статичные идентификаторы трейтов.
- * Контент (банк, веса, предметы, ценности) — отдельно, утверждается владельцем.
- * Здесь только таксономия и константы пайплайна.
- */
+/** Teen trait taxonomy and current pipeline contract. */
 
 export const TEEN_VERSION_IDS = {
+  assessment: "t-skills-teen-v2",
+  itemBank: "t-skills-teen-items-v2",
+  traitTaxonomy: "t-skills-teen-traits-v1",
+  scoring: "teen-scoring-v2",
+  stage2: "teen-clarification-v1",
+  careerCatalog: "t-skills-teen-careers-v1",
+  careerMatching: "teen-career-matching-v1",
+  onboarding: "teen-onboarding-v1",
+} as const;
+
+export const TEEN_V1_VERSION_IDS = {
   assessment: "t-skills-teen-v1",
   itemBank: "t-skills-teen-items-v1",
   traitTaxonomy: "t-skills-teen-traits-v1",
   scoring: "teen-scoring-v1",
   stage2: "teen-clarification-v1",
   careerCatalog: "t-skills-teen-careers-v1",
+  careerMatching: "teen-career-matching-v1",
+  onboarding: "teen-onboarding-v1",
+} as const;
+
+export const TEEN_V1_FIX_VERSION_IDS = {
+  ...TEEN_V1_VERSION_IDS,
+  assessment: "t-skills-teen-v1-fix",
+  scoring: "teen-scoring-v2",
+} as const;
+
+/**
+ * Corrected wording revision (2026-10): same 75 pair structure and trait IDs
+ * as v1/v2 source, but short teen-friendly statements from the approved
+ * RU/KK DOCX pair. Display follows the documents verbatim (A left, B right)
+ * with no balancing swaps, so exposure is not 3:3. Scoring convention is
+ * unchanged (teen-scoring-v2: negative selects left, positive selects right).
+ */
+export const TEEN_V3_VERSION_IDS = {
+  assessment: "t-skills-teen-v3",
+  itemBank: "t-skills-teen-items-v3",
+  traitTaxonomy: "t-skills-teen-traits-v1",
+  scoring: "teen-scoring-v2",
+  stage2: "teen-clarification-v1",
+  careerCatalog: "t-skills-teen-careers-v1",
+  careerMatching: "teen-career-matching-v1",
+  onboarding: "teen-onboarding-v1",
+} as const;
+
+/**
+ * Catalog-111 revision: same pairs, layout, scorer, clarification selection
+ * and report shape as v3; profession catalog t-skills-teen-careers-v2.
+ */
+export const TEEN_V4_VERSION_IDS = {
+  assessment: "t-skills-teen-v4",
+  itemBank: "t-skills-teen-items-v4",
+  traitTaxonomy: "t-skills-teen-traits-v1",
+  scoring: "teen-scoring-v2",
+  stage2: "teen-clarification-v1",
+  careerCatalog: "t-skills-teen-careers-v2",
   careerMatching: "teen-career-matching-v1",
   onboarding: "teen-onboarding-v1",
 } as const;

@@ -1,6 +1,8 @@
 # T-Skills project handoff
 
-> Status note (2026-09-17): this handoff contains historical release/deployment evidence from the previous closed-beta identity boundary. The current worktree adds first-party application authentication, versioned legal pages, consent, cookie controls and security hardening. Regenerate the release manifest and deployment evidence after the current worktree is tested and deployed; do not use the historical SHA or Access smoke results as evidence for this source state.
+> Historical note (2026-09-17): earlier release/deployment evidence predates first-party application authentication, legal/cookie hardening and the current T-Skills pathway. The current VPS deployment is recorded separately in `DEPLOYMENT_EVIDENCE.md`; historical Git SHA and Cloudflare Access smoke results do not represent it.
+
+> Audit refresh (2026-10-04): the working tree contains the teen `75+8` runtime and admin/CMS/payment lifecycle changes. The item review found and corrected v1's left/right scoring inversion in v2; v1 reports are warned and unfinished attempts retain their original layout under a corrected internal bridge. The v2 image is deployed on `kz-vps`, identified by image/artifact hashes in `DEPLOYMENT_EVIDENCE.md`. Local checks pass; the worktree remains dirty and has no hosted CI attestation. Keep public paid launch blocked pending legal/operator approval, external security review and psychometric validation.
 
 ## Release status
 
@@ -37,7 +39,7 @@ promptVersion = mercury-adaptive-v1
 - Evidence commit: `see final Git HEAD; source identity is frozen in RELEASE_MANIFEST.json`
 - CI run URL/ID: `NOT AVAILABLE` — the GitHub Actions workflow is committed, but an external hosted run is not available in this task.
 - Runtime: Linux clean-room verification with Node `22.13.0`; package lock SHA-256 `f846fe5a9b09c37f2859af0fe1f281687796991ba015e41e03ad34cd8d0ddf57`
-- Latest migration in the current worktree: `drizzle/0015_steady_thunderbird.sql`
+- Latest migration in the current worktree: `drizzle/0024_teen_scoring_direction_v2.sql`
 - Local release artifact: `/Users/nuras/Desktop/gallup/release-artifacts/orbita-30-source-release-d3ea99f.tar.gz`
 - Archive rule: tracked blobs from the exact source SHA; generated release evidence and this handoff are delivered alongside the archive.
 
@@ -50,7 +52,7 @@ The GitHub + Cloudflare track is defined in `.github/workflows/deploy-staging.ym
 - Closed-beta production Worker: `https://orbita-30-production.bulatulynurasyl22.workers.dev`
 - Hosting project: `.openai/hosting.json` (`appgprj_6aa859a4ac588191b9560deef28958a9`)
 - Source is versioned in Git and published through the Sites `sites` remote.
-- The site remains owner-private until operator configuration is supplied. Protected APIs require a verified first-party application session; the development preview header is accepted only when `ORBITA_ENV=development`.
+- On 2026-10-04, `t-skills.kz` was updated through `kz-vps` to Teen v2 image `a2f14aafdb22…`; migration 0024 is present, and public health/catalog/robots checks confirm the legal gate is closed. One unfinished v1 assessment was migrated to the corrected bridge without changing item layout or answers. Completed v1 reports remain unchanged and are flagged. The deployment came from a dirty worktree, so it is identified by image and runtime artifact hashes rather than a clean Git SHA. Cloudflare staging/production Workers still return Access redirects and have not been redeployed. Protected APIs require a verified first-party session; preview identity is accepted only in a fully local environment.
 - D1 binding is `DB`; R2 binding is `BUCKET`. The custom deploy Worker is `worker/index.ts`; its built `dist/server/index.js` exports both HTTP `fetch` and scheduled retention `scheduled`.
 - Worker requests strip legacy Cloudflare Access/ChatGPT identity headers before application code sees them. Edge access controls, if retained for operations, are an additional boundary and are not the application authentication mechanism.
 - Cron: `0 2 * * *`. Retention defaults to dry-run until explicitly disabled.

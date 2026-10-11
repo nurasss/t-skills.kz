@@ -49,6 +49,7 @@ export type OrbitaRuntimeEnv = {
   LEGAL_CONTACT_ADDRESS?: string;
   LEGAL_CONTACT_PHONE?: string;
   LEGAL_ENTITY_NAME?: string;
+  LEGAL_DOCUMENTS_APPROVED?: string;
   LEGAL_JURISDICTION?: string;
   LEGAL_PROCESSING_PURPOSES?: string;
   LEGAL_DATA_CATEGORIES?: string;

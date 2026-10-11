@@ -1,7 +1,7 @@
-import { getD1 } from "@/db";
+import { getD1, getRuntimeEnv } from "@/db";
 import type { AdminContext, AdminRole } from "@/lib/admin-rbac";
 import { writeAdminAudit } from "@/lib/admin-rbac";
-import { StoreError } from "@/lib/durable-store";
+import { activeCampaignReservationWhere, activePromoReservationWhere, StoreError } from "@/lib/durable-store";
 import {
   validatePromotionDefinition,
   type PromotionDefinition,
@@ -10,8 +10,13 @@ import { T_SKILLS_TEST_ID } from "@/lib/t-skills/versions";
 import { validateCareerCatalog } from "@/lib/t-skills/career";
 import { T_SKILLS_WORKING_TAXONOMY } from "@/lib/t-skills/content-v4";
 import { productionCareerModel } from "@/lib/t-skills/production-career-model";
-import { executableAssessmentVersionReason } from "@/lib/assessment-runtime-registry";
+import { toPublicContentItem, validateCmsPayload } from "@/lib/cms-schemas";
+import { careerRuntimeForAssessmentVersion, executableAssessmentVersionReason } from "@/lib/assessment-runtime-registry";
+import { teenPublishBlockReason } from "@/lib/t-skills/teen/careers";
 import { getPilotAnalytics } from "@/lib/pilot-analytics";
+import { paymentStatusTransitionSqlCase, type PaymentEventStatus } from "@/lib/payment-event-policy";
+import { readBoundedResponseJson } from "@/lib/provider-contract";
+import { readStripeRefundSnapshot, StripeRefundLookupError } from "@/lib/stripe-refunds";
 
 function database() {
   return getD1();
@@ -68,15 +73,15 @@ export async function getAdminOverview() {
     db.prepare(`
       SELECT
         COUNT(*) AS orders,
-        SUM(CASE WHEN status IN ('PAID','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN 1 ELSE 0 END) AS paid_orders,
+        SUM(CASE WHEN status IN ('PAID','PARTIALLY_REFUNDED','REFUND_PENDING','REFUND_FAILED','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN 1 ELSE 0 END) AS paid_orders,
         SUM(CASE WHEN status = 'PAYMENT_FAILED' THEN 1 ELSE 0 END) AS failed_payments,
-        SUM(CASE WHEN status = 'REFUNDED' THEN 1 ELSE 0 END) AS refunds,
-        COALESCE(SUM(CASE WHEN status IN ('PAID','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS revenue,
-        COALESCE(SUM(CASE WHEN status IN ('PAID','REFUNDED','DISPUTED','DISPUTE_CLOSED') AND created_at >= ? THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS revenue_today,
-        COALESCE(SUM(CASE WHEN status IN ('PAID','REFUNDED','DISPUTED','DISPUTE_CLOSED') AND created_at >= ? THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS revenue_7_days,
-        COALESCE(SUM(CASE WHEN status IN ('PAID','REFUNDED','DISPUTED','DISPUTE_CLOSED') AND created_at >= ? THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS revenue_30_days,
-        COALESCE(SUM(CASE WHEN status IN ('PAID','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(discount_amount_minor, 0) ELSE 0 END), 0) AS discounts,
-        COALESCE(AVG(CASE WHEN status IN ('PAID','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(final_amount_minor, amount_minor) END), 0) AS average_order_value
+        SUM(CASE WHEN status IN ('PARTIALLY_REFUNDED','REFUNDED') THEN 1 ELSE 0 END) AS refunds,
+        COALESCE(SUM(CASE WHEN status IN ('PAID','PARTIALLY_REFUNDED','REFUND_PENDING','REFUND_FAILED','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS revenue,
+        COALESCE(SUM(CASE WHEN status IN ('PAID','PARTIALLY_REFUNDED','REFUND_PENDING','REFUND_FAILED','REFUNDED','DISPUTED','DISPUTE_CLOSED') AND created_at >= ? THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS revenue_today,
+        COALESCE(SUM(CASE WHEN status IN ('PAID','PARTIALLY_REFUNDED','REFUND_PENDING','REFUND_FAILED','REFUNDED','DISPUTED','DISPUTE_CLOSED') AND created_at >= ? THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS revenue_7_days,
+        COALESCE(SUM(CASE WHEN status IN ('PAID','PARTIALLY_REFUNDED','REFUND_PENDING','REFUND_FAILED','REFUNDED','DISPUTED','DISPUTE_CLOSED') AND created_at >= ? THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS revenue_30_days,
+        COALESCE(SUM(CASE WHEN status IN ('PAID','PARTIALLY_REFUNDED','REFUND_PENDING','REFUND_FAILED','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(discount_amount_minor, 0) ELSE 0 END), 0) AS discounts,
+        COALESCE(AVG(CASE WHEN status IN ('PAID','PARTIALLY_REFUNDED','REFUND_PENDING','REFUND_FAILED','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(final_amount_minor, amount_minor) END), 0) AS average_order_value
       FROM orders`).bind(Date.now(), Date.now() - 7 * 86400000, Date.now() - 30 * 86400000).first<Record<string, unknown>>(),
     db.prepare(`
       SELECT
@@ -98,15 +103,36 @@ export async function getAdminOverview() {
         SUM(CASE WHEN status = 'DISABLED' THEN 1 ELSE 0 END) AS disabled,
         COALESCE(SUM((SELECT COUNT(*) FROM promo_redemptions r WHERE r.promo_code_id = p.id AND r.status = 'REDEEMED')), 0) AS redemptions,
         COALESCE(SUM((SELECT COALESCE(SUM(discount_amount_minor), 0) FROM promo_redemptions r WHERE r.promo_code_id = p.id AND r.status = 'REDEEMED')), 0) AS discount_total,
-        (SELECT COALESCE(SUM(MAX(c.seat_limit - (SELECT COUNT(*) FROM campaign_members cm WHERE cm.campaign_id = c.id), 0)), 0) FROM campaigns c WHERE c.status = 'ACTIVE') AS remaining_campaign_accesses
-      FROM promo_codes p`).first<Record<string, unknown>>(),
+        (SELECT COALESCE(SUM(MAX(
+          c.seat_limit
+            - (SELECT COUNT(*) FROM campaign_members cm WHERE cm.campaign_id = c.id)
+            - (SELECT COUNT(*) FROM campaign_seat_reservations csr WHERE csr.campaign_id = c.id AND ${activeCampaignReservationWhere()})
+        , 0)), 0) FROM campaigns c WHERE c.status = 'ACTIVE') AS remaining_campaign_accesses
+      FROM promo_codes p`).bind(Date.now()).first<Record<string, unknown>>(),
     db.prepare(`
       SELECT
         SUM(CASE WHEN status = 'REPORT_FAILED_RETRYABLE' THEN 1 ELSE 0 END) AS report_errors,
         (SELECT COUNT(*) FROM payment_events WHERE status = 'PAYMENT_FAILED' AND received_at >= ?) AS payment_errors,
         (SELECT COUNT(*) FROM audit_events WHERE action IN ('AUTH_FAILURE','ADMIN_LOGIN_FAILED') AND created_at >= ?) AS auth_failures,
+        (SELECT COUNT(*) FROM promo_redemptions r JOIN orders o ON o.id = r.order_id WHERE r.status = 'RESERVED' AND r.reservation_expires_at <= ? AND o.provider_checkout_id IS NOT NULL AND o.status <> 'PAYMENT_FAILED') AS overdue_promo_reservations,
+        (SELECT COUNT(*) FROM campaign_seat_reservations csr JOIN orders o ON o.id = csr.order_id WHERE csr.status = 'RESERVED' AND csr.expires_at <= ? AND o.provider_checkout_id IS NOT NULL AND o.status <> 'PAYMENT_FAILED') AS overdue_campaign_reservations,
+        (SELECT COUNT(*) FROM orders WHERE status = 'REFUND_PENDING')
+          + (SELECT COUNT(DISTINCT pe.order_id)
+             FROM payment_events pe JOIN orders o ON o.id = pe.order_id
+             WHERE pe.status = 'REFUND_PENDING' AND o.status = 'PARTIALLY_REFUNDED'
+               AND NOT EXISTS (
+                 SELECT 1 FROM payment_events resolved
+                 WHERE resolved.order_id = pe.order_id
+                   AND (resolved.received_at > pe.received_at OR (resolved.received_at = pe.received_at AND resolved.rowid > pe.rowid))
+                   AND resolved.status IN ('PARTIALLY_REFUNDED','REFUND_FAILED','REFUNDED')
+               )) AS pending_refunds,
+        (SELECT COUNT(DISTINCT failures.order_id) FROM (
+          SELECT order_id FROM payment_events WHERE status = 'REFUND_FAILED' AND received_at >= ?
+          UNION ALL
+          SELECT entity_id AS order_id FROM audit_events WHERE action = 'REFUND_FAILED' AND entity_type = 'order' AND created_at >= ?
+        ) failures) AS failed_refunds,
         (SELECT COUNT(*) FROM purge_jobs WHERE status IN ('FAILED','FAILED_RETRYABLE')) AS purge_errors
-      FROM reports`).bind(Date.now() - 7 * 86400000, Date.now() - 7 * 86400000).first<Record<string, unknown>>(),
+      FROM reports`).bind(Date.now() - 7 * 86400000, Date.now() - 7 * 86400000, Date.now(), Date.now(), Date.now() - 7 * 86400000, Date.now() - 7 * 86400000).first<Record<string, unknown>>(),
     db.prepare(`SELECT product_id, version, status, scoring_version, content_version, career_model_version, report_version, published_at FROM assessment_versions ORDER BY product_id, created_at DESC`).all<Record<string, unknown>>(),
   ]);
   const salesRow = sales ?? {};
@@ -148,6 +174,10 @@ export async function getAdminOverview() {
     systemHealth: {
       reportGenerationErrors: numberValue(health?.report_errors),
       paymentWebhookErrors: numberValue(health?.payment_errors),
+      overduePromoReservations: numberValue(health?.overdue_promo_reservations),
+      overdueCampaignReservations: numberValue(health?.overdue_campaign_reservations),
+      pendingRefunds: numberValue(health?.pending_refunds),
+      failedRefunds: numberValue(health?.failed_refunds),
       purgeJobErrors: numberValue(health?.purge_errors),
       authFailures: numberValue(health?.auth_failures),
     },
@@ -202,7 +232,7 @@ export async function listOrders(request: Request) {
     conditions.push("(o.id LIKE ? OR o.user_id LIKE ? OR lower(u.email) LIKE lower(?))");
     bindings.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
-  if (status && ["PAID", "PENDING", "PAYMENT_PENDING", "PAYMENT_FAILED", "REFUNDED", "DISPUTED"].includes(status)) {
+  if (status && ["PAID", "PENDING", "PAYMENT_PENDING", "PAYMENT_FAILED", "REFUND_PENDING", "PARTIALLY_REFUNDED", "REFUND_FAILED", "REFUNDED", "DISPUTED", "DISPUTE_CLOSED"].includes(status)) {
     conditions.push("o.status = ?");
     bindings.push(status === "PENDING" ? "PAYMENT_PENDING" : status);
   }
@@ -222,14 +252,294 @@ export async function listOrders(request: Request) {
 
 export async function getOrderDetail(orderId: string) {
   const db = database();
-  const [order, events, redemption, entitlement] = await Promise.all([
-    db.prepare(`SELECT o.id, o.user_id, u.email, u.full_name, o.test_id, o.amount_minor, o.original_amount_minor, o.discount_amount_minor, o.final_amount_minor, o.currency, o.status, o.provider, o.provider_checkout_id, o.provider_payment_id, o.provider_event_id, o.promo_code_id, o.campaign_id, o.pricing_snapshot_json, o.created_at, o.updated_at FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = ? LIMIT 1`).bind(orderId).first<Record<string, unknown>>(),
+  const [order, events, redemption, seatReservation, entitlement] = await Promise.all([
+    db.prepare(`SELECT o.id, o.user_id, u.email, u.full_name, o.test_id, o.amount_minor, o.original_amount_minor, o.discount_amount_minor, o.final_amount_minor, o.currency, o.status, o.provider, o.provider_checkout_id, o.provider_checkout_url, o.provider_payment_id, o.provider_event_id, o.promo_code_id, o.campaign_id, o.pricing_snapshot_json, o.created_at, o.updated_at FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = ? LIMIT 1`).bind(orderId).first<Record<string, unknown>>(),
     db.prepare(`SELECT id, provider, event_type, status, received_at FROM payment_events WHERE order_id = ? ORDER BY received_at ASC`).bind(orderId).all<Record<string, unknown>>(),
-    db.prepare(`SELECT id, promo_code_id, user_id, campaign_id, original_amount_minor, discount_amount_minor, final_amount_minor, currency, redeemed_at, status FROM promo_redemptions WHERE order_id = ? LIMIT 1`).bind(orderId).first<Record<string, unknown>>(),
+    db.prepare(`SELECT id, promo_code_id, user_id, campaign_id, original_amount_minor, discount_amount_minor, final_amount_minor, currency, reserved_at, reservation_expires_at, released_at, redeemed_at, status FROM promo_redemptions WHERE order_id = ? LIMIT 1`).bind(orderId).first<Record<string, unknown>>(),
+    db.prepare(`SELECT id, campaign_id, user_id, order_id, checkout_session_id, status, reserved_at, expires_at, claimed_at, released_at, created_at, updated_at FROM campaign_seat_reservations WHERE order_id = ? LIMIT 1`).bind(orderId).first<Record<string, unknown>>(),
     db.prepare(`SELECT id, test_id, grant_source, grant_reference, status, created_at, revoked_at FROM entitlements WHERE order_id = ? LIMIT 1`).bind(orderId).first<Record<string, unknown>>(),
   ]);
   if (!order) throw new StoreError("ORDER_NOT_FOUND", 404);
-  return { order: { ...order, pricingSnapshot: parseJson(order.pricing_snapshot_json as string, null) }, timeline: events.results ?? [], redemption: redemption ?? null, entitlement: entitlement ?? null };
+
+  const timelineEvents: Array<{ title: string; timestamp: number; type: string }> = [];
+  if (order.created_at) {
+    timelineEvents.push({ title: "Order created", timestamp: Number(order.created_at), type: "order_created" });
+  }
+  if (redemption?.reserved_at) {
+    timelineEvents.push({ title: "Promo reserved", timestamp: Number(redemption.reserved_at), type: "promo_reserved" });
+  }
+  if (seatReservation?.reserved_at) {
+    timelineEvents.push({ title: "Campaign seat reserved", timestamp: Number(seatReservation.reserved_at), type: "seat_reserved" });
+  }
+  if (order.provider_checkout_id && order.created_at) {
+    timelineEvents.push({ title: "Stripe Checkout created", timestamp: Number(order.created_at), type: "checkout_created" });
+  }
+  for (const event of events.results ?? []) {
+    const receivedAt = Number(event.received_at);
+    if (event.status === "PAID") {
+      timelineEvents.push({ title: "Payment confirmed", timestamp: receivedAt, type: "payment_confirmed" });
+    } else if (event.status === "PAYMENT_FAILED") {
+      timelineEvents.push({ title: "Payment failed / Checkout expired", timestamp: receivedAt, type: "checkout_expired" });
+    } else if (event.status === "REFUND_PENDING") {
+      timelineEvents.push({ title: "Refund pending", timestamp: receivedAt, type: "refund_pending" });
+    } else if (event.status === "PARTIALLY_REFUNDED") {
+      timelineEvents.push({ title: "Partially refunded", timestamp: receivedAt, type: "partially_refunded" });
+    } else if (event.status === "REFUND_FAILED") {
+      timelineEvents.push({ title: "Refund failed", timestamp: receivedAt, type: "refund_failed" });
+    } else if (event.status === "REFUNDED") {
+      timelineEvents.push({ title: "Order refunded", timestamp: receivedAt, type: "order_refunded" });
+    }
+  }
+  if (redemption?.redeemed_at && redemption.status === "REDEEMED") {
+    timelineEvents.push({ title: "Promo redeemed", timestamp: Number(redemption.redeemed_at), type: "promo_redeemed" });
+  }
+  if (seatReservation?.claimed_at && seatReservation.status === "CLAIMED") {
+    timelineEvents.push({ title: "Campaign seat claimed", timestamp: Number(seatReservation.claimed_at), type: "seat_claimed" });
+  }
+  if (entitlement?.created_at && entitlement.status === "ACTIVE") {
+    timelineEvents.push({ title: "Entitlement issued", timestamp: Number(entitlement.created_at), type: "entitlement_issued" });
+  }
+  if (redemption?.released_at && redemption.status === "RELEASED") {
+    timelineEvents.push({ title: "Promo released", timestamp: Number(redemption.released_at), type: "promo_released" });
+  }
+  if (seatReservation?.released_at && (seatReservation.status === "RELEASED" || seatReservation.status === "EXPIRED")) {
+    timelineEvents.push({ title: "Campaign seat released", timestamp: Number(seatReservation.released_at), type: "seat_released" });
+  }
+  timelineEvents.sort((a, b) => a.timestamp - b.timestamp);
+
+  const paymentConfirmed = (events.results ?? []).find((e) => e.status === "PAID");
+  const checkoutExpired = (events.results ?? []).find((e) => e.status === "PAYMENT_FAILED");
+
+  return {
+    order: {
+      ...order,
+      pricingSnapshot: parseJson(order.pricing_snapshot_json as string, null),
+      reserved_at: redemption?.reserved_at ?? seatReservation?.reserved_at ?? null,
+      reservation_expires_at: redemption?.reservation_expires_at ?? seatReservation?.expires_at ?? null,
+      redeemed_at: redemption?.status === "REDEEMED" ? redemption.redeemed_at : null,
+      released_at: redemption?.released_at ?? seatReservation?.released_at ?? null,
+      checkout_created_at: order.provider_checkout_id ? order.created_at : null,
+      checkout_expired_at: checkoutExpired?.received_at ?? (order.status === "PAYMENT_FAILED" ? order.updated_at : null),
+      payment_confirmed_at: paymentConfirmed?.received_at ?? (["PAID", "PARTIALLY_REFUNDED", "REFUND_PENDING", "REFUND_FAILED", "REFUNDED", "DISPUTED", "DISPUTE_CLOSED"].includes(String(order.status)) ? order.updated_at : null),
+    },
+    timeline: timelineEvents,
+    paymentEvents: events.results ?? [],
+    redemption: redemption ?? null,
+    campaignReservation: seatReservation ?? null,
+    entitlement: entitlement ?? null,
+  };
+}
+
+async function stripeRefundSnapshot(apiKey: string, paymentId: string, currency: string, orderAmount: number) {
+  try {
+    return await readStripeRefundSnapshot({ apiKey, paymentId, currency, orderAmount });
+  } catch (error) {
+    if (error instanceof StripeRefundLookupError && error.reason === "AMOUNT_EXCEEDS_ORDER") {
+      throw new StoreError("PAYMENT_INTEGRITY_MISMATCH", 409);
+    }
+    if (error instanceof StripeRefundLookupError) {
+      console.error("stripe_refund_lookup_error", { error_code: error.reason });
+      throw new StoreError("STRIPE_REFUND_LOOKUP_FAILED", 503);
+    }
+    throw error;
+  }
+}
+
+export async function refundOrder(input: {
+  context: AdminContext;
+  request: Request;
+  orderId: string;
+  reason?: string;
+}) {
+  const db = database();
+  const order = await db.prepare(
+    `SELECT id, user_id, status, amount_minor, currency, provider, provider_payment_id, provider_checkout_id, campaign_id, promo_code_id
+     FROM orders WHERE id = ? LIMIT 1`
+  ).bind(input.orderId).first<{
+    id: string;
+    user_id: string;
+    status: string;
+    amount_minor: number;
+    currency: string;
+    provider: string;
+    provider_payment_id: string | null;
+    provider_checkout_id: string | null;
+    campaign_id: string | null;
+    promo_code_id: string | null;
+  }>();
+
+  if (!order) throw new StoreError("ORDER_NOT_FOUND", 404);
+  if (order.status === "REFUNDED") throw new StoreError("ORDER_ALREADY_REFUNDED", 409);
+  if (order.status === "REFUND_PENDING") throw new StoreError("ORDER_REFUND_IN_PROGRESS", 409);
+  if (order.status !== "PAID" && order.status !== "PARTIALLY_REFUNDED" && order.status !== "REFUND_FAILED") {
+    throw new StoreError("ORDER_NOT_REFUNDABLE", 400);
+  }
+
+  const stripeKey = getRuntimeEnv().STRIPE_SECRET_KEY?.trim();
+  const paymentId = order.provider_payment_id?.trim() ?? "";
+  if (order.provider.trim().toLowerCase() !== "stripe" || (!paymentId.startsWith("pi_") && !paymentId.startsWith("ch_"))) {
+    throw new StoreError("REFUND_PROVIDER_UNSUPPORTED", 422);
+  }
+  if (!stripeKey) throw new StoreError("STRIPE_SECRET_KEY_MISSING", 503);
+
+  const initialStatus = order.status;
+  const providerRefunds = await stripeRefundSnapshot(stripeKey, paymentId, order.currency, order.amount_minor);
+  if (providerRefunds.pending) {
+    await db.prepare(`UPDATE orders SET status = 'REFUND_PENDING', updated_at = ? WHERE id = ? AND status = ?`).bind(Date.now(), input.orderId, initialStatus).run();
+    await writeAdminAudit({
+      context: input.context,
+      request: input.request,
+      action: "REFUND_PENDING",
+      entityType: "order",
+      entityId: input.orderId,
+      metadata: { provider: order.provider, providerStatus: "PENDING_PROVIDER_REFUND" },
+      reason: input.reason ?? null,
+    });
+    throw new StoreError("ORDER_REFUND_IN_PROGRESS", 409);
+  }
+  if (initialStatus === "PARTIALLY_REFUNDED" && providerRefunds.succeededAmount === 0) {
+    throw new StoreError("STRIPE_REFUND_LOOKUP_FAILED", 503);
+  }
+  const remainingAmount = order.amount_minor - providerRefunds.succeededAmount;
+  const claimedAt = Date.now();
+  const claim = await db.prepare(
+    `UPDATE orders SET status = 'REFUND_PENDING', updated_at = ? WHERE id = ? AND status = ?`,
+  ).bind(claimedAt, input.orderId, initialStatus).run();
+  if (!claim.meta.changes) {
+    const current = await db.prepare(`SELECT status FROM orders WHERE id = ? LIMIT 1`).bind(input.orderId).first<{ status: string }>();
+    if (current?.status === "REFUNDED") throw new StoreError("ORDER_ALREADY_REFUNDED", 409);
+    if (current?.status === "REFUND_PENDING") throw new StoreError("ORDER_REFUND_IN_PROGRESS", 409);
+    throw new StoreError("ORDER_NOT_REFUNDABLE", 409);
+  }
+
+  const writeRefundAudit = (action: string, afterStatus: string, metadata: Record<string, unknown> = {}) => writeAdminAudit({
+    context: input.context,
+    request: input.request,
+    action,
+    entityType: "order",
+    entityId: input.orderId,
+    metadata: {
+      before: { status: initialStatus },
+      after: { status: afterStatus },
+      provider: order.provider,
+      ...metadata,
+    },
+    reason: input.reason ?? null,
+  });
+
+  const markRefundFailed = async (providerStatus: string) => {
+    const failureStatus: PaymentEventStatus = providerRefunds.succeededAmount > 0 ? "PARTIALLY_REFUNDED" : "REFUND_FAILED";
+    await db.prepare(
+      `UPDATE orders SET status = ${paymentStatusTransitionSqlCase(failureStatus)}, updated_at = ? WHERE id = ?`,
+    ).bind(Date.now(), input.orderId).run();
+    await writeRefundAudit("REFUND_FAILED", failureStatus, { providerStatus });
+  };
+
+  const finalizeRefund = async (refundAmount: number, providerRefundId: string | null, cumulativeAmount = providerRefunds.succeededAmount + refundAmount) => {
+    const fullRefund = cumulativeAmount >= order.amount_minor;
+    const resultingStatus: PaymentEventStatus = fullRefund ? "REFUNDED" : "PARTIALLY_REFUNDED";
+    const timestamp = Date.now();
+    const statements = [
+      db.prepare(`UPDATE orders SET status = ${paymentStatusTransitionSqlCase(resultingStatus)}, updated_at = ? WHERE id = ?`).bind(timestamp, input.orderId),
+    ];
+    if (fullRefund) {
+      statements.push(
+        db.prepare(`UPDATE entitlements SET status = 'REVOKED', revoked_at = ? WHERE order_id = ? AND status = 'ACTIVE'`).bind(timestamp, input.orderId),
+        db.prepare(`UPDATE campaign_seat_reservations SET status = 'RELEASED', released_at = ?, updated_at = ? WHERE order_id = ? AND status IN ('RESERVED', 'CLAIMED')`).bind(timestamp, timestamp, input.orderId),
+        db.prepare(`DELETE FROM campaign_members WHERE entitlement_id IN (SELECT id FROM entitlements WHERE order_id = ?)`).bind(input.orderId),
+        db.prepare(`UPDATE promo_redemptions SET status = 'RELEASED', released_at = ? WHERE order_id = ? AND status = 'RESERVED'`).bind(timestamp, input.orderId),
+      );
+    }
+    await db.batch(statements);
+    await writeRefundAudit(providerRefunds.succeededAmount === order.amount_minor ? "REFUND_RECONCILED" : fullRefund ? "REFUND_PERFORMED" : "REFUND_PARTIAL", resultingStatus, {
+      userId: order.user_id,
+      amountMinor: refundAmount,
+      cumulativeAmountMinor: cumulativeAmount,
+      currency: order.currency,
+      providerRefundId,
+      providerPaymentId: order.provider_payment_id,
+      campaignId: order.campaign_id,
+      promoCodeId: order.promo_code_id,
+    });
+    return getOrderDetail(input.orderId);
+  };
+
+  if (remainingAmount === 0) {
+    return finalizeRefund(0, providerRefunds.latestSucceededId, providerRefunds.succeededAmount);
+  }
+
+  const form = new URLSearchParams();
+  form.set(paymentId.startsWith("ch_") ? "charge" : "payment_intent", paymentId);
+  form.set("amount", String(remainingAmount));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  let response: Response;
+  try {
+    response = await fetch("https://api.stripe.com/v1/refunds", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Idempotency-Key": `orbita-refund-${crypto.randomUUID()}`,
+      },
+      signal: controller.signal,
+      body: form.toString(),
+    });
+  } catch {
+    console.error("stripe_refund_network_error", { error_code: "STRIPE_REFUND_OUTCOME_UNKNOWN" });
+    await writeRefundAudit("REFUND_PENDING", "REFUND_PENDING", { providerStatus: "OUTCOME_UNKNOWN" });
+    throw new StoreError("STRIPE_REFUND_PENDING", 503);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response.ok) {
+    console.error("stripe_refund_error", { status: response.status });
+    if (response.status < 500) {
+      await markRefundFailed(`HTTP_${response.status}`);
+      throw new StoreError("STRIPE_REFUND_FAILED", 502);
+    }
+    await writeRefundAudit("REFUND_PENDING", "REFUND_PENDING", { providerStatus: `HTTP_${response.status}` });
+    throw new StoreError("STRIPE_REFUND_PENDING", 503);
+  }
+
+  let refund: { id?: unknown; status?: unknown; amount?: unknown; currency?: unknown };
+  try {
+    refund = await readBoundedResponseJson(response, 32 * 1024) as typeof refund;
+  } catch {
+    console.error("stripe_refund_response_invalid", { error_code: "STRIPE_REFUND_RESPONSE_INVALID" });
+    await writeRefundAudit("REFUND_PENDING", "REFUND_PENDING", { providerStatus: "RESPONSE_INVALID" });
+    throw new StoreError("STRIPE_REFUND_PENDING", 503);
+  }
+
+  const refundStatus = typeof refund.status === "string" ? refund.status.toLowerCase() : "";
+  const refundAmount = typeof refund.amount === "number" ? refund.amount : NaN;
+  const refundCurrency = typeof refund.currency === "string" ? refund.currency.toUpperCase() : "";
+  const refundSnapshotValid =
+    typeof refund.id === "string" && refund.id.startsWith("re_") &&
+    Number.isSafeInteger(refundAmount) && refundAmount > 0 && refundAmount <= remainingAmount &&
+    refundCurrency === order.currency.trim().toUpperCase();
+  if (!refundSnapshotValid || !["pending", "requires_action", "succeeded", "failed", "canceled"].includes(refundStatus)) {
+    console.error("stripe_refund_response_invalid", { error_code: "STRIPE_REFUND_RESPONSE_INVALID" });
+    await writeRefundAudit("REFUND_PENDING", "REFUND_PENDING", { providerStatus: "RESPONSE_INVALID" });
+    throw new StoreError("STRIPE_REFUND_PENDING", 503);
+  }
+
+  if (refundStatus === "pending" || refundStatus === "requires_action") {
+    await writeRefundAudit("REFUND_PENDING", "REFUND_PENDING", {
+      providerRefundId: refund.id,
+      providerStatus: refundStatus,
+      amountMinor: refundAmount,
+    });
+    return getOrderDetail(input.orderId);
+  }
+
+  if (refundStatus === "failed" || refundStatus === "canceled") {
+    await markRefundFailed(refundStatus);
+    throw new StoreError("STRIPE_REFUND_FAILED", 502);
+  }
+
+  return finalizeRefund(refundAmount, refund.id as string);
 }
 
 export async function listEntitlements(request: Request) {
@@ -249,17 +559,17 @@ export async function listEntitlements(request: Request) {
   return { data: rows.results ?? [], pagination: { page, limit, total: numberValue(count?.count), hasNext: offset + (rows.results?.length ?? 0) < numberValue(count?.count) } };
 }
 
-function effectivePromoStatus(row: Record<string, unknown>, uses: number, now = Date.now()) {
+function effectivePromoStatus(row: Record<string, unknown>, capacityUsed: number, now = Date.now()) {
   const storedStatus = String(row.status ?? "DRAFT");
   if (storedStatus !== "ACTIVE") return storedStatus;
   const validUntil = row.valid_until === null || row.valid_until === undefined ? null : numberValue(row.valid_until);
   if (validUntil !== null && validUntil <= now) return "EXPIRED";
   const maxTotalUses = row.max_total_uses === null || row.max_total_uses === undefined ? null : numberValue(row.max_total_uses);
-  if (maxTotalUses !== null && uses >= maxTotalUses) return "EXHAUSTED";
+  if (maxTotalUses !== null && capacityUsed >= maxTotalUses) return "EXHAUSTED";
   return "ACTIVE";
 }
 
-function promoPayload(row: Record<string, unknown>, usage: { uses: number; completed: number; remaining: number | null }, status = effectivePromoStatus(row, usage.uses)) {
+function promoPayload(row: Record<string, unknown>, usage: { uses: number; reserved: number; completed: number; remaining: number | null }, status = effectivePromoStatus(row, usage.uses + usage.reserved)) {
   return {
     id: row.id,
     code: row.code,
@@ -294,13 +604,13 @@ export async function listPromoCodes(request: Request) {
   if (search) { conditions.push("(upper(p.code) LIKE upper(?) OR lower(p.name) LIKE lower(?))"); bindings.push(`%${search}%`, `%${search}%`); }
   const now = Date.now();
   if (status === "ACTIVE") {
-    conditions.push("p.status = 'ACTIVE' AND (p.valid_until IS NULL OR p.valid_until > ?) AND (p.max_total_uses IS NULL OR (SELECT COUNT(*) FROM promo_redemptions r2 WHERE r2.promo_code_id = p.id AND (r2.status = 'REDEEMED' OR (r2.status = 'RESERVED' AND r2.reservation_expires_at > ?))) < p.max_total_uses)");
+    conditions.push(`p.status = 'ACTIVE' AND (p.valid_until IS NULL OR p.valid_until > ?) AND (p.max_total_uses IS NULL OR (SELECT COUNT(*) FROM promo_redemptions r2 WHERE r2.promo_code_id = p.id AND ${activePromoReservationWhere("r2")}) < p.max_total_uses)`);
     bindings.push(now, now);
   } else if (status === "EXPIRED") {
     conditions.push("p.status = 'ACTIVE' AND p.valid_until IS NOT NULL AND p.valid_until <= ?");
     bindings.push(now);
   } else if (status === "EXHAUSTED") {
-    conditions.push("p.status = 'ACTIVE' AND (p.valid_until IS NULL OR p.valid_until > ?) AND p.max_total_uses IS NOT NULL AND (SELECT COUNT(*) FROM promo_redemptions r2 WHERE r2.promo_code_id = p.id AND (r2.status = 'REDEEMED' OR (r2.status = 'RESERVED' AND r2.reservation_expires_at > ?))) >= p.max_total_uses");
+    conditions.push(`p.status = 'ACTIVE' AND (p.valid_until IS NULL OR p.valid_until > ?) AND p.max_total_uses IS NOT NULL AND (SELECT COUNT(*) FROM promo_redemptions r2 WHERE r2.promo_code_id = p.id AND ${activePromoReservationWhere("r2")}) >= p.max_total_uses`);
     bindings.push(now, now);
   } else if (status && ["DISABLED", "DRAFT"].includes(status)) {
     conditions.push("p.status = ?");
@@ -310,13 +620,15 @@ export async function listPromoCodes(request: Request) {
   const count = await database().prepare(`SELECT COUNT(*) AS count FROM promo_codes p WHERE ${where}`).bind(...bindings).first<{ count: number }>();
   const rows = await database().prepare(`
     SELECT p.*, COUNT(r.id) AS uses,
-      SUM(CASE WHEN EXISTS (SELECT 1 FROM assessments a WHERE a.user_id = r.user_id AND a.state = 'COMPLETE') THEN 1 ELSE 0 END) AS completed
+      SUM(CASE WHEN EXISTS (SELECT 1 FROM assessments a WHERE a.user_id = r.user_id AND a.state = 'COMPLETE') THEN 1 ELSE 0 END) AS completed,
+      (SELECT COUNT(*) FROM promo_redemptions r2 WHERE r2.promo_code_id = p.id AND ${activePromoReservationWhere("r2")}) AS reserved
     FROM promo_codes p LEFT JOIN promo_redemptions r ON r.promo_code_id = p.id AND r.status = 'REDEEMED'
-    WHERE ${where} GROUP BY p.id ORDER BY p.created_at DESC LIMIT ? OFFSET ?`).bind(...bindings, limit, offset).all<Record<string, unknown>>();
+    WHERE ${where} GROUP BY p.id ORDER BY p.created_at DESC LIMIT ? OFFSET ?`).bind(Date.now(), ...bindings, limit, offset).all<Record<string, unknown>>();
   const data = (rows.results ?? []).map((row) => {
     const uses = numberValue(row.uses);
+    const reserved = numberValue(row.reserved);
     const max = row.max_total_uses === null ? null : numberValue(row.max_total_uses);
-    return promoPayload(row, { uses, completed: numberValue(row.completed), remaining: max === null ? null : Math.max(0, max - uses) }, effectivePromoStatus(row, uses, now));
+    return promoPayload(row, { uses, reserved, completed: numberValue(row.completed), remaining: max === null ? null : Math.max(0, max - uses - reserved) }, effectivePromoStatus(row, uses + reserved, now));
   });
   return { data, pagination: { page, limit, total: numberValue(count?.count), hasNext: offset + data.length < numberValue(count?.count) } };
 }
@@ -324,10 +636,16 @@ export async function listPromoCodes(request: Request) {
 export async function getPromoCode(promoId: string) {
   const [row, stats] = await Promise.all([
     database().prepare(`SELECT * FROM promo_codes WHERE id = ? LIMIT 1`).bind(promoId).first<Record<string, unknown>>(),
-    database().prepare(`SELECT COUNT(*) AS uses, COALESCE(SUM(discount_amount_minor), 0) AS discount_total, COUNT(DISTINCT user_id) AS users FROM promo_redemptions WHERE promo_code_id = ? AND status = 'REDEEMED'`).bind(promoId).first<Record<string, unknown>>(),
+    database().prepare(`SELECT
+      (SELECT COUNT(*) FROM promo_redemptions WHERE promo_code_id = p.id AND status = 'REDEEMED') AS uses,
+      (SELECT COALESCE(SUM(discount_amount_minor), 0) FROM promo_redemptions WHERE promo_code_id = p.id AND status = 'REDEEMED') AS discount_total,
+      (SELECT COUNT(DISTINCT user_id) FROM promo_redemptions WHERE promo_code_id = p.id AND status = 'REDEEMED') AS users,
+      (SELECT COUNT(*) FROM promo_redemptions r WHERE r.promo_code_id = p.id AND ${activePromoReservationWhere("r")}) AS reserved
+      FROM promo_codes p WHERE p.id = ? LIMIT 1`).bind(Date.now(), promoId).first<Record<string, unknown>>(),
   ]);
   if (!row) throw new StoreError("PROMO_NOT_FOUND", 404);
   const uses = numberValue(stats?.uses);
+  const reserved = numberValue(stats?.reserved);
   const max = row.max_total_uses === null ? null : numberValue(row.max_total_uses);
   const redemptions = await database().prepare(`
     SELECT r.id, r.user_id, u.email, r.order_id, r.campaign_id, r.original_amount_minor,
@@ -337,9 +655,9 @@ export async function getPromoCode(promoId: string) {
     FROM promo_redemptions r JOIN users u ON u.id = r.user_id
     WHERE r.promo_code_id = ? ORDER BY r.redeemed_at DESC LIMIT 200`).bind(promoId).all<Record<string, unknown>>();
   return {
-    promo: promoPayload(row, { uses, completed: redemptions.results?.reduce((sum, current) => sum + numberValue(current.completed_assessments), 0) ?? 0, remaining: max === null ? null : Math.max(0, max - uses) }, effectivePromoStatus(row, uses)),
+    promo: promoPayload(row, { uses, reserved, completed: redemptions.results?.reduce((sum, current) => sum + numberValue(current.completed_assessments), 0) ?? 0, remaining: max === null ? null : Math.max(0, max - uses - reserved) }, effectivePromoStatus(row, uses + reserved)),
     redemptions: redemptions.results ?? [],
-    stats: { uses, discountTotal: numberValue(stats?.discount_total), users: numberValue(stats?.users) },
+    stats: { uses, reserved, discountTotal: numberValue(stats?.discount_total), users: numberValue(stats?.users) },
   };
 }
 
@@ -405,15 +723,52 @@ export async function updatePromo(input: { context: AdminContext; request: Reque
   } catch (error) {
     throw promotionStoreError(error);
   }
-  const timestamp = Date.now();
+  const timestamp = Math.max(Date.now(), numberValue(current.updated_at) + 1);
   const result = await database().prepare(`UPDATE promo_codes SET code = ?, name = ?, description = ?, discount_type = ?, discount_value = ?, currency = ?, max_total_uses = ?, max_uses_per_user = ?, valid_from = ?, valid_until = ?, minimum_order_amount = ?, new_users_only = ?, allowed_test_ids_json = ?, allowed_email_domains_json = ?, allowed_user_ids_json = ?, campaign_id = ?, status = ?, updated_by = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
     .bind(normalized.code, normalized.name.trim(), normalized.description ?? "", normalized.discountType, normalized.discountValue, normalized.currency,
       normalized.maxTotalUses ?? null, normalized.maxUsesPerUser ?? null, normalized.validFrom ?? null, normalized.validUntil ?? null, normalized.minimumOrderAmount ?? null,
       normalized.newUsersOnly ? 1 : 0, JSON.stringify(normalized.allowedTestIds ?? []), JSON.stringify(normalized.allowedEmailDomains ?? []), JSON.stringify(normalized.allowedUserIds ?? []), normalized.campaignId ?? null,
       input.data.status ?? current.status, input.context.viewer.userId, timestamp, input.promoId, current.updated_at).run();
   if ((result.meta?.changes ?? 0) !== 1) throw new StoreError("RESOURCE_CHANGED", 409);
-  await writeAdminAudit({ context: input.context, request: input.request, action: input.data.status === "DISABLED" ? "PROMO_DISABLED" : "PROMO_UPDATED", entityType: "promo_code", entityId: input.promoId, metadata: { code: normalized.code }, reason: String(input.data.reason ?? "") || null });
+  await writeAdminAudit({
+    context: input.context,
+    request: input.request,
+    action: input.data.status === "DISABLED" ? "PROMO_DEACTIVATED" : "PROMO_UPDATED",
+    entityType: "promo_code",
+    entityId: input.promoId,
+    metadata: {
+      code: normalized.code,
+      before: { status: current.status },
+      after: { status: input.data.status ?? current.status },
+    },
+    reason: String(input.data.reason ?? "") || null,
+  });
   return getPromoCode(input.promoId);
+}
+
+export async function deletePromo(input: { context: AdminContext; request: Request; promoId: string; reason?: string }) {
+  const current = await database().prepare(`SELECT * FROM promo_codes WHERE id = ? LIMIT 1`).bind(input.promoId).first<Record<string, unknown>>();
+  if (!current) throw new StoreError("PROMO_NOT_FOUND", 404);
+  const redemptionsCount = await database().prepare(`SELECT COUNT(*) as c FROM promo_redemptions WHERE promo_code_id = ?`).bind(input.promoId).first<{ c: number }>();
+  const now = Date.now();
+  if ((redemptionsCount?.c ?? 0) > 0) {
+    await database().prepare(`UPDATE promo_codes SET status = 'DISABLED', updated_at = ?, updated_by = ? WHERE id = ?`).bind(now, input.context.viewer.userId, input.promoId).run();
+  } else {
+    await database().prepare(`DELETE FROM promo_codes WHERE id = ?`).bind(input.promoId).run();
+  }
+  await writeAdminAudit({
+    context: input.context,
+    request: input.request,
+    action: "PROMO_DELETED",
+    entityType: "promo_code",
+    entityId: input.promoId,
+    metadata: {
+      before: { code: current.code, status: current.status },
+      after: { status: "DELETED" },
+    },
+    reason: input.reason ?? null,
+  });
+  return { id: input.promoId, deleted: true };
 }
 
 export async function listCampaigns(request: Request) {
@@ -426,30 +781,52 @@ export async function listCampaigns(request: Request) {
   if (status) { conditions.push("c.status = ?"); bindings.push(status); }
   const where = conditions.join(" AND ");
   const count = await database().prepare(`SELECT COUNT(*) AS count FROM campaigns c WHERE ${where}`).bind(...bindings).first<{ count: number }>();
+  const now = Date.now();
   const rows = await database().prepare(`
     SELECT c.*, COUNT(DISTINCT cm.user_id) AS activated,
       COUNT(DISTINCT CASE WHEN a.state NOT IN ('CREATED','CANCELLED','INVALIDATED') THEN a.user_id END) AS started,
       COUNT(DISTINCT CASE WHEN a.state = 'COMPLETE' THEN a.user_id END) AS completed,
-      COUNT(DISTINCT CASE WHEN a.state = 'COMPLETE' AND a.report_id IS NOT NULL THEN a.user_id END) AS reports
+      COUNT(DISTINCT CASE WHEN a.state = 'COMPLETE' AND a.report_id IS NOT NULL THEN a.user_id END) AS reports,
+      (SELECT COUNT(*) FROM campaign_seat_reservations csr WHERE csr.campaign_id = c.id AND ${activeCampaignReservationWhere()}) AS reserved
     FROM campaigns c LEFT JOIN campaign_members cm ON cm.campaign_id = c.id
       LEFT JOIN assessments a ON a.user_id = cm.user_id
-    WHERE ${where} GROUP BY c.id ORDER BY c.created_at DESC LIMIT ? OFFSET ?`).bind(...bindings, limit, offset).all<Record<string, unknown>>();
-  const data = (rows.results ?? []).map((row) => ({ ...row, unused: Math.max(0, numberValue(row.seat_limit) - numberValue(row.activated)) }));
+    WHERE ${where} GROUP BY c.id ORDER BY c.created_at DESC LIMIT ? OFFSET ?`).bind(now, ...bindings, limit, offset).all<Record<string, unknown>>();
+  const data = (rows.results ?? []).map((row) => ({
+    ...row,
+    reserved: numberValue(row.reserved),
+    unused: Math.max(0, numberValue(row.seat_limit) - numberValue(row.activated) - numberValue(row.reserved)),
+  }));
   return { data, pagination: { page, limit, total: numberValue(count?.count), hasNext: offset + data.length < numberValue(count?.count) } };
 }
 
 export async function getCampaign(campaignId: string) {
   const campaign = await database().prepare(`SELECT * FROM campaigns WHERE id = ? LIMIT 1`).bind(campaignId).first<Record<string, unknown>>();
   if (!campaign) throw new StoreError("CAMPAIGN_NOT_FOUND", 404);
-  const [promoCodes, members] = await Promise.all([
+  const [promoCodes, members, reservations] = await Promise.all([
     database().prepare(`SELECT id, code, name, status, discount_type, discount_value, max_total_uses FROM promo_codes WHERE campaign_id = ? ORDER BY created_at DESC`).bind(campaignId).all<Record<string, unknown>>(),
     database().prepare(`SELECT cm.id, cm.user_id, u.email, cm.entitlement_id, cm.created_at, (SELECT COUNT(*) FROM assessments a WHERE a.user_id = cm.user_id AND a.state NOT IN ('CREATED','CANCELLED','INVALIDATED')) AS started, (SELECT COUNT(*) FROM assessments a WHERE a.user_id = cm.user_id AND a.state = 'COMPLETE') AS completed, (SELECT COUNT(*) FROM assessments a WHERE a.user_id = cm.user_id AND a.state = 'COMPLETE' AND a.report_id IS NOT NULL) AS reports FROM campaign_members cm JOIN users u ON u.id = cm.user_id WHERE cm.campaign_id = ? ORDER BY cm.created_at DESC LIMIT 500`).bind(campaignId).all<Record<string, unknown>>(),
+    database().prepare(`SELECT COUNT(*) AS reserved FROM campaign_seat_reservations csr WHERE csr.campaign_id = ? AND ${activeCampaignReservationWhere()}`).bind(campaignId, Date.now()).first<{ reserved: number }>(),
   ]);
   const activated = members.results?.length ?? 0;
+  const reserved = Number(reservations?.reserved ?? 0);
   const started = members.results?.filter((row) => numberValue(row.started) > 0).length ?? 0;
   const completed = members.results?.filter((row) => numberValue(row.completed) > 0).length ?? 0;
   const reportsGenerated = members.results?.reduce((sum, row) => sum + (numberValue(row.reports) > 0 ? 1 : 0), 0) ?? 0;
-  return { campaign, promoCodes: promoCodes.results ?? [], members: members.results ?? [], metrics: { purchasedSeats: campaign.seat_limit, activated, started, completed, reportsGenerated, unused: Math.max(0, numberValue(campaign.seat_limit) - activated), expired: campaign.status === "EXPIRED" ? Math.max(0, numberValue(campaign.seat_limit) - completed) : 0 } };
+  return {
+    campaign,
+    promoCodes: promoCodes.results ?? [],
+    members: members.results ?? [],
+    metrics: {
+      purchasedSeats: campaign.seat_limit,
+      activated,
+      reserved,
+      started,
+      completed,
+      reportsGenerated,
+      unused: Math.max(0, numberValue(campaign.seat_limit) - activated - reserved),
+      expired: campaign.status === "EXPIRED" ? Math.max(0, numberValue(campaign.seat_limit) - completed) : 0,
+    },
+  };
 }
 
 export async function createCampaign(input: { context: AdminContext; request: Request; data: Record<string, unknown> }) {
@@ -464,13 +841,57 @@ export async function createCampaign(input: { context: AdminContext; request: Re
 export async function updateCampaign(input: { context: AdminContext; request: Request; campaignId: string; data: Record<string, unknown> }) {
   const current = await database().prepare(`SELECT * FROM campaigns WHERE id = ? LIMIT 1`).bind(input.campaignId).first<Record<string, unknown>>();
   if (!current) throw new StoreError("CAMPAIGN_NOT_FOUND", 404);
-  if (input.data.expected_updated_at !== undefined && numberValue(input.data.expected_updated_at) !== numberValue(current.updated_at)) throw new StoreError("RESOURCE_CHANGED", 409);
-  const now = Date.now();
-  await database().prepare(`UPDATE campaigns SET name = ?, client_name = ?, client_type = ?, internal_notes = ?, status = ?, seat_limit = ?, seat_usage_policy = ?, valid_from = ?, valid_until = ?, default_test_id = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
-    .bind(input.data.name ?? current.name, input.data.client_name ?? current.client_name, input.data.client_type ?? current.client_type, input.data.internal_notes ?? current.internal_notes,
-      input.data.status ?? current.status, input.data.seat_limit ?? current.seat_limit, input.data.seat_usage_policy ?? current.seat_usage_policy, input.data.valid_from ?? current.valid_from,
-      input.data.valid_until ?? current.valid_until, input.data.default_test_id ?? current.default_test_id, now, input.campaignId, current.updated_at).run();
-  await writeAdminAudit({ context: input.context, request: input.request, action: "CAMPAIGN_UPDATED", entityType: "campaign", entityId: input.campaignId, metadata: { status: input.data.status ?? current.status }, reason: String(input.data.reason ?? "") || null });
+  const now = Math.max(Date.now(), numberValue(current.updated_at) + 1);
+  const targetUpdatedAt = input.data.expected_updated_at !== undefined ? Number(input.data.expected_updated_at) : numberValue(current.updated_at);
+  const newSeatLimit = input.data.seat_limit !== undefined ? Number(input.data.seat_limit) : numberValue(current.seat_limit);
+
+  const result = await database().prepare(
+    `UPDATE campaigns SET name = ?, client_name = ?, client_type = ?, internal_notes = ?, status = ?, seat_limit = ?, seat_usage_policy = ?, valid_from = ?, valid_until = ?, default_test_id = ?, updated_at = ? WHERE id = ? AND updated_at = ?`
+  ).bind(
+    input.data.name ?? current.name,
+    input.data.client_name ?? current.client_name,
+    input.data.client_type ?? current.client_type,
+    input.data.internal_notes ?? current.internal_notes,
+    input.data.status ?? current.status,
+    newSeatLimit,
+    input.data.seat_usage_policy ?? current.seat_usage_policy,
+    input.data.valid_from !== undefined ? input.data.valid_from : current.valid_from,
+    input.data.valid_until !== undefined ? input.data.valid_until : current.valid_until,
+    input.data.default_test_id ?? current.default_test_id,
+    now,
+    input.campaignId,
+    targetUpdatedAt,
+  ).run();
+
+  const affectedRows = result.meta?.changes ?? 0;
+  if (affectedRows === 0) {
+    throw new StoreError("CAMPAIGN_VERSION_CONFLICT", 409);
+  }
+
+  const capacityChanged = input.data.seat_limit !== undefined && Number(input.data.seat_limit) !== Number(current.seat_limit);
+  const metadata: Record<string, unknown> = {
+    status: input.data.status ?? current.status,
+    before: { status: current.status, seatLimit: current.seat_limit, name: current.name },
+    after: { status: input.data.status ?? current.status, seatLimit: newSeatLimit, name: input.data.name ?? current.name },
+  };
+  if (capacityChanged) {
+    metadata.previousCapacity = current.seat_limit;
+    metadata.newCapacity = newSeatLimit;
+  }
+
+  await writeAdminAudit({
+    context: input.context,
+    request: input.request,
+    action: capacityChanged ? "CAMPAIGN_CAPACITY_CHANGED" : "CAMPAIGN_UPDATED",
+    entityType: "campaign",
+    entityId: input.campaignId,
+    metadata,
+    reason: String(input.data.reason ?? "") || null,
+  });
+
+  if ((input.data.status ?? current.status) === "ARCHIVED" && current.status !== "ARCHIVED") {
+    await writeAdminAudit({ context: input.context, request: input.request, action: "CAMPAIGN_ARCHIVED", entityType: "campaign", entityId: input.campaignId, metadata: { previousStatus: current.status }, reason: String(input.data.reason ?? "") || null });
+  }
   return getCampaign(input.campaignId);
 }
 
@@ -590,6 +1011,8 @@ const REQUIRED_CONTENT_FIELDS: Record<string, string[]> = {
   homepage: ["heroPre", "heroLede", "cta"],
   "homepage.hero": ["title", "subtitle", "cta"],
   pricing: ["visiblePrice", "explanatoryCopy"],
+  faq: ["title"],
+  seo: ["title", "description"],
 };
 
 function assertSafeStructuredContent(payload: unknown) {
@@ -611,9 +1034,31 @@ function assertSafeStructuredContent(payload: unknown) {
   visit(payload, "$", 0);
 }
 
+function assertCmsSchema(contentKey: string, payload: Record<string, unknown>) {
+  const result = validateCmsPayload(contentKey, payload);
+  if (!result.ok) throw new StoreError("CMS_SCHEMA_VALIDATION_FAILED", 422);
+}
+
 function assertRequiredContent(contentKey: string, payload: Record<string, unknown>) {
   const required = REQUIRED_CONTENT_FIELDS[contentKey] ?? [];
-  for (const field of required) if (typeof payload[field] !== "string" || !String(payload[field]).trim()) throw new StoreError("CONTENT_REQUIRED_FIELD", 422);
+  for (const field of required) {
+    const val = payload[field];
+    if (val === undefined || val === null || (typeof val === "string" && !val.trim())) {
+      throw new StoreError("CONTENT_REQUIRED_FIELD", 422);
+    }
+  }
+}
+
+export async function getPublishedContent(contentKey: string, locale = "ru"): Promise<Record<string, unknown> | null> {
+  const row = await database().prepare(`
+    SELECT pv.payload_json
+    FROM content_entries e
+    JOIN content_versions pv ON pv.content_key = e.content_key AND pv.locale = e.locale AND pv.version = e.published_version
+    WHERE e.content_key = ? AND e.locale = ?
+    LIMIT 1
+  `).bind(contentKey, locale).first<{ payload_json: string }>();
+  if (!row?.payload_json) return null;
+  return parseJson<Record<string, unknown> | null>(row.payload_json, null);
 }
 
 export async function listContent(request: Request, publicOnly = false) {
@@ -625,7 +1070,23 @@ export async function listContent(request: Request, publicOnly = false) {
   if (contentKey) { conditions.push("e.content_key = ?"); bindings.push(contentKey); }
   if (publicOnly) conditions.push("e.published_version IS NOT NULL");
   const where = conditions.join(" AND ");
+  if (publicOnly) {
+    const rows = await database().prepare(`
+    SELECT e.content_key, e.locale, e.published_version,
+      pv.payload_json AS published_payload_json, pv.published_at AS published_at
+    FROM content_entries e
+    LEFT JOIN content_versions pv ON pv.content_key = e.content_key AND pv.locale = e.locale AND pv.version = e.published_version
+    WHERE ${where} ORDER BY e.content_key ASC LIMIT ? OFFSET ?`).bind(...bindings, limit, offset).all<Record<string, unknown>>();
+    return (rows.results ?? []).map((row) => toPublicContentItem({
+      content_key: row.content_key,
+      locale: row.locale,
+      published_version: row.published_version,
+      published_payload_json: row.published_payload_json,
+      published_at: row.published_at,
+    }));
+  }
   const count = await database().prepare(`SELECT COUNT(*) AS count FROM content_entries e WHERE ${where}`).bind(...bindings).first<{ count: number }>();
+
   const rows = await database().prepare(`
     SELECT e.content_key, e.locale, e.current_version, e.published_version, e.updated_at,
       cv.payload_json AS draft_payload_json, pv.payload_json AS published_payload_json,
@@ -638,32 +1099,50 @@ export async function listContent(request: Request, publicOnly = false) {
     contentKey: row.content_key, locale: row.locale, currentVersion: row.current_version, publishedVersion: row.published_version, updatedAt: row.updated_at,
     draft: parseJson(row.draft_payload_json as string, null), published: parseJson(row.published_payload_json as string, null), draftStatus: row.draft_status, publishedStatus: row.published_status,
   }));
-  return publicOnly ? data : { data, pagination: { page, limit, total: numberValue(count?.count), hasNext: offset + data.length < numberValue(count?.count) } };
+  return { data, pagination: { page, limit, total: numberValue(count?.count), hasNext: offset + data.length < numberValue(count?.count) } };
 }
 
 export async function upsertContentDraft(input: { context: AdminContext; request: Request; data: { content_key: string; locale: string; payload: Record<string, unknown>; expected_version?: number } }) {
   assertSafeStructuredContent(input.data.payload);
+  assertCmsSchema(input.data.content_key, input.data.payload);
   const current = await database().prepare(`SELECT current_version, published_version, updated_at FROM content_entries WHERE content_key = ? AND locale = ? LIMIT 1`).bind(input.data.content_key, input.data.locale).first<{ current_version: number; published_version: number | null; updated_at: number }>();
-  if (input.data.expected_version !== undefined && current && input.data.expected_version !== current.current_version) throw new StoreError("RESOURCE_CHANGED", 409);
+  const expectedVersion = input.data.expected_version;
+  if (expectedVersion === undefined || expectedVersion !== (current?.current_version ?? 0)) throw new StoreError("RESOURCE_CHANGED", 409);
   const nextVersion = (current?.current_version ?? 0) + 1;
-  const now = Date.now();
-  await database().batch([
-    database().prepare(`INSERT INTO content_entries (id, content_key, locale, current_version, published_version, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(content_key, locale) DO UPDATE SET current_version = excluded.current_version, updated_by = excluded.updated_by, updated_at = excluded.updated_at`).bind(id("content"), input.data.content_key, input.data.locale, nextVersion, current?.published_version ?? null, input.context.viewer.userId, now),
-    database().prepare(`INSERT INTO content_versions (id, content_key, locale, version, payload_json, status, created_by, created_at, published_by, published_at) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, NULL, NULL)`).bind(id("contentv"), input.data.content_key, input.data.locale, nextVersion, JSON.stringify(input.data.payload), input.context.viewer.userId, now),
-  ]);
+  const now = Math.max(Date.now(), numberValue(current?.updated_at) + 1);
+  try {
+    await database().batch([
+      database().prepare(`INSERT INTO content_entries (id, content_key, locale, current_version, published_version, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(content_key, locale) DO UPDATE SET current_version = excluded.current_version, updated_by = excluded.updated_by, updated_at = excluded.updated_at WHERE content_entries.current_version = ?`).bind(id("content"), input.data.content_key, input.data.locale, nextVersion, current?.published_version ?? null, input.context.viewer.userId, now, expectedVersion),
+      database().prepare(`INSERT INTO content_versions (id, content_key, locale, version, payload_json, status, created_by, created_at, published_by, published_at) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, NULL, NULL)`).bind(id("contentv"), input.data.content_key, input.data.locale, nextVersion, JSON.stringify(input.data.payload), input.context.viewer.userId, now),
+    ]);
+  } catch (error) {
+    if (/unique|primary key/i.test(String(error))) throw new StoreError("RESOURCE_CHANGED", 409);
+    throw error;
+  }
   await writeAdminAudit({ context: input.context, request: input.request, action: "CONTENT_UPDATED", entityType: "content", entityId: `${input.data.content_key}:${input.data.locale}`, metadata: { version: nextVersion, locale: input.data.locale } });
   return { contentKey: input.data.content_key, locale: input.data.locale, version: nextVersion, status: "DRAFT", payload: input.data.payload };
 }
 
 export async function publishContent(input: { context: AdminContext; request: Request; contentKey: string; data: { locale: string; version: number; reason?: string } }) {
-  const row = await database().prepare(`SELECT payload_json, status FROM content_versions WHERE content_key = ? AND locale = ? AND version = ? LIMIT 1`).bind(input.contentKey, input.data.locale, input.data.version).first<{ payload_json: string; status: string }>();
+  const row = await database().prepare(`
+    SELECT cv.payload_json, cv.status, e.current_version
+    FROM content_versions cv
+    JOIN content_entries e ON e.content_key = cv.content_key AND e.locale = cv.locale
+    WHERE cv.content_key = ? AND cv.locale = ? AND cv.version = ?
+    LIMIT 1`).bind(input.contentKey, input.data.locale, input.data.version).first<{ payload_json: string; status: string; current_version: number }>();
   if (!row) throw new StoreError("CONTENT_VERSION_NOT_FOUND", 404);
+  if ((row.status !== "DRAFT" && row.status !== "REVIEW") || row.current_version !== input.data.version) {
+    throw new StoreError("CONTENT_VERSION_NOT_CURRENT", 409);
+  }
   const payload = parseJson<Record<string, unknown>>(row.payload_json, {});
+  assertSafeStructuredContent(payload);
+  assertCmsSchema(input.contentKey, payload);
   assertRequiredContent(input.contentKey, payload);
   const now = Date.now();
   await database().batch([
-    database().prepare(`UPDATE content_versions SET status = 'PUBLISHED', published_by = ?, published_at = ? WHERE content_key = ? AND locale = ? AND version = ?`).bind(input.context.viewer.userId, now, input.contentKey, input.data.locale, input.data.version),
-    database().prepare(`UPDATE content_entries SET published_version = ?, updated_by = ?, updated_at = ? WHERE content_key = ? AND locale = ?`).bind(input.data.version, input.context.viewer.userId, now, input.contentKey, input.data.locale),
+    database().prepare(`UPDATE content_versions SET status = 'PUBLISHED', published_by = ?, published_at = ? WHERE content_key = ? AND locale = ? AND version = ? AND status IN ('DRAFT','REVIEW') AND EXISTS (SELECT 1 FROM content_entries e WHERE e.content_key = ? AND e.locale = ? AND e.current_version = ?)`).bind(input.context.viewer.userId, now, input.contentKey, input.data.locale, input.data.version, input.contentKey, input.data.locale, input.data.version),
+    database().prepare(`UPDATE content_entries SET published_version = ?, updated_by = ?, updated_at = ? WHERE content_key = ? AND locale = ? AND current_version = ? AND EXISTS (SELECT 1 FROM content_versions cv WHERE cv.content_key = ? AND cv.locale = ? AND cv.version = ? AND cv.status = 'PUBLISHED')`).bind(input.data.version, input.context.viewer.userId, now, input.contentKey, input.data.locale, input.data.version, input.contentKey, input.data.locale, input.data.version),
+    database().prepare(`UPDATE content_versions SET status = 'RETIRED' WHERE content_key = ? AND locale = ? AND status = 'PUBLISHED' AND version <> ? AND EXISTS (SELECT 1 FROM content_entries e WHERE e.content_key = ? AND e.locale = ? AND e.published_version = ?)`).bind(input.contentKey, input.data.locale, input.data.version, input.contentKey, input.data.locale, input.data.version),
   ]);
   await writeAdminAudit({ context: input.context, request: input.request, action: "CONTENT_PUBLISHED", entityType: "content", entityId: `${input.contentKey}:${input.data.locale}`, metadata: { version: input.data.version }, reason: input.data.reason ?? null });
   return { contentKey: input.contentKey, locale: input.data.locale, version: input.data.version, status: "PUBLISHED", payload };
@@ -673,7 +1152,8 @@ export async function restoreContent(input: { context: AdminContext; request: Re
   const row = await database().prepare(`SELECT payload_json FROM content_versions WHERE content_key = ? AND locale = ? AND version = ? LIMIT 1`).bind(input.contentKey, input.data.locale, input.data.version).first<{ payload_json: string }>();
   if (!row) throw new StoreError("CONTENT_VERSION_NOT_FOUND", 404);
   const payload = parseJson<Record<string, unknown>>(row.payload_json, {});
-  return upsertContentDraft({ context: input.context, request: input.request, data: { content_key: input.contentKey, locale: input.data.locale, payload } }).then(async (result) => {
+  const current = await database().prepare(`SELECT current_version FROM content_entries WHERE content_key = ? AND locale = ? LIMIT 1`).bind(input.contentKey, input.data.locale).first<{ current_version: number }>();
+  return upsertContentDraft({ context: input.context, request: input.request, data: { content_key: input.contentKey, locale: input.data.locale, payload, expected_version: current?.current_version ?? 0 } }).then(async (result) => {
     await writeAdminAudit({ context: input.context, request: input.request, action: "CONTENT_RESTORED", entityType: "content", entityId: `${input.contentKey}:${input.data.locale}`, metadata: { sourceVersion: input.data.version, newVersion: result.version }, reason: input.data.reason });
     return result;
   });
@@ -685,16 +1165,22 @@ export async function getPricing() {
 }
 
 export async function updatePricing(input: { context: AdminContext; request: Request; data: Record<string, unknown> }) {
-  const now = Date.now();
   const current = await database().prepare(`SELECT * FROM products WHERE test_id = ? LIMIT 1`).bind(input.data.test_id).first<Record<string, unknown>>();
-  if (current && input.data.expected_updated_at !== undefined && numberValue(input.data.expected_updated_at) !== numberValue(current.updated_at)) throw new StoreError("RESOURCE_CHANGED", 409);
+  const now = Math.max(Date.now(), numberValue(current?.updated_at) + 1);
+  const expectedUpdatedAt = numberValue(input.data.expected_updated_at);
+  if (expectedUpdatedAt !== (current ? numberValue(current.updated_at) : 0)) throw new StoreError("RESOURCE_CHANGED", 409);
   const productId = String(current?.id ?? id("product"));
   const version = numberValue(await database().prepare(`SELECT COALESCE(MAX(version), 0) AS version FROM pricing_versions WHERE product_id = ?`).bind(productId).first<{ version: number }>().then((row) => row?.version)) + 1;
-  await database().batch([
-    database().prepare(`INSERT INTO products (id, test_id, name, status, amount_minor, currency, updated_by, updated_at) VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, ?) ON CONFLICT(test_id) DO UPDATE SET name = excluded.name, amount_minor = excluded.amount_minor, currency = excluded.currency, updated_by = excluded.updated_by, updated_at = excluded.updated_at`).bind(productId, input.data.test_id, input.data.name, input.data.amount_minor, String(input.data.currency).toUpperCase(), input.context.viewer.userId, now),
-    database().prepare(`UPDATE pricing_versions SET status = 'ARCHIVED' WHERE product_id = ? AND status = 'CURRENT'`).bind(productId),
-    database().prepare(`INSERT INTO pricing_versions (id, product_id, version, amount_minor, currency, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, 'CURRENT', ?, ?)`).bind(id("price"), productId, version, input.data.amount_minor, String(input.data.currency).toUpperCase(), input.context.viewer.userId, now),
-  ]);
+  try {
+    await database().batch([
+      database().prepare(`INSERT INTO products (id, test_id, name, status, amount_minor, currency, updated_by, updated_at) VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?, ?) ON CONFLICT(test_id) DO UPDATE SET name = excluded.name, amount_minor = excluded.amount_minor, currency = excluded.currency, updated_by = excluded.updated_by, updated_at = excluded.updated_at WHERE products.updated_at = ?`).bind(productId, input.data.test_id, input.data.name, input.data.amount_minor, String(input.data.currency).toUpperCase(), input.context.viewer.userId, now, expectedUpdatedAt),
+      database().prepare(`UPDATE pricing_versions SET status = 'ARCHIVED' WHERE product_id = ? AND status = 'CURRENT'`).bind(productId),
+      database().prepare(`INSERT INTO pricing_versions (id, product_id, version, amount_minor, currency, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, 'CURRENT', ?, ?)`).bind(id("price"), productId, version, input.data.amount_minor, String(input.data.currency).toUpperCase(), input.context.viewer.userId, now),
+    ]);
+  } catch (error) {
+    if (/unique|primary key/i.test(String(error))) throw new StoreError("RESOURCE_CHANGED", 409);
+    throw error;
+  }
   await writeAdminAudit({ context: input.context, request: input.request, action: "PRICE_CHANGED", entityType: "product", entityId: productId, metadata: { testId: input.data.test_id, amountMinor: input.data.amount_minor, currency: String(input.data.currency).toUpperCase() }, reason: String(input.data.reason) });
   return getPricing();
 }
@@ -760,7 +1246,22 @@ export async function publishCareerCatalog(input: { context: AdminContext; reque
 
 export async function listAssessmentVersions() {
   const rows = await database().prepare(`SELECT v.*, (SELECT COUNT(*) FROM assessments a WHERE json_extract(a.versions_json, '$.assessment') = v.version AND a.state = 'COMPLETE') AS completed_assessments FROM assessment_versions v ORDER BY v.product_id, v.created_at DESC`).all<Record<string, unknown>>();
-  return (rows.results ?? []).map((row) => ({ ...row, metadata: parseJson(row.metadata_json as string, {}) }));
+  return (rows.results ?? []).map((row) => {
+    // Pre-check the same runtime-registry contract the publish endpoint
+    // enforces, so the UI can disable Publish with the block reason upfront.
+    // (The career-model executability check still runs at publish time.)
+    const publishBlockReason = executableAssessmentVersionReason({
+      productId: String(row.product_id),
+      version: String(row.version),
+      scoringVersion: String(row.scoring_version),
+      contentVersion: String(row.content_version),
+      careerModelVersion: String(row.career_model_version),
+      reportVersion: String(row.report_version),
+      adaptiveVersion: row.adaptive_version === null || row.adaptive_version === undefined ? null : String(row.adaptive_version),
+      itemCount: numberValue(row.item_count),
+    });
+    return { ...row, metadata: parseJson(row.metadata_json as string, {}), publishable: publishBlockReason === null, publishBlockReason };
+  });
 }
 
 export async function createAssessmentVersion(input: { context: AdminContext; request: Request; data: Record<string, unknown> }) {
@@ -781,22 +1282,29 @@ export async function publishAssessmentVersion(input: { context: AdminContext; r
   const version = await database().prepare(`SELECT * FROM assessment_versions WHERE id = ? LIMIT 1`).bind(input.versionId).first<Record<string, unknown>>();
   if (!version) throw new StoreError("ASSESSMENT_VERSION_NOT_FOUND", 404);
   if (version.status === "PUBLISHED") return version;
-  if (version.status === "ARCHIVED") throw new StoreError("ASSESSMENT_VERSION_IMMUTABLE", 409);
+  if (version.status !== "DRAFT" && version.status !== "REVIEW") throw new StoreError("ASSESSMENT_VERSION_IMMUTABLE", 409);
   const runtimeReason = executableAssessmentVersionReason({
     productId: String(version.product_id), version: String(version.version), scoringVersion: String(version.scoring_version),
     contentVersion: String(version.content_version), careerModelVersion: String(version.career_model_version),
     reportVersion: String(version.report_version), adaptiveVersion: version.adaptive_version === null ? null : String(version.adaptive_version), itemCount: numberValue(version.item_count),
   });
   if (runtimeReason) throw new StoreError(runtimeReason, 422);
+  // Версионированные каталоги Teen: публикация версии, привязанной
+  // к неопубликованному каталогу (сейчас v2 — ждёт перевод KK p036),
+  // отклоняется здесь, а не в рантайме.
+  const teenCatalogBlock = teenPublishBlockReason(String(version.version));
+  if (teenCatalogBlock) throw new StoreError(teenCatalogBlock, 422);
   const careerModel = await database().prepare(`SELECT config_json FROM career_model_versions WHERE version = ? AND status = 'PUBLISHED' LIMIT 1`).bind(String(version.career_model_version)).first<{ config_json: string }>();
-  if (!careerModel || parseJson<Record<string, unknown>>(careerModel.config_json, {}).runtime !== "built-in:t-skills-career-v1") throw new StoreError("CAREER_MODEL_NOT_EXECUTABLE", 422);
+  if (!careerModel || parseJson<Record<string, unknown>>(careerModel.config_json, {}).runtime !== careerRuntimeForAssessmentVersion(String(version.version))) throw new StoreError("CAREER_MODEL_NOT_EXECUTABLE", 422);
   const now = Date.now();
   await database().batch([
-    database().prepare(`UPDATE assessment_versions SET status = 'RETIRED', retired_at = ? WHERE product_id = ? AND status = 'PUBLISHED'`).bind(now, version.product_id),
     database().prepare(`UPDATE assessment_versions SET status = 'PUBLISHED', published_at = ? WHERE id = ? AND status IN ('DRAFT','REVIEW')`).bind(now, input.versionId),
+    database().prepare(`UPDATE assessment_versions SET status = 'RETIRED', retired_at = ? WHERE product_id = ? AND status = 'PUBLISHED' AND id <> ? AND EXISTS (SELECT 1 FROM assessment_versions target WHERE target.id = ? AND target.status = 'PUBLISHED' AND target.published_at = ?)`).bind(now, version.product_id, input.versionId, input.versionId, now),
   ]);
+  const published = await database().prepare(`SELECT * FROM assessment_versions WHERE id = ? LIMIT 1`).bind(input.versionId).first<Record<string, unknown>>();
+  if (!published || published.status !== "PUBLISHED") throw new StoreError("ASSESSMENT_VERSION_NOT_PUBLISHABLE", 409);
   await writeAdminAudit({ context: input.context, request: input.request, action: "ASSESSMENT_VERSION_PUBLISHED", entityType: "assessment_version", entityId: input.versionId, metadata: { version: version.version, productId: version.product_id }, reason: input.reason });
-  return database().prepare(`SELECT * FROM assessment_versions WHERE id = ?`).bind(input.versionId).first<Record<string, unknown>>();
+  return published;
 }
 
 export async function getAnalytics(request: Request) {
@@ -807,7 +1315,7 @@ export async function getAnalytics(request: Request) {
   const db = database();
   const [events, revenue, assessment, campaigns, pilot] = await Promise.all([
     db.prepare(`SELECT name, COUNT(*) AS count FROM telemetry_events WHERE occurred_at >= ? GROUP BY name ORDER BY count DESC`).bind(since).all<Record<string, unknown>>(),
-    db.prepare(`SELECT currency, COUNT(*) AS orders, COALESCE(SUM(CASE WHEN status IN ('PAID','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS gross, COALESCE(SUM(CASE WHEN status IN ('PAID','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(discount_amount_minor, 0) ELSE 0 END), 0) AS discounts FROM orders WHERE created_at >= ? GROUP BY currency`).bind(since).all<Record<string, unknown>>(),
+    db.prepare(`SELECT currency, COUNT(*) AS orders, COALESCE(SUM(CASE WHEN status IN ('PAID','PARTIALLY_REFUNDED','REFUND_PENDING','REFUND_FAILED','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(final_amount_minor, amount_minor) ELSE 0 END), 0) AS gross, COALESCE(SUM(CASE WHEN status IN ('PAID','PARTIALLY_REFUNDED','REFUND_PENDING','REFUND_FAILED','REFUNDED','DISPUTED','DISPUTE_CLOSED') THEN COALESCE(discount_amount_minor, 0) ELSE 0 END), 0) AS discounts FROM orders WHERE created_at >= ? GROUP BY currency`).bind(since).all<Record<string, unknown>>(),
     db.prepare(`SELECT state, COUNT(*) AS count, AVG(CASE WHEN completed_at IS NOT NULL THEN completed_at - created_at END) AS duration FROM assessments WHERE created_at >= ? GROUP BY state`).bind(since).all<Record<string, unknown>>(),
     db.prepare(`SELECT c.id, c.name, c.seat_limit, COUNT(cm.id) AS activated FROM campaigns c LEFT JOIN campaign_members cm ON cm.campaign_id = c.id WHERE c.created_at >= ? GROUP BY c.id ORDER BY c.created_at DESC LIMIT 100`).bind(since).all<Record<string, unknown>>(),
     getPilotAnalytics(db),
@@ -847,18 +1355,67 @@ export async function assignAdminRole(input: { context: AdminContext; request: R
 
 export async function revokeAdminRole(input: { context: AdminContext; request: Request; data: { user_id: string; role: AdminRole; reason: string } }) {
   const assignment = await database().prepare(`
-    SELECT a.id, u.id AS user_id, r.name AS role
+    SELECT a.id, a.role_id, u.id AS user_id, r.name AS role
     FROM admin_role_assignments a
     JOIN users u ON u.id = a.user_id
     JOIN admin_roles r ON r.id = a.role_id
     WHERE a.user_id = ? AND r.name = ? AND a.disabled_at IS NULL
-    LIMIT 1`).bind(input.data.user_id, input.data.role).first<{ id: string; user_id: string; role: AdminRole }>();
+    LIMIT 1`).bind(input.data.user_id, input.data.role).first<{ id: string; role_id: string; user_id: string; role: AdminRole }>();
   if (!assignment) throw new StoreError("ADMIN_ROLE_ASSIGNMENT_NOT_FOUND", 404);
   const disabledAt = Date.now();
-  const result = await database().prepare(`UPDATE admin_role_assignments SET disabled_at = ? WHERE id = ? AND disabled_at IS NULL`).bind(disabledAt, assignment.id).run();
-  if (!result.meta.changes) throw new StoreError("ADMIN_ROLE_ASSIGNMENT_NOT_FOUND", 404);
+  const result = await database().prepare(`
+    UPDATE admin_role_assignments SET disabled_at = ?
+    WHERE id = ? AND disabled_at IS NULL
+      AND (? <> 'SUPER_ADMIN' OR (
+        SELECT COUNT(*) FROM admin_role_assignments active
+        WHERE active.role_id = ? AND active.disabled_at IS NULL
+      ) > 1)
+  `).bind(disabledAt, assignment.id, assignment.role, assignment.role_id).run();
+  if (!result.meta.changes) {
+    const stillActive = await database().prepare(`SELECT id FROM admin_role_assignments WHERE id = ? AND disabled_at IS NULL LIMIT 1`).bind(assignment.id).first<{ id: string }>();
+    if (stillActive && assignment.role === "SUPER_ADMIN") throw new StoreError("ADMIN_LAST_SUPER_ADMIN", 409);
+    throw new StoreError("ADMIN_ROLE_ASSIGNMENT_NOT_FOUND", 404);
+  }
   await writeAdminAudit({ context: input.context, request: input.request, action: "ADMIN_DISABLED", entityType: "admin_role_assignment", entityId: assignment.id, metadata: { userId: assignment.user_id, role: assignment.role }, reason: input.data.reason });
   return { id: assignment.id, userId: assignment.user_id, role: assignment.role, disabledAt };
+}
+
+export async function listInvites(request: Request) {
+  const { url, limit, page, offset } = pageParams(request);
+  const status = textParam(url, "status");
+  const now = Date.now();
+  const conditions = ["1 = 1"];
+  const bindings: Array<string | number> = [];
+  if (status === "Accepted") {
+    conditions.push("used_at IS NOT NULL");
+  } else if (status === "Expired") {
+    conditions.push("used_at IS NULL AND expires_at <= ?");
+    bindings.push(now);
+  } else if (status === "Pending") {
+    conditions.push("used_at IS NULL AND expires_at > ?");
+    bindings.push(now);
+  }
+  const where = conditions.join(" AND ");
+  const count = await database().prepare(`SELECT COUNT(*) AS count FROM auth_invites WHERE ${where}`).bind(...bindings).first<{ count: number }>();
+  // NOTE: token_hash is the primary key but is never selected or returned.
+  const rows = await database().prepare(`SELECT rowid AS id, email, created_by, created_at, expires_at, used_at FROM auth_invites WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).bind(...bindings, limit, offset).all<Record<string, unknown>>();
+  const data = (rows.results ?? []).map((row) => {
+    const email = String(row.email ?? "");
+    const domain = email.includes("@") ? (email.split("@").pop() ?? "").toLowerCase() : "";
+    const used = row.used_at !== null && row.used_at !== undefined;
+    const expired = !used && numberValue(row.expires_at) <= now;
+    return {
+      id: row.id,
+      email,
+      emailDomain: domain,
+      created_at: row.created_at,
+      expires_at: row.expires_at,
+      used_at: row.used_at,
+      // auth_invites has no revocation column, so "Revoked" never occurs; kept out honestly.
+      status: used ? "Accepted" : expired ? "Expired" : "Pending",
+    };
+  });
+  return { data, pagination: { page, limit, total: numberValue(count?.count), hasNext: offset + data.length < numberValue(count?.count) } };
 }
 
 export async function listAudit(request: Request) {

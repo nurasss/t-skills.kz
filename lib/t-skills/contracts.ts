@@ -89,6 +89,8 @@ export type OnboardingContext = {
   age: number;
   educationLevel: string;
   favoriteSubjects: string[];
+  /** Full value ranking, most important first (current T-Skills Teen pathway). */
+  valueRanking?: string[];
   interests?: string[];
   hobbies?: string[];
   preferredActivities?: string[];

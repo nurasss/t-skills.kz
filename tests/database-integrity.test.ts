@@ -36,6 +36,31 @@ test("database: active role assignment has a true partial uniqueness invariant",
   }
 });
 
+test("database: atomic admin revocation cannot remove the last SUPER_ADMIN", () => {
+  const { database, directory } = migratedDatabase();
+  try {
+    database.prepare("INSERT INTO users (id, email, full_name, role, status, locale, created_at, updated_at, deleted_at) VALUES ('second-super', 'second-super@example.test', 'Second super', 'user', 'active', 'ru', 1, 1, NULL)").run();
+    database.prepare("INSERT INTO admin_role_assignments (id, user_id, role_id, assigned_by, created_at, disabled_at) VALUES ('super-1', 'system_tskills_seed', 'role_super_admin', 'system_tskills_seed', 1, NULL)").run();
+    database.prepare("INSERT INTO admin_role_assignments (id, user_id, role_id, assigned_by, created_at, disabled_at) VALUES ('super-2', 'second-super', 'role_super_admin', 'system_tskills_seed', 1, NULL)").run();
+    const revoke = database.prepare(`
+      UPDATE admin_role_assignments SET disabled_at = ?
+      WHERE id = ? AND disabled_at IS NULL
+        AND (? <> 'SUPER_ADMIN' OR (
+          SELECT COUNT(*) FROM admin_role_assignments active
+          WHERE active.role_id = ? AND active.disabled_at IS NULL
+        ) > 1)
+    `);
+
+    assert.equal(Number(revoke.run(2, "super-1", "SUPER_ADMIN", "role_super_admin").changes), 1);
+    assert.equal(Number(revoke.run(3, "super-2", "SUPER_ADMIN", "role_super_admin").changes), 0);
+    const remaining = database.prepare("SELECT COUNT(*) AS count FROM admin_role_assignments WHERE role_id = 'role_super_admin' AND disabled_at IS NULL").get() as { count: number };
+    assert.equal(remaining.count, 1);
+  } finally {
+    database.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("database: promo reservation is race-safe and released checkout returns the code", () => {
   const { database, directory } = migratedDatabase();
   try {
@@ -48,7 +73,7 @@ test("database: promo reservation is race-safe and released checkout returns the
     }
     const reserve = database.prepare(`INSERT INTO promo_redemptions (id, promo_code_id, user_id, order_id, campaign_id, original_amount_minor, discount_amount_minor, final_amount_minor, currency, reserved_at, reservation_expires_at, released_at, redeemed_at, status)
       SELECT ?, 'promo-1', 'system_tskills_seed', ?, NULL, 1000, 100, 900, 'KZT', 10, 1000, NULL, 10, 'RESERVED'
-      WHERE (SELECT COUNT(*) FROM promo_redemptions r WHERE r.promo_code_id = 'promo-1' AND (r.status = 'REDEEMED' OR (r.status = 'RESERVED' AND r.reservation_expires_at > 10))) < 1`);
+      WHERE (SELECT COUNT(*) FROM promo_redemptions r WHERE r.promo_code_id = 'promo-1' AND (r.status = 'REDEEMED' OR (r.status = 'RESERVED' AND (r.reservation_expires_at > 10 OR EXISTS (SELECT 1 FROM orders o WHERE o.id = r.order_id AND o.provider_checkout_id IS NOT NULL AND o.status <> 'PAYMENT_FAILED'))))) < 1`);
     assert.equal(Number(reserve.run("redemption-1", "order-1").changes), 1);
     assert.equal(Number(reserve.run("redemption-2", "order-2").changes), 0, "parallel contender cannot oversubscribe the last code");
     database.prepare("UPDATE promo_redemptions SET status = 'RELEASED', released_at = 11 WHERE id = 'redemption-1' AND status = 'RESERVED'").run();

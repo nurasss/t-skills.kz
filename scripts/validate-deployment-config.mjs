@@ -40,10 +40,10 @@ for (const [name, environment] of [["staging", staging], ["production", producti
     if (!requiredSecrets.includes(secret)) throw new Error(`DEPLOY_CONFIG_SECRET_NOT_REQUIRED:${name}:${secret}`);
   }
   if (!/^https:\/\//.test(vars.APP_BASE_URL ?? "")) throw new Error(`DEPLOY_CONFIG_APP_BASE_URL_MUST_BE_HTTPS:${name}`);
-  if (!vars.EMAIL_FROM?.trim() || /example\.com|replace|placeholder/i.test(vars.EMAIL_FROM)) {
+  if (!vars.EMAIL_FROM?.trim() || /example\.(?:com|org|net|test)|\.invalid|replace|placeholder/i.test(vars.EMAIL_FROM)) {
     throw new Error(`DEPLOY_CONFIG_EMAIL_FROM_MISSING:${name}`);
   }
-  if (!vars.SECURITY_CONTACT_EMAIL?.trim() || /example\.com|replace|placeholder/i.test(vars.SECURITY_CONTACT_EMAIL)) {
+  if (!vars.SECURITY_CONTACT_EMAIL?.trim() || /example\.(?:com|org|net|test)|\.invalid|replace|placeholder/i.test(vars.SECURITY_CONTACT_EMAIL)) {
     throw new Error(`DEPLOY_CONFIG_SECURITY_CONTACT_MISSING:${name}`);
   }
   const legalKeys = [
@@ -65,9 +65,12 @@ for (const [name, environment] of [["staging", staging], ["production", producti
     "LEGAL_COOKIE_POLICY",
   ];
   for (const key of legalKeys) {
-    if (!vars[key]?.trim() || /ТРЕБУЕТСЯ|REPLACE|PLACEHOLDER/i.test(vars[key])) {
+    if (!vars[key]?.trim() || /ТРЕБУЕТСЯ|REPLACE|PLACEHOLDER|example\.(?:com|org|net|test)|\.invalid/i.test(vars[key])) {
       throw new Error(`DEPLOY_CONFIG_LEGAL_VALUE_MISSING:${name}:${key}`);
     }
+  }
+  if (name === "production" && vars.LEGAL_DOCUMENTS_APPROVED !== "true") {
+    throw new Error("DEPLOY_CONFIG_LEGAL_APPROVAL_REQUIRED:production");
   }
   if (name === "staging" && (vars.AI_ENABLED !== "true" || vars.ADAPTIVE_PROVIDER !== "mercury")) throw new Error("DEPLOY_CONFIG_STAGING_MERCURY_NOT_ENABLED");
   if (name === "production" && (vars.AI_ENABLED !== "false" || !["deterministic", "fallback"].includes(vars.ADAPTIVE_PROVIDER))) throw new Error("DEPLOY_CONFIG_PRODUCTION_MERCURY_MUST_REMAIN_OFF");

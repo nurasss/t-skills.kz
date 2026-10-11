@@ -17,7 +17,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
@@ -192,7 +192,7 @@ function safeKeyPath(root: string, key: string): string {
     }
   }
   const resolved = resolve(root, join(...segments));
-  if (resolved !== root && !resolved.startsWith(`${root}/`)) throw new Error("R2_KEY_INVALID");
+  if (resolved !== root && !resolved.startsWith(root + sep)) throw new Error("R2_KEY_INVALID");
   return resolved;
 }
 

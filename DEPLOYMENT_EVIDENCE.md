@@ -2,7 +2,16 @@
 
 > Product subsequently renamed to T-Skills. This file is preserved as historical evidence of the release that shipped under the ORBITA-30 name; worker, D1/R2 and URL identifiers below are intentionally unchanged.
 
-> Historical-evidence warning (2026-09-17): the deployment records below were produced before the current worktree switched from the dispatch/Cloudflare Access identity boundary to first-party application authentication and added legal/cookie/auth hardening. They are not evidence that the current uncommitted source is deployed. Re-run migrations, deploy both environments and regenerate this file after operator values and secrets are configured.
+> Historical-evidence warning: deployment entries dated through 2026-09-26 describe older source snapshots. The current dirty worktree was manually deployed to the VPS on 2026-10-04; see the final entry. That deployment does not establish hosted CI or Cloudflare Worker staging/production evidence.
+
+## Read-only production observation (2026-10-04)
+
+- `GET https://t-skills.kz/api/health` returned 200 with `environment=production`, payments off, AI off and `entitlementMode=beta-free`.
+- `GET https://t-skills.kz/api/catalog` returned 200 with the active `t-skills-teen-v1`; checkout price is unset and unavailable.
+- The catalog's legal payload returned fallback-like operator facts while `reviewStatus` was empty. `GET /robots.txt` allowed public indexing. This matched the old source default and contradicted the open legal approval record.
+- The Cloudflare staging and production Worker health URLs returned Cloudflare Access redirects (302), so they were not inspected past the access boundary.
+- These were read-only GET requests before the later 2026-10-04 deployment; they did not modify production data. Response headers did not identify a source SHA. The subsequent deployment image and artifact identities are recorded in the final entry below.
+- The source fixes redact unapproved legal values and policy blocks, add a review warning, and block production intake/checkout/indexing until legal values and the approval marker are present. They were deployed to the VPS in the 2026-10-04 entry below.
 
 ## Historical v2 deployment gate
 
@@ -260,3 +269,62 @@ No secret values belong in this file.
 ## VPS production deploy 2026-09-21 (account buttons alignment)
 
 - Rollback: image vps-prev (92bd22e8b957).
+
+## VPS production deploy 2026-09-26 (approved 75 + 8 pathway, t-skills-teen-v1)
+
+- Source: commit bdd2bdf (PR nurasss/orbita-30#1, CI green), synced local -> /opt/t-skills via rsync (same excludes; deploy/vps/.env kept; no deletions).
+- Pre-deploy DB backup: /data/backups/app-pre-teen-20260926.db (in volume) and ~/t-skills-backups/app-pre-teen-20260926.db (host).
+- Previous image preserved as t-skills:vps-prev (c07d8684ee9e); new image built with the shared-proxy compose file; container recreated.
+- Migrations applied on boot: 0022_wonderful_sinister_six, 0023_teen_assessment_version. assessment_versions: t-skills-teen-v1 PUBLISHED, t-skills_pairwise_v1 RETIRED; 7 existing COMPLETE reports untouched.
+- Checks: https://t-skills.kz/api/health 200; /api/catalog assessmentVersion=t-skills-teen-v1; landing shows «75 сравнений и 8 ситуативных»; no errors in app logs.
+- Pre-deploy verification: local Worker/D1 and local VPS build/SQLite end-to-end (onboarding, 75 -> 8, report, PDF).
+- Rollback: docker tag t-skills:vps-prev t-skills:vps && compose up -d app; data: restore app-pre-teen-20260926.db into /data/app.db with the app stopped.
+
+## VPS production deploy 2026-09-26 (PDF career directions page)
+
+- Source: commit 577aae3 (PR nurasss/orbita-30#1, CI green), rsync as above (2 files changed).
+- Rollback images: t-skills:vps-prev (45ce6f0f6f18, first teen deploy) and t-skills:vps-pre-teen (c07d8684ee9e, before t-skills-teen-v1); new image 9ca60b03ce78. Removed 4 unused, untagged old t-skills images (30714d7bcae1, f5d934779c96, c19b12c85dcd, 6e78cb019cdf) to keep the shared host above 2 GB free.
+- Migrations: none pending (applied=0).
+- Production UI test by owner account: onboarding validation (UI + server 422), 75 pairs identical to the client list, 8 situational questions from the pool (RU/KK, no trait id shown), results with values/subjects; test report PDF regenerated: 25 pages incl. «Карьерные направления», methodology «8 ситуативных уточнений».
+
+## VPS production deploy 2026-09-26 (checkout promo code input & secure validation)
+
+- Source: promo input placed under CTA button on /checkout/t-skills with inline apply button, uppercase formatting, rate limiting (10 req/5 min), CSRF protection, and atomic SQLite/D1 redemption.
+- Pre-deploy DB backup: ~/t-skills-backups/app-pre-promo-20260926_123416.db.
+- Rollback: docker tag t-skills:vps-prev t-skills:vps && docker compose -f docker-compose.yml -f docker-compose.shared-proxy.yml up -d app.
+
+## VPS production deploy 2026-10-04 (fail-closed legal and intake gate)
+
+- Target: `kz-vps`, app `tskills-app`, public host `https://t-skills.kz`, shared Caddy proxy. Source was synced over SSH/rsync from branch `feature/orbita-v2-core60-mercury`, based on Git HEAD `8713135038136a7a2608f8ca2102f026a25dc1e2`. The worktree had 157 modified/new paths and was not represented by that commit; no clean source commit or hosted CI run is claimed.
+- `npm run build:vps` passed under Node `22.13.0`. Runtime artifact SHA-256: `82a0773ebb5115484e04c3558530d6cd0feaa0b6cba43a83caa7ba6944db4ab9`. Linux Sharp packages matched the lockfile SHA-512 and passed a Linux-container PNG smoke.
+- New image: `t-skills:vps`, image ID `9229867a173e6e2ad405702f9bbd27d4d20ed246e3d24804a54793a975934ddb`. Previous live image retained as `t-skills:pre-20261004-01` (image ID `1edb62949307b1afc3b9a9310f6a80807bfbd4b35f69b7cc1712c867215f83d6`). The previous `t-skills:rollback-seo-20261003` tag was left intact.
+- Pre-deploy SQLite/files backup, created with the app stopped and stored root-only: `/opt/t-skills-backups/tskills-data-20261004-before-deploy.tgz`, mode `0600`, size 1,107,368 bytes, SHA-256 `c6e2ae503dddbbd0e900d860855a6431598c3b273ddba8dc151e72fc94c2c3c4`.
+- `deploy/vps/.env` was preserved and its permissions tightened to `0600`; no secret values were copied into the workspace or logged. Source rsync excluded environment files, Git data, dependencies, build outputs and application data, and did not delete remote files.
+- Migrations on the production database: `MIGRATE_SQLITE_DONE applied=0`; the deployed schema was already current.
+- Post-deploy checks: homepage, health, catalog, privacy and terms returned `200`; unauthenticated admin overview returned `401`; HSTS, CSP, nosniff and frame denial headers were present. Catalog reports `t-skills-teen-v1`, checkout unavailable, and legal documents unapproved. Health reports `legalDocumentsApproved=false`, `productionDataIntakeEnabled=false`, payments off and AI off. `robots.txt` returns `Disallow: /`; sitemap is empty.
+- This is a safety deployment, not legal approval or launch authorization. New assessments/registration/checkout and indexing remain disabled until real operator/legal values and the signed approval are configured. Public paid launch, Cloudflare Worker environments, hosted CI, MFA and external security review remain open.
+- Rollback image: `docker tag t-skills:pre-20261004-01 t-skills:vps` then `docker compose --project-name vps -f /opt/t-skills/deploy/vps/docker-compose.yml -f /opt/t-skills/deploy/vps/docker-compose.shared-proxy.yml up -d --no-build --force-recreate app`. Database backup is available at the path above; restore only with the app stopped.
+
+## VPS production update 2026-10-04 (Teen v2 scoring correction)
+
+- Target: `kz-vps` / `https://t-skills.kz` / `tskills-app`. Source synced over SSH from dirty worktree on branch `feature/orbita-v2-core60-mercury`, based on HEAD `8713135038136a7a2608f8ca2102f026a25dc1e2`; 165 modified/new paths were present and are not represented by that commit.
+- `npm run build:vps` passed under Node `22.13.0`. Runtime artifact SHA-256: `ec48ded86c95ecb0721c26d685b0c13a23fba429a1f0bc58cbfebcd1be474957`. Linux Sharp binaries matched the package-lock SHA-512 and passed a Linux-container PNG smoke.
+- Current image: `t-skills:vps`, ID `a2f14aafdb22fd5cac1e8961a3d7738a68e327b752f420fcba10ae88379bea6f`. Previous legal-gated image is retained under `t-skills:pre-teen-v2-scorer-20261004`, ID `9229867a173e6e2ad405702f9bbd27d4d20ed246e3d24804a54793a975934ddb`.
+- Migration `0024_teen_scoring_direction_v2` is recorded in `_migrations`. `assessment_versions` shows `t-skills-teen-v2=PUBLISHED`, `t-skills-teen-v1=RETIRED`, `t-skills-teen-v1-fix=RETIRED`. One unfinished v1 session moved to the internal fix bridge; it retains its original layout and saved answers. Completed v1 scores were not rewritten.
+- Recovery snapshot captured while the app was stopped after migration: `/opt/t-skills-backups/tskills-data-post-teen-v2-20261004.tgz`, mode `0600`, 1,107,570 bytes, SHA-256 `37ba6e82a18b22f144a6d87c40cd80e0624ec400fbe44287df9ef544274c1483`. A v1-compatible rollback snapshot was derived from it by reversing only migration 0024's assessment-version metadata: `/opt/t-skills-backups/tskills-data-pre-teen-v2-rollback-20261004.tgz`, mode `0600`, 1,107,560 bytes, SHA-256 `caf243787e49e3b1837e12fd64f50c22435d47953ef9e159ee4d1de951dee808`. The pre-v2 snapshot preserves responses/files; the migrated attempt's `updated_at` remains at the migration timestamp.
+- `.env` content was preserved and remains mode `0600`. Rsync excluded secrets, `.git`, dependencies, build outputs and app data and did not delete remote files.
+- Post-deploy checks: homepage, health, catalog, privacy and terms `200`; unauthenticated admin `401`; security headers present. Catalog reports `t-skills-teen-v2`, checkout unavailable and legal review as draft. Health reports `legalDocumentsApproved=false`, `productionDataIntakeEnabled=false`, payments off and AI off. `robots.txt` is `Disallow: /`; sitemap is empty. The migration row is present and the current process restart reports `MIGRATE_SQLITE_DONE applied=0`.
+- No production assessments or payment transactions were created during validation. V1 completed reports are not recomputed; the result page and newly generated PDFs warn about the scoring error. Already stored PDF blobs are not rewritten. Review findings and unresolved item wording/validation risks are in `TEEN_ASSESSMENT_REVIEW.md`.
+- Rollback is **not image-only** because migration 0024 retires v1 and maps one unfinished attempt to `t-skills-teen-v1-fix`. Stop the app, restore the v1-compatible snapshot above to `vps_tskills-data`, tag `t-skills:pre-teen-v2-scorer-20261004` as `t-skills:vps`, and recreate only `app`. Verify the snapshot/hash before any restore. The deployed legal gate remains closed regardless of this assessment update.
+
+## VPS production deploy 2026-10-04 (Teen scoring fix, `t-skills-teen-v2`)
+
+- Target: `kz-vps` / `https://t-skills.kz` / `tskills-app`, same shared Caddy proxy. Source synced over SSH from dirty worktree on branch `feature/orbita-v2-core60-mercury`, based on Git HEAD `8713135038136a7a2608f8ca2102f026a25dc1e2`; the snapshot contained 165 modified/new paths and is not represented by that commit.
+- Build: `npm run build:vps` passed with Node `22.13.0`. Linux Sharp packages matched package-lock SHA-512 and passed a Linux PNG smoke. Runtime artifact SHA-256: `ec48ded86c95ecb0721c26d685b0c13a23fba429a1f0bc58cbfebcd1be474957`.
+- New current image: `t-skills:vps`, image ID `a2f14aafdb22fd5cac1e8961a3d7738a68e327b752f420fcba10ae88379bea6f`. Previous legal-gated image retained as `t-skills:pre-teen-v2-scorer-20261004`, image ID `9229867a173e6e2ad405702f9bbd27d4d20ed246e3d24804a54793a975934ddb`.
+- Migration `0024_teen_scoring_direction_v2` is recorded in the production `_migrations` table. `assessment_versions` now has `t-skills-teen-v2=PUBLISHED`, `t-skills-teen-v1=RETIRED`, and `t-skills-teen-v1-fix=RETIRED`. One unfinished v1 attempt was moved to the v1-fix bridge; its saved answers and original item layout were retained. Completed v1 scores were not rewritten.
+- Restricted recovery snapshot created with the app stopped after migration 0024: `/opt/t-skills-backups/tskills-data-post-teen-v2-20261004.tgz`, mode `0600`, 1,107,570 bytes, SHA-256 `37ba6e82a18b22f144a6d87c40cd80e0624ec400fbe44287df9ef544274c1483`. The earlier `tskills-data-20261004-before-deploy.tgz` is a pre-safety-deploy snapshot from 04:36 UTC, not an exact v2 rollback snapshot.
+- `.env` contents were preserved; permissions remain `0600`. Rsync excluded env files, `.git`, dependencies, build outputs and application data; it did not delete remote files.
+- Checks against the public host: homepage/health/catalog/privacy/terms 200; unauthenticated admin overview 401; CSP/HSTS/nosniff/frame-denial headers present. Catalog reports `assessmentVersion=t-skills-teen-v2`, `availableForCheckout=false`, legal review as draft. Health reports `legalDocumentsApproved=false`, `productionDataIntakeEnabled=false`, payments off and AI off. `robots.txt` disallows indexing and sitemap is empty. Production migration log on restart reports `applied=0` after the initial v2 startup; the migration table confirms 0024 is present.
+- This deployment fixes new v2 scoring and balances left/right display exposure (3/3 per trait). It does not validate the questionnaire. Existing completed v1 results remain stored and are warned in the result view and regenerated PDFs; already stored PDF objects are not rewritten. No production assessment was created during verification.
+- The previous image is retained, but an image-only rollback is not compatible with migration 0024's v1-fix session metadata. Any rollback must restore a compatible database snapshot with the app stopped; inspect the snapshot date and data delta before restoring. Forward-fix is preferred.

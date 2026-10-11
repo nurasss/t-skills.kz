@@ -29,7 +29,7 @@ import { generateReportContent } from "@/lib/report-provider";
 import { validatePaymentSnapshot } from "@/lib/payment-integrity";
 import { isTelemetryEventName, sanitizeTelemetryMetadata, type TelemetryEventName } from "@/lib/analytics";
 import { canPublishLocale, resolveLocale, type Locale } from "@/lib/i18n";
-import { nextPaymentStatus, paymentTelemetryEvent, type PaymentEventStatus, type PaymentOperationalStatus } from "@/lib/payment-event-policy";
+import { nextPaymentStatus, paymentStatusTransitionSqlCase, paymentTelemetryEvent, type PaymentEventStatus, type PaymentOperationalStatus } from "@/lib/payment-event-policy";
 import { canSessionTransition, type SessionState } from "@/lib/assessment-state-machine";
 import { purgeAfterFrom, retentionDaysFrom } from "@/lib/retention-policy";
 import { deleteAssessmentDataStatements, deleteUserAssessmentDataStatements } from "@/lib/privacy-data-registry";
@@ -44,14 +44,27 @@ import { T_SKILLS_PAIRWISE_ITEM_BY_ID } from "@/lib/t-skills/item-bank";
 import { pairwiseScoreToProfile } from "@/lib/t-skills/profile-adapter";
 import { buildTSkillsReport } from "@/lib/t-skills/report-adapter";
 import { scorePairwiseV1 } from "@/lib/t-skills/scoring";
-import { T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import { isTSkillsTeenVersion, teenVersionIdsForAssessment, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS, T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import {
+  selectTeenClarificationQuestions,
+  teenCareerRanking,
+  teenFinalTotals,
+  teenOnboardingFrom,
+  teenOnboardingIssue,
+  teenPairwiseItemMapForAssessmentVersion,
+  teenPairwiseItemsForAssessmentVersion,
+  teenTopValues,
+  teenTotalsToProfile,
+} from "@/lib/t-skills/teen/runtime";
+import { teenCatalogVersionForSession } from "@/lib/t-skills/teen/careers";
 import { T_SKILLS_V5_VERSION_IDS } from "@/lib/t-skills/v5/versions";
-import { calculatePromotion, normalizePromoCode, type PromotionDefinition } from "@/lib/promotion-engine";
+import { calculatePromotion, normalizePromoCode, type PromotionDefinition, type PromotionDiscountType } from "@/lib/promotion-engine";
 import { matchCareers, validateCareerCatalog } from "@/lib/t-skills/career";
 import { productionCareerCatalog, productionCareerModel } from "@/lib/t-skills/production-career-model";
 import { canonicalOrderIdempotencyPayload as canonicalOrderPayloadObject, serializeOrderIdempotencyPayload, assertSerializedOrderIdempotencyPayloadMatches } from "@/lib/order-idempotency";
 import { executableAssessmentVersionReason } from "@/lib/assessment-runtime-registry";
 import { paymentsFeatureEnabled } from "@/lib/feature-flags";
+import { getDefaultLocale, isCheckoutEnabled } from "@/lib/system-settings";
 
 export type { SessionState } from "@/lib/assessment-state-machine";
 
@@ -82,37 +95,80 @@ export type OrderRecord = {
   testId: string;
   amountMinor: number;
   currency: string;
-  status: "PAYMENT_PENDING" | "PAID" | "PAYMENT_FAILED" | "REFUNDED" | "DISPUTED" | "DISPUTE_CLOSED";
+  status: PaymentOperationalStatus;
   provider: string;
   checkoutUrl: string | null;
   freeAccess: boolean;
   createdAt: string;
 };
 
-const PROMO_RESERVATION_MS = 24 * 60 * 60 * 1000;
+const PROMO_RESERVATION_MS = 32 * 60 * 1000;
 
 async function releaseExpiredPromoReservations(database: ReturnType<typeof ensureDatabase>, timestamp: number) {
-  // Stripe Checkout sessions cannot be completed after their expiry.  Releasing
-  // only an expired reservation keeps a code available after abandonment while
-  // preserving a verified paid order as the source of truth.
+  // Stripe Checkout sessions cannot be completed after their expiry. Releasing
+  // an unattached reservation keeps codes and campaign seats available after
+  // an abandoned checkout. Once a provider session is attached, its signed
+  // expired/failed/succeeded webhook is authoritative: async payments and
+  // webhook retries can legitimately outlive the local reservation timestamp.
   await database.batch([
     database.prepare(
       `UPDATE promo_redemptions
        SET status = 'RELEASED', released_at = ?
-       WHERE status = 'RESERVED' AND reservation_expires_at IS NOT NULL AND reservation_expires_at <= ?`,
+       WHERE status = 'RESERVED' AND reservation_expires_at IS NOT NULL AND reservation_expires_at <= ?
+         AND EXISTS (
+           SELECT 1 FROM orders o
+           WHERE o.id = promo_redemptions.order_id
+             AND (
+               o.status = 'PAYMENT_FAILED'
+               OR (o.status = 'PAYMENT_PENDING' AND o.provider_checkout_id IS NULL)
+             )
+         )`,
     ).bind(timestamp, timestamp),
+    database.prepare(
+      `UPDATE campaign_seat_reservations
+       SET status = 'EXPIRED', released_at = ?, updated_at = ?
+       WHERE status = 'RESERVED' AND expires_at <= ?
+         AND checkout_session_id IS NULL
+         AND EXISTS (
+           SELECT 1 FROM orders o
+           WHERE o.id = campaign_seat_reservations.order_id
+             AND (
+               o.status = 'PAYMENT_FAILED'
+               OR (o.status = 'PAYMENT_PENDING' AND o.provider_checkout_id IS NULL)
+             )
+         )`,
+    ).bind(timestamp, timestamp, timestamp),
     database.prepare(
       `UPDATE orders
        SET status = 'PAYMENT_FAILED', updated_at = ?
-       WHERE status = 'PAYMENT_PENDING' AND id IN (
-         SELECT order_id FROM promo_redemptions WHERE status = 'RELEASED' AND released_at = ?
+       WHERE status = 'PAYMENT_PENDING' AND provider_checkout_id IS NULL AND (
+         id IN (SELECT order_id FROM promo_redemptions WHERE status = 'RELEASED' AND released_at = ?)
+         OR id IN (SELECT order_id FROM campaign_seat_reservations WHERE status = 'EXPIRED' AND released_at = ?)
        )`,
-    ).bind(timestamp, timestamp),
+    ).bind(timestamp, timestamp, timestamp),
   ]);
 }
 
-function activePromoReservationWhere(alias = "r") {
-  return `(${alias}.status = 'REDEEMED' OR (${alias}.status = 'RESERVED' AND ${alias}.reservation_expires_at > ?))`;
+export function activePromoReservationWhere(alias: "r" | "r2" = "r") {
+  return `(${alias}.status = 'REDEEMED' OR (${alias}.status = 'RESERVED' AND (
+    ${alias}.reservation_expires_at > ? OR EXISTS (
+      SELECT 1 FROM orders o
+      WHERE o.id = ${alias}.order_id
+        AND o.provider_checkout_id IS NOT NULL
+        AND o.status <> 'PAYMENT_FAILED'
+    )
+  )))`;
+}
+
+export function activeCampaignReservationWhere(alias: "csr" = "csr") {
+  return `(${alias}.status = 'RESERVED' AND (
+    ${alias}.expires_at > ? OR EXISTS (
+      SELECT 1 FROM orders o
+      WHERE o.id = ${alias}.order_id
+        AND o.provider_checkout_id IS NOT NULL
+        AND o.status <> 'PAYMENT_FAILED'
+    )
+  ))`;
 }
 
 export type ReportRecord = {
@@ -304,8 +360,22 @@ function isTSkillsSession(session: Pick<DurableSession, "versions">) {
     : session.versions.assessment === T_SKILLS_VERSION_IDS.assessment;
 }
 
+function isTeenSession(session: Pick<DurableSession, "versions">) {
+  return isTSkillsTeenVersion(session.versions.assessment);
+}
+
+function tSkillsCoreBank(session: Pick<DurableSession, "versions">) {
+  if (!isTeenSession(session)) return T_SKILLS_PAIRWISE_BANK_V1;
+  return teenPairwiseItemsForAssessmentVersion(session.versions.assessment);
+}
+
+function tSkillsCoreItemById(session: Pick<DurableSession, "versions">) {
+  if (!isTeenSession(session)) return T_SKILLS_PAIRWISE_ITEM_BY_ID;
+  return teenPairwiseItemMapForAssessmentVersion(session.versions.assessment);
+}
+
 function isSessionCoreItem(session: Pick<DurableSession, "versions">, itemId: string) {
-  if (isTSkillsSession(session)) return T_SKILLS_PAIRWISE_ITEM_BY_ID.has(itemId);
+  if (isTSkillsSession(session)) return tSkillsCoreItemById(session).has(itemId);
   return isV2Session(session) ? CORE60_BANK.some((item) => item.id === itemId) : isCoreItem(itemId);
 }
 
@@ -337,7 +407,7 @@ type Core60ItemOrAdaptive = (typeof CORE60_BANK)[number] | GeneratedAdaptiveQues
 
 function validTSkillsResponse(session: DurableSession, itemId: string, value: number) {
   if (!Number.isFinite(value) || !Number.isInteger(value)) return false;
-  if (T_SKILLS_PAIRWISE_ITEM_BY_ID.has(itemId)) return value >= -2 && value <= 2;
+  if (tSkillsCoreItemById(session).has(itemId)) return value >= -2 && value <= 2;
   if (isTSkillsSession(session) && session.adaptiveItemIds.includes(itemId)) return value >= 0 && value <= 3;
   return false;
 }
@@ -495,7 +565,7 @@ async function loadSession(sessionId: string, userId: string): Promise<DurableSe
       validation_status: string;
     }>();
   const adaptiveItems = (questionResult.results ?? []).map((question) => {
-    if (question.format === "career_forced_choice") {
+    if (question.format === "career_forced_choice" || question.format === TEEN_CLARIFICATION_FORMAT) {
       return {
         id: question.question_id,
         prompt: question.prompt,
@@ -577,7 +647,7 @@ async function loadAdaptiveRun(assessmentId: string): Promise<AdaptiveRunRecord 
 }
 
 function nextItemId(session: DurableSession) {
-  const core = isTSkillsSession(session) ? T_SKILLS_PAIRWISE_BANK_V1 : isV2Session(session) ? CORE60_BANK : ITEM_BANK.filter((item) => isCoreItem(item.id));
+  const core = isTSkillsSession(session) ? tSkillsCoreBank(session) : isV2Session(session) ? CORE60_BANK : ITEM_BANK.filter((item) => isCoreItem(item.id));
   const nextCore = core.find((item) => typeof session.responses[item.id] !== "number");
   if (nextCore) return nextCore.id;
   const nextAdaptive = session.adaptiveItemIds.find((itemId) => typeof session.responses[itemId] !== "number");
@@ -587,6 +657,12 @@ function nextItemId(session: DurableSession) {
 export function nextItemIdForSession(session: DurableSession) {
   return nextItemId(session);
 }
+
+export function coreAnsweredForSession(session: DurableSession) {
+  return Object.keys(session.responses).filter((itemId) => isSessionCoreItem(session, itemId)).length;
+}
+
+const TEEN_CLARIFICATION_FORMAT = "teen_situational";
 
 function publicOrder(row: OrderRow): OrderRecord {
   return {
@@ -664,8 +740,12 @@ export async function createPendingOrder(input: {
   provider: string;
   idempotencyKey: string;
   promoCode?: string;
+  campaignId?: string;
 }) {
   await ensureUser(input.viewer);
+  // Business checkout switch (fail-closed): orders are created only when
+  // both the infra flag and the admin business switch agree.
+  if (!(await paymentsFeatureEnabled()) || !(await isCheckoutEnabled())) throw new StoreError("CHECKOUT_DISABLED", 503);
   const database = ensureDatabase();
   const normalizedPromoCode = input.promoCode ? normalizePromoCode(input.promoCode) : null;
   const requestTimestamp = now();
@@ -703,22 +783,25 @@ export async function createPendingOrder(input: {
       throw promotionStoreError(error);
     }
     const usage = await database.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS user_total FROM promo_redemptions r WHERE promo_code_id = ? AND ${activePromoReservationWhere("r")}`).bind(input.viewer.userId, promotion.id, requestTimestamp).first<{ total: number; user_total: number }>();
-    if (promotion.maxTotalUses !== null && promotion.maxTotalUses !== undefined && Number(usage?.total ?? 0) >= promotion.maxTotalUses) throw new StoreError("PROMO_LIMIT_REACHED", 409);
+    if (promotion.maxTotalUses !== null && promotion.maxTotalUses !== undefined && Number(usage?.total ?? 0) >= promotion.maxTotalUses) throw new StoreError("PROMO_USAGE_LIMIT_REACHED", 409);
     if (promotion.maxUsesPerUser !== null && promotion.maxUsesPerUser !== undefined && Number(usage?.user_total ?? 0) >= promotion.maxUsesPerUser) throw new StoreError("PROMO_USER_LIMIT_REACHED", 409);
-    if (promotion.campaignId) {
-      const campaign = await database.prepare(`
-        SELECT c.id, c.status, c.seat_limit, c.valid_from, c.valid_until,
-          (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) AS used,
-          EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = ?) AS already_used
-        FROM campaigns c WHERE c.id = ? LIMIT 1
-      `).bind(input.viewer.userId, promotion.campaignId).first<{ id: string; status: string; seat_limit: number; valid_from: number | null; valid_until: number | null; used: number; already_used: number }>();
-      if (!campaign) throw new StoreError("CAMPAIGN_NOT_FOUND", 404);
-      if (campaign.status !== "ACTIVE") throw new StoreError("CAMPAIGN_NOT_ACTIVE", 409);
-      if (campaign.valid_from !== null && Number(campaign.valid_from) > now()) throw new StoreError("CAMPAIGN_NOT_STARTED", 409);
-      if (campaign.valid_until !== null && Number(campaign.valid_until) <= now()) throw new StoreError("CAMPAIGN_EXPIRED", 409);
-      if (campaign.already_used) throw new StoreError("CAMPAIGN_USER_ALREADY_ACTIVATED", 409);
-      if (Number(campaign.used) >= Number(campaign.seat_limit)) throw new StoreError("CAMPAIGN_SEAT_LIMIT_REACHED", 409);
-    }
+  }
+
+  const targetCampaignId = promotion?.campaignId ?? (input.campaignId ? input.campaignId.trim() : null);
+  if (targetCampaignId) {
+    const campaign = await database.prepare(`
+      SELECT c.id, c.status, c.seat_limit, c.valid_from, c.valid_until,
+        (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) AS claimed,
+        (SELECT COUNT(*) FROM campaign_seat_reservations csr WHERE csr.campaign_id = c.id AND csr.status = 'RESERVED' AND (csr.expires_at > ? OR EXISTS (SELECT 1 FROM orders o WHERE o.id = csr.order_id AND o.provider_checkout_id IS NOT NULL AND o.status <> 'PAYMENT_FAILED'))) AS reserved,
+        EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = ?) AS already_used
+      FROM campaigns c WHERE c.id = ? LIMIT 1
+    `).bind(requestTimestamp, input.viewer.userId, targetCampaignId).first<{ id: string; status: string; seat_limit: number; valid_from: number | null; valid_until: number | null; claimed: number; reserved: number; already_used: number }>();
+    if (!campaign) throw new StoreError("CAMPAIGN_NOT_FOUND", 404);
+    if (campaign.status !== "ACTIVE") throw new StoreError("CAMPAIGN_NOT_ACTIVE", 409);
+    if (campaign.valid_from !== null && Number(campaign.valid_from) > now()) throw new StoreError("CAMPAIGN_NOT_STARTED", 409);
+    if (campaign.valid_until !== null && Number(campaign.valid_until) <= now()) throw new StoreError("CAMPAIGN_EXPIRED", 409);
+    if (campaign.already_used) throw new StoreError("CAMPAIGN_USER_ALREADY_ACTIVATED", 409);
+    if (Number(campaign.claimed) + Number(campaign.reserved) >= Number(campaign.seat_limit)) throw new StoreError("CAMPAIGN_FULL", 409);
   }
 
   const timestamp = requestTimestamp;
@@ -743,7 +826,7 @@ export async function createPendingOrder(input: {
     ).bind(
       orderId, input.viewer.userId, input.testId, calculation.finalAmountMinor,
       calculation.originalAmountMinor, calculation.discountAmountMinor, calculation.finalAmountMinor,
-      input.currency, orderStatus, input.provider, promotion?.id ?? null, promotion?.campaignId ?? null,
+      input.currency, orderStatus, input.provider, promotion?.id ?? null, targetCampaignId,
       snapshot, payload, input.idempotencyKey, timestamp, timestamp,
     ),
   ];
@@ -766,34 +849,61 @@ export async function createPendingOrder(input: {
          ) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
     ).bind(promotion.id, timestamp, timestamp, timestamp, input.viewer.userId, timestamp, redemptionId, promotion.id, input.viewer.userId, orderId,
       promotion.campaignId ?? null, calculation.originalAmountMinor, calculation.discountAmountMinor, calculation.finalAmountMinor, input.currency, timestamp, reservationExpiresAt, null, timestamp, redemptionStatus));
-    if (calculation.freeAccess) {
-      const freeEntitlementId = newId("ent");
-      statements.push(database.prepare(
-        `INSERT INTO entitlements
-          (id, order_id, user_id, test_id, grant_source, grant_reference,
-           promo_code_id, campaign_id, status, created_at, revoked_at, expires_at)
-         VALUES (?, ?, ?, ?, 'promo_free', ?, ?, ?, 'ACTIVE', ?, NULL, NULL)`,
-      ).bind(freeEntitlementId, orderId, input.viewer.userId, input.testId, `promo:${orderId}`, promotion.id, promotion.campaignId ?? null, timestamp));
-      if (promotion.campaignId) {
-        statements.push(database.prepare(`
-          INSERT INTO campaign_members (id, campaign_id, user_id, entitlement_id, created_at)
-          SELECT CASE
-            WHEN c.status = 'ACTIVE'
-             AND (c.valid_from IS NULL OR c.valid_from <= ?)
-             AND (c.valid_until IS NULL OR c.valid_until > ?)
-             AND (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) < c.seat_limit
-             AND NOT EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = ?)
-            THEN ? ELSE NULL END,
-            c.id, ?, e.id, ?
-          FROM campaigns c JOIN entitlements e ON e.id = ?
-          WHERE c.id = ?
-        `).bind(timestamp, timestamp, input.viewer.userId, newId("member"), input.viewer.userId, timestamp, freeEntitlementId, promotion.campaignId));
-      }
+  }
+
+  if (targetCampaignId) {
+    const seatReservationId = newId("seat_res");
+    const seatReservationStatus = calculation.freeAccess ? "CLAIMED" : "RESERVED";
+    const seatReservationExpiresAt = calculation.freeAccess ? timestamp + (365 * 24 * 60 * 60 * 1000) : timestamp + PROMO_RESERVATION_MS;
+    statements.push(database.prepare(
+      `INSERT INTO campaign_seat_reservations
+        (id, campaign_id, user_id, order_id, checkout_session_id, status,
+         reserved_at, expires_at, claimed_at, released_at, created_at, updated_at)
+       VALUES (
+         CASE WHEN (
+           (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = ?) +
+           (SELECT COUNT(*) FROM campaign_seat_reservations csr WHERE csr.campaign_id = ? AND csr.status = 'RESERVED' AND (csr.expires_at > ? OR EXISTS (SELECT 1 FROM orders o WHERE o.id = csr.order_id AND o.provider_checkout_id IS NOT NULL AND o.status <> 'PAYMENT_FAILED')))
+         ) < (SELECT seat_limit FROM campaigns WHERE id = ?)
+         THEN ? ELSE NULL END,
+         ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?)`
+    ).bind(
+      targetCampaignId, targetCampaignId, timestamp, targetCampaignId,
+      seatReservationId,
+      targetCampaignId, input.viewer.userId, orderId,
+      seatReservationStatus, timestamp, seatReservationExpiresAt,
+      calculation.freeAccess ? timestamp : null,
+      timestamp, timestamp,
+    ));
+  }
+
+  if (calculation.freeAccess) {
+    const freeEntitlementId = newId("ent");
+    statements.push(database.prepare(
+      `INSERT INTO entitlements
+        (id, order_id, user_id, test_id, grant_source, grant_reference,
+         promo_code_id, campaign_id, status, created_at, revoked_at, expires_at)
+       VALUES (?, ?, ?, ?, 'promo_free', ?, ?, ?, 'ACTIVE', ?, NULL, NULL)`,
+    ).bind(freeEntitlementId, orderId, input.viewer.userId, input.testId, `promo:${orderId}`, promotion?.id ?? null, targetCampaignId, timestamp));
+    if (targetCampaignId) {
+      statements.push(database.prepare(`
+        INSERT OR IGNORE INTO campaign_members (id, campaign_id, user_id, entitlement_id, created_at)
+        SELECT ?, c.id, ?, e.id, ?
+        FROM campaigns c
+        JOIN entitlements e ON e.id = ?
+        WHERE c.id = ?
+          AND c.status = 'ACTIVE'
+          AND (c.valid_from IS NULL OR c.valid_from <= ?)
+          AND (c.valid_until IS NULL OR c.valid_until > ?)
+          AND (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) < c.seat_limit
+          AND NOT EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = ?)
+      `).bind(newId("member"), input.viewer.userId, timestamp, freeEntitlementId, targetCampaignId, timestamp, timestamp, input.viewer.userId));
     }
   }
+
   try {
     await database.batch(statements);
-  } catch {
+  } catch (err) {
+    const errStr = String(err);
     const race = await database
       .prepare(
         `SELECT id, test_id, amount_minor, currency, status, provider,
@@ -808,12 +918,35 @@ export async function createPendingOrder(input: {
       assertOrderIdempotency(race, payload);
       return { order: publicOrder(race), reused: true };
     }
+    if (errStr.includes("campaign_seat_reservations.id") || errStr.includes("campaign_seat_reservations")) {
+      throw new StoreError("CAMPAIGN_FULL", 409);
+    }
+    if (targetCampaignId) {
+      const cap = await database.prepare(`
+        SELECT c.seat_limit,
+          (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) AS claimed,
+          (SELECT COUNT(*) FROM campaign_seat_reservations csr WHERE csr.campaign_id = c.id AND csr.status = 'RESERVED' AND (csr.expires_at > ? OR EXISTS (SELECT 1 FROM orders o WHERE o.id = csr.order_id AND o.provider_checkout_id IS NOT NULL AND o.status <> 'PAYMENT_FAILED'))) AS reserved
+        FROM campaigns c WHERE c.id = ?
+      `).bind(timestamp, targetCampaignId).first<{ seat_limit: number; claimed: number; reserved: number }>();
+      if (cap && (Number(cap.claimed) + Number(cap.reserved)) >= Number(cap.seat_limit)) {
+        throw new StoreError("CAMPAIGN_FULL", 409);
+      }
+    }
+    if (errStr.includes("promo_redemptions.id") || errStr.includes("promo_redemptions")) {
+      if (promotion) {
+        const usage = await database.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS user_total FROM promo_redemptions r WHERE promo_code_id = ? AND ${activePromoReservationWhere("r")}`).bind(input.viewer.userId, promotion.id, timestamp).first<{ total: number; user_total: number }>();
+        if (promotion.maxUsesPerUser !== null && promotion.maxUsesPerUser !== undefined && Number(usage?.user_total ?? 0) >= promotion.maxUsesPerUser) {
+          throw new StoreError("PROMO_USER_LIMIT_REACHED", 409);
+        }
+      }
+      throw new StoreError("PROMO_USAGE_LIMIT_REACHED", 409);
+    }
     if (promotion) {
       const usage = await database.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS user_total FROM promo_redemptions r WHERE promo_code_id = ? AND ${activePromoReservationWhere("r")}`).bind(input.viewer.userId, promotion.id, timestamp).first<{ total: number; user_total: number }>();
-      if (promotion.maxTotalUses !== null && promotion.maxTotalUses !== undefined && Number(usage?.total ?? 0) >= promotion.maxTotalUses) throw new StoreError("PROMO_LIMIT_REACHED", 409);
+      if (promotion.maxTotalUses !== null && promotion.maxTotalUses !== undefined && Number(usage?.total ?? 0) >= promotion.maxTotalUses) throw new StoreError("PROMO_USAGE_LIMIT_REACHED", 409);
       if (promotion.maxUsesPerUser !== null && promotion.maxUsesPerUser !== undefined && Number(usage?.user_total ?? 0) >= promotion.maxUsesPerUser) throw new StoreError("PROMO_USER_LIMIT_REACHED", 409);
     }
-    console.error("order_insert_failed", { error_code: "ORDER_INSERT_FAILED" });
+    console.error("order_insert_failed", { error_code: "ORDER_INSERT_FAILED", error: errStr });
     throw new StoreError("ORDER_CREATE_FAILED", 500);
   }
   await audit(input.viewer.userId, "ORDER_CREATED", "order", orderId, {
@@ -840,22 +973,180 @@ export async function createPendingOrder(input: {
   };
 }
 
+export type ValidatedPromoInfo = {
+  valid: boolean;
+  code: string;
+  name: string;
+  discountType: PromotionDiscountType;
+  discountValue: number;
+  freeAccess: boolean;
+  message: string;
+};
+
+export async function validatePromoForViewer(input: {
+  viewer: Viewer;
+  code: string;
+  testId?: string;
+}): Promise<ValidatedPromoInfo> {
+  const normalizedPromoCode = normalizePromoCode(input.code);
+  if (!normalizedPromoCode || normalizedPromoCode.length < 3 || normalizedPromoCode.length > 64) {
+    throw new StoreError("PROMO_CODE_INVALID", 422);
+  }
+  await ensureUser(input.viewer);
+  const database = ensureDatabase();
+  const testId = input.testId ?? T_SKILLS_TEST_ID;
+  const requestTimestamp = now();
+  await releaseExpiredPromoReservations(database, requestTimestamp);
+
+  const row = await database
+    .prepare(`SELECT * FROM promo_codes WHERE code = ? LIMIT 1`)
+    .bind(normalizedPromoCode)
+    .first<Record<string, unknown>>();
+
+  if (!row) {
+    await audit(input.viewer.userId, "PROMO_VALIDATE_FAILED", "promo_code", null, { code: normalizedPromoCode, reason: "NOT_FOUND" });
+    throw new StoreError("PROMO_NOT_FOUND", 404);
+  }
+
+  const promotion = promotionFromRow(row);
+  const nowMs = requestTimestamp;
+
+  const history = await database
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM orders WHERE user_id = ? AND status NOT IN ('PAYMENT_FAILED')) AS orders,
+              (SELECT COUNT(*) FROM assessments WHERE user_id = ?) AS assessments`
+    )
+    .bind(input.viewer.userId, input.viewer.userId)
+    .first<{ orders: number; assessments: number }>();
+
+  const pricingRow = await database
+    .prepare(`SELECT amount_minor, currency FROM products WHERE test_id = ? AND status = 'ACTIVE' LIMIT 1`)
+    .bind(testId)
+    .first<{ amount_minor: number; currency: string }>();
+
+  const runtimeEnv = getRuntimeEnv();
+  const configuredCurrency = (runtimeEnv.ASSESSMENT_CURRENCY ?? "KZT").trim().toUpperCase();
+  const currency = pricingRow?.currency ?? (promotion.currency || configuredCurrency || "KZT");
+  const baseAmount = Number(pricingRow?.amount_minor ?? runtimeEnv.ASSESSMENT_PRICE_MINOR ?? "150000");
+  const amountMinor = Number.isSafeInteger(baseAmount) && baseAmount > 0 ? baseAmount : 150000;
+
+  let calculation;
+  try {
+    calculation = calculatePromotion(promotion, {
+      nowMs,
+      userId: input.viewer.userId,
+      email: input.viewer.email,
+      testId,
+      currency,
+      originalAmountMinor: amountMinor,
+      existingUser: Number(history?.orders ?? 0) > 0 || Number(history?.assessments ?? 0) > 0,
+    });
+  } catch (error) {
+    await audit(input.viewer.userId, "PROMO_VALIDATE_FAILED", "promo_code", promotion.id, { code: normalizedPromoCode, reason: String(error) });
+    throw promotionStoreError(error);
+  }
+
+  const usage = await database
+    .prepare(
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS user_total
+       FROM promo_redemptions r
+       WHERE promo_code_id = ? AND ${activePromoReservationWhere("r")}`
+    )
+    .bind(input.viewer.userId, promotion.id, requestTimestamp)
+    .first<{ total: number; user_total: number }>();
+
+  if (promotion.maxTotalUses !== null && promotion.maxTotalUses !== undefined && Number(usage?.total ?? 0) >= promotion.maxTotalUses) {
+    await audit(input.viewer.userId, "PROMO_VALIDATE_FAILED", "promo_code", promotion.id, { code: normalizedPromoCode, reason: "TOTAL_LIMIT_REACHED" });
+    throw new StoreError("PROMO_USAGE_LIMIT_REACHED", 409);
+  }
+  if (promotion.maxUsesPerUser !== null && promotion.maxUsesPerUser !== undefined && Number(usage?.user_total ?? 0) >= promotion.maxUsesPerUser) {
+    await audit(input.viewer.userId, "PROMO_VALIDATE_FAILED", "promo_code", promotion.id, { code: normalizedPromoCode, reason: "USER_LIMIT_REACHED" });
+    throw new StoreError("PROMO_USER_LIMIT_REACHED", 409);
+  }
+
+  if (promotion.campaignId) {
+    const campaign = await database
+      .prepare(
+        `SELECT c.id, c.status, c.seat_limit, c.valid_from, c.valid_until,
+          (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) AS claimed,
+          (SELECT COUNT(*) FROM campaign_seat_reservations csr WHERE csr.campaign_id = c.id AND csr.status = 'RESERVED' AND (csr.expires_at > ? OR EXISTS (SELECT 1 FROM orders o WHERE o.id = csr.order_id AND o.provider_checkout_id IS NOT NULL AND o.status <> 'PAYMENT_FAILED'))) AS reserved,
+          EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = ?) AS already_used
+        FROM campaigns c WHERE c.id = ? LIMIT 1`
+      )
+      .bind(requestTimestamp, input.viewer.userId, promotion.campaignId)
+      .first<{ id: string; status: string; seat_limit: number; valid_from: number | null; valid_until: number | null; claimed: number; reserved: number; already_used: number }>();
+
+    if (!campaign) throw new StoreError("CAMPAIGN_NOT_FOUND", 404);
+    if (campaign.status !== "ACTIVE") throw new StoreError("CAMPAIGN_NOT_ACTIVE", 409);
+    if (campaign.valid_from !== null && Number(campaign.valid_from) > nowMs) throw new StoreError("CAMPAIGN_NOT_STARTED", 409);
+    if (campaign.valid_until !== null && Number(campaign.valid_until) <= nowMs) throw new StoreError("CAMPAIGN_EXPIRED", 409);
+    if (campaign.already_used) throw new StoreError("CAMPAIGN_USER_ALREADY_ACTIVATED", 409);
+    if (Number(campaign.claimed) + Number(campaign.reserved) >= Number(campaign.seat_limit)) throw new StoreError("CAMPAIGN_FULL", 409);
+  }
+
+  await audit(input.viewer.userId, "PROMO_VALIDATED", "promo_code", promotion.id, { code: normalizedPromoCode, discountType: promotion.discountType });
+
+  let message = "Промокод действителен";
+  if (calculation.freeAccess || promotion.discountType === "FREE_ACCESS" || (promotion.discountType === "PERCENT" && promotion.discountValue === 100)) {
+    message = "Промокод предоставляет бесплатный доступ";
+  } else if (promotion.discountType === "PERCENT") {
+    message = `Скидка ${promotion.discountValue}%`;
+  } else if (promotion.discountType === "FIXED_AMOUNT") {
+    message = `Скидка ${new Intl.NumberFormat("ru-RU").format(promotion.discountValue / 100)} KZT`;
+  }
+
+  return {
+    valid: true,
+    code: promotion.code,
+    name: promotion.name,
+    discountType: promotion.discountType,
+    discountValue: promotion.discountValue,
+    freeAccess: calculation.freeAccess,
+    message,
+  };
+}
+
 export async function attachCheckoutSession(input: {
   viewer: Viewer;
   orderId: string;
   providerCheckoutId: string;
   checkoutUrl: string;
+  expiresAt?: number;
 }) {
   const database = ensureDatabase();
-  const result = await database
-    .prepare(
-      `UPDATE orders
-       SET provider_checkout_id = ?, provider_checkout_url = ?, updated_at = ?
-       WHERE id = ? AND user_id = ?`,
-    )
-    .bind(input.providerCheckoutId, input.checkoutUrl, now(), input.orderId, input.viewer.userId)
-    .run();
-  if (!result.success) throw new StoreError("ORDER_UPDATE_FAILED", 500);
+  const timestamp = now();
+  const statements = [
+    database
+      .prepare(
+        `UPDATE orders
+         SET provider_checkout_id = ?, provider_checkout_url = ?, updated_at = ?
+         WHERE id = ? AND user_id = ?`,
+      )
+      .bind(input.providerCheckoutId, input.checkoutUrl, timestamp, input.orderId, input.viewer.userId),
+    database
+      .prepare(
+        `UPDATE campaign_seat_reservations
+         SET checkout_session_id = ?, updated_at = ?
+         WHERE order_id = ?`,
+      )
+      .bind(input.providerCheckoutId, timestamp, input.orderId),
+  ];
+  if (input.expiresAt) {
+    statements.push(
+      database.prepare(
+        `UPDATE promo_redemptions
+         SET reservation_expires_at = MAX(COALESCE(reservation_expires_at, 0), ?)
+         WHERE order_id = ? AND status = 'RESERVED'`,
+      ).bind(input.expiresAt, input.orderId),
+      database.prepare(
+        `UPDATE campaign_seat_reservations
+         SET expires_at = MAX(expires_at, ?), updated_at = ?
+         WHERE order_id = ? AND status = 'RESERVED'`,
+      ).bind(input.expiresAt, timestamp, input.orderId),
+    );
+  }
+  const results = await database.batch(statements);
+  if (!results[0]?.success) throw new StoreError("ORDER_UPDATE_FAILED", 500);
   await audit(input.viewer.userId, "CHECKOUT_SESSION_CREATED", "order", input.orderId);
 }
 
@@ -872,6 +1163,10 @@ export async function markOrderPaymentFailed(orderId: string, reason: string) {
       `UPDATE promo_redemptions SET status = 'RELEASED', released_at = ?
        WHERE order_id = ? AND status = 'RESERVED'`,
     ).bind(timestamp, orderId),
+    database.prepare(
+      `UPDATE campaign_seat_reservations SET status = 'RELEASED', released_at = ?, updated_at = ?
+       WHERE order_id = ? AND status = 'RESERVED'`,
+    ).bind(timestamp, timestamp, orderId),
   ]);
   await audit(null, "PAYMENT_PROVIDER_FAILED", "order", orderId, { reason });
 }
@@ -913,7 +1208,33 @@ export async function handlePaymentEvent(input: {
     .first<PaymentOrderRow>();
   if (!order) throw new StoreError("ORDER_NOT_FOUND", 404);
 
-  if (input.status === "PAID" && !validatePaymentSnapshot({
+  let eventStatus = input.status;
+  if (["REFUND_PENDING", "PARTIALLY_REFUNDED", "REFUNDED", "REFUND_FAILED"].includes(eventStatus)) {
+    const refundAmount = input.amountMinor;
+    const eventCurrency = input.currency?.trim().toUpperCase();
+    const refundSnapshotValid =
+      order.provider.trim().toLowerCase() === "stripe" &&
+      (!input.providerPaymentId || input.providerPaymentId === order.provider_payment_id) &&
+      Number.isSafeInteger(refundAmount) &&
+      (refundAmount ?? 0) > 0 &&
+      (refundAmount ?? 0) <= order.amount_minor &&
+      Boolean(eventCurrency) &&
+      eventCurrency === order.currency.trim().toUpperCase();
+    if (!refundSnapshotValid) {
+      await audit(null, "PAYMENT_EVENT_REJECTED", "order", input.orderId, {
+        providerEventId: input.providerEventId,
+        reason: "REFUND_INTEGRITY_MISMATCH",
+      });
+      throw new StoreError("PAYMENT_INTEGRITY_MISMATCH", 409);
+    }
+    // A single succeeded Refund object can be only one part of a larger
+    // refund. The charge.refunded event supplies the cumulative amount.
+    if (eventStatus === "REFUNDED" && refundAmount !== order.amount_minor) {
+      eventStatus = "PARTIALLY_REFUNDED";
+    }
+  }
+
+  if (eventStatus === "PAID" && !validatePaymentSnapshot({
     provider: order.provider,
     providerCheckoutId: order.provider_checkout_id,
     amountMinor: order.amount_minor,
@@ -935,8 +1256,18 @@ export async function handlePaymentEvent(input: {
 
   const entitlementId = newId("ent");
   const timestamp = now();
-  const nextStatus = nextPaymentStatus(order.status as PaymentOperationalStatus, input.status);
-  const telemetryEvent = paymentTelemetryEvent(input.status);
+  let orderTransitionStatus = eventStatus;
+  if (eventStatus === "REFUND_FAILED" && order.status === "REFUND_PENDING") {
+    const priorPartial = await database.prepare(`
+      SELECT 1 AS present FROM payment_events WHERE order_id = ? AND status = 'PARTIALLY_REFUNDED'
+      UNION ALL
+      SELECT 1 AS present FROM audit_events WHERE entity_type = 'order' AND entity_id = ? AND action = 'REFUND_PARTIAL'
+      LIMIT 1
+    `).bind(input.orderId, input.orderId).first<{ present: number }>();
+    if (priorPartial) orderTransitionStatus = "PARTIALLY_REFUNDED";
+  }
+  const nextStatus = nextPaymentStatus(order.status as PaymentOperationalStatus, orderTransitionStatus);
+  const telemetryEvent = paymentTelemetryEvent(eventStatus);
   const statements = [
     database
       .prepare(
@@ -944,63 +1275,71 @@ export async function handlePaymentEvent(input: {
           (id, order_id, provider, event_type, status, payload_hash, received_at)
          VALUES (?, ?, 'stripe', ?, ?, ?, ?)`,
       )
-      .bind(
-        input.providerEventId,
-        input.orderId,
-        input.eventType,
-        input.status,
-        input.payloadHash,
-        timestamp,
+        .bind(
+          input.providerEventId,
+          input.orderId,
+          input.eventType,
+          eventStatus,
+          input.payloadHash,
+          timestamp,
       ),
     database
       .prepare(
         `UPDATE orders
-         SET status = ?,
+         SET status = ${paymentStatusTransitionSqlCase(orderTransitionStatus)},
              provider_payment_id = COALESCE(?, provider_payment_id),
              provider_event_id = ?,
              updated_at = ?
          WHERE id = ?`,
       )
       .bind(
-        nextStatus,
         input.providerPaymentId ?? null,
         input.providerEventId,
         timestamp,
         input.orderId,
       ),
   ];
-  if (input.status === "PAID") {
+  if (eventStatus === "PAID") {
     statements.push(
       database.prepare(
         `UPDATE promo_redemptions
          SET status = 'REDEEMED', redeemed_at = ?, reservation_expires_at = NULL
-         WHERE order_id = ? AND status = 'RESERVED'`,
-      ).bind(timestamp, input.orderId),
+         WHERE order_id = ? AND status = 'RESERVED'
+           AND EXISTS (SELECT 1 FROM orders o WHERE o.id = ? AND o.status <> 'REFUNDED')`,
+      ).bind(timestamp, input.orderId, input.orderId),
+      database.prepare(
+        `UPDATE campaign_seat_reservations
+         SET status = 'CLAIMED', claimed_at = ?, updated_at = ?
+         WHERE order_id = ? AND status = 'RESERVED'
+           AND EXISTS (SELECT 1 FROM orders o WHERE o.id = ? AND o.status <> 'REFUNDED')`,
+      ).bind(timestamp, timestamp, input.orderId, input.orderId),
       database
         .prepare(
           `INSERT OR IGNORE INTO entitlements
             (id, order_id, user_id, test_id, grant_source, grant_reference, promo_code_id, campaign_id, status, created_at, revoked_at, expires_at)
            SELECT ?, id, user_id, test_id, 'stripe', 'stripe:' || id, promo_code_id, campaign_id, 'ACTIVE', ?, NULL, NULL
-           FROM orders WHERE id = ?`,
+           FROM orders WHERE id = ? AND status <> 'REFUNDED'`,
         )
         .bind(entitlementId, timestamp, input.orderId),
       database
         .prepare(
-          `INSERT INTO campaign_members (id, campaign_id, user_id, entitlement_id, created_at)
-           SELECT CASE
-             WHEN c.status = 'ACTIVE'
-              AND (c.valid_from IS NULL OR c.valid_from <= ?)
-              AND (c.valid_until IS NULL OR c.valid_until > ?)
-              AND (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) < c.seat_limit
-              AND NOT EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = o.user_id)
-             THEN ? ELSE NULL END,
-             c.id, o.user_id, e.id, ?
+          `INSERT OR IGNORE INTO campaign_members (id, campaign_id, user_id, entitlement_id, created_at)
+           SELECT ?, c.id, o.user_id, e.id, ?
            FROM orders o
            JOIN entitlements e ON e.id = ?
-           LEFT JOIN campaigns c ON c.id = o.campaign_id
-           WHERE o.id = ? AND o.campaign_id IS NOT NULL`,
+           JOIN campaigns c ON c.id = o.campaign_id
+           WHERE o.id = ?
+             AND c.status = 'ACTIVE'
+             AND o.status <> 'REFUNDED'
+             AND (c.valid_from IS NULL OR c.valid_from <= ?)
+             AND (c.valid_until IS NULL OR c.valid_until > ?)
+             AND (
+               EXISTS (SELECT 1 FROM campaign_seat_reservations csr WHERE csr.order_id = o.id AND csr.status = 'CLAIMED')
+               OR (SELECT COUNT(*) FROM campaign_members m WHERE m.campaign_id = c.id) < c.seat_limit
+             )
+             AND NOT EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id = c.id AND m.user_id = o.user_id)`,
         )
-        .bind(timestamp, timestamp, newId("member"), timestamp, entitlementId, input.orderId),
+        .bind(newId("member"), timestamp, entitlementId, input.orderId, timestamp, timestamp),
       database
         .prepare(
           `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
@@ -1009,21 +1348,43 @@ export async function handlePaymentEvent(input: {
         .bind(newId("tel"), telemetryEvent, order.user_id, JSON.stringify({ provider: "stripe", status: input.status }), timestamp),
     );
   } else {
-    if (input.status === "PAYMENT_FAILED") {
-      statements.push(database.prepare(
-        `UPDATE promo_redemptions SET status = 'RELEASED', released_at = ?
-         WHERE order_id = ? AND status = 'RESERVED'`,
-      ).bind(timestamp, input.orderId));
+    if (eventStatus === "PAYMENT_FAILED") {
+      statements.push(
+        database.prepare(
+          `UPDATE promo_redemptions SET status = 'RELEASED', released_at = ?
+           WHERE order_id = ? AND status = 'RESERVED'
+             AND EXISTS (SELECT 1 FROM orders o WHERE o.id = ? AND o.status = 'PAYMENT_FAILED')`,
+        ).bind(timestamp, input.orderId, input.orderId),
+        database.prepare(
+          `UPDATE campaign_seat_reservations SET status = 'RELEASED', released_at = ?, updated_at = ?
+           WHERE order_id = ? AND status = 'RESERVED'
+             AND EXISTS (SELECT 1 FROM orders o WHERE o.id = ? AND o.status = 'PAYMENT_FAILED')`,
+        ).bind(timestamp, timestamp, input.orderId, input.orderId),
+      );
+    }
+    if (eventStatus === "REFUNDED") {
+      statements.push(
+        database.prepare(
+          `UPDATE entitlements SET status = 'REVOKED', revoked_at = ? WHERE order_id = ? AND status = 'ACTIVE'`,
+        ).bind(timestamp, input.orderId),
+        database.prepare(
+          `UPDATE campaign_seat_reservations SET status = 'RELEASED', released_at = ?, updated_at = ?
+           WHERE order_id = ? AND status IN ('RESERVED','CLAIMED')`,
+        ).bind(timestamp, timestamp, input.orderId),
+        database.prepare(
+          `DELETE FROM campaign_members WHERE entitlement_id IN (SELECT id FROM entitlements WHERE order_id = ?)`,
+        ).bind(input.orderId),
+      );
     }
     if (telemetryEvent) {
-    statements.push(
-      database
-        .prepare(
-          `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
-           VALUES (?, ?, ?, NULL, ?, ?)`,
-      )
-        .bind(newId("tel"), telemetryEvent, order.user_id, JSON.stringify({ provider: "stripe", status: input.status, event_type: input.eventType }), timestamp),
-    );
+      statements.push(
+        database
+          .prepare(
+            `INSERT INTO telemetry_events (id, name, user_id, assessment_id, metadata_json, occurred_at)
+             VALUES (?, ?, ?, NULL, ?, ?)`,
+          )
+            .bind(newId("tel"), telemetryEvent, order.user_id, JSON.stringify({ provider: "stripe", status: eventStatus, event_type: input.eventType }), timestamp),
+      );
     }
   }
   try {
@@ -1040,12 +1401,27 @@ export async function handlePaymentEvent(input: {
     console.error("payment_event_write_failed", { error_code: "PAYMENT_EVENT_WRITE_FAILED" });
     throw new StoreError("PAYMENT_EVENT_WRITE_FAILED", 500);
   }
+  if (eventStatus === "PAID") {
+    const promoRow = await database.prepare(`SELECT status, promo_code_id FROM promo_redemptions WHERE order_id = ? LIMIT 1`).bind(input.orderId).first<{ status: string; promo_code_id: string }>();
+    if (promoRow && promoRow.status === "RELEASED") {
+      await audit(null, "PROMO_LATE_WEBHOOK_RELEASED", "order", input.orderId, { promoCodeId: promoRow.promo_code_id, reason: "Reservation was already released before payment event" });
+    }
+    const campRow = await database.prepare(`SELECT status, campaign_id FROM campaign_seat_reservations WHERE order_id = ? LIMIT 1`).bind(input.orderId).first<{ status: string; campaign_id: string }>();
+    if (campRow && (campRow.status === "RELEASED" || campRow.status === "EXPIRED")) {
+      await audit(null, "CAMPAIGN_LATE_WEBHOOK_RELEASED", "order", input.orderId, { campaignId: campRow.campaign_id, reason: "Campaign seat reservation was already released before payment event" });
+    }
+  }
   await audit(null, "PAYMENT_EVENT_ACCEPTED", "order", input.orderId, {
     providerEventId: input.providerEventId,
-    status: input.status,
+    status: eventStatus,
     orderStatusBeforeEvent: order.status,
   });
-  return { duplicate: false, entitlementCreated: input.status === "PAID", orderStatus: nextStatus };
+  const persistedOrder = await database.prepare(`SELECT status FROM orders WHERE id = ? LIMIT 1`).bind(input.orderId).first<{ status: PaymentOperationalStatus }>();
+  return {
+    duplicate: false,
+    entitlementCreated: eventStatus === "PAID" && persistedOrder?.status !== "REFUNDED",
+    orderStatus: persistedOrder?.status ?? nextStatus,
+  };
 }
 
 async function publishedAssessmentVersions(database: ReturnType<typeof ensureDatabase>, testId: string): Promise<AssessmentVersionIds> {
@@ -1065,7 +1441,7 @@ async function publishedAssessmentVersions(database: ReturnType<typeof ensureDat
     adaptive_version: string | null;
     item_count: number;
   }>();
-  if (!row) return T_SKILLS_VERSION_IDS;
+  if (!row) return T_SKILLS_TEEN_V4_VERSION_IDS;
   const runtimeReason = executableAssessmentVersionReason({
     productId: testId,
     version: row.version,
@@ -1077,6 +1453,8 @@ async function publishedAssessmentVersions(database: ReturnType<typeof ensureDat
     itemCount: Number(row.item_count),
   });
   if (runtimeReason) throw new StoreError(runtimeReason, 409);
+  const teenVersions = teenVersionIdsForAssessment(row.version);
+  if (teenVersions) return teenVersions;
   return {
     ...T_SKILLS_VERSION_IDS,
     assessment: row.version,
@@ -1090,7 +1468,8 @@ async function publishedAssessmentVersions(database: ReturnType<typeof ensureDat
 }
 
 export async function createAssessmentForUser(input: { viewer: Viewer; testId: string; locale?: Locale }) {
-  const locale = input.locale ?? "ru";
+  // default_locale is a fallback only: an explicit caller locale always wins.
+  const locale = input.locale ?? (await getDefaultLocale()) ?? "ru";
   if (!canPublishLocale(locale)) throw new StoreError("LOCALE_NOT_PUBLISHED", 422);
   await ensureUser(input.viewer, locale);
   const database = ensureDatabase();
@@ -1141,7 +1520,7 @@ export async function createAssessmentForUser(input: { viewer: Viewer; testId: s
   const timestamp = now();
   const sessionId = newId("sess");
   const versions = await publishedAssessmentVersions(database, input.testId);
-  const initialState: SessionState = ["beta_free", "admin_unlimited"].includes(entitlement.grant_source) ? "ENTITLED" : "PAID";
+  const initialState: SessionState = ["beta_free", "admin_unlimited", "promo_free"].includes(entitlement.grant_source) ? "ENTITLED" : "PAID";
   try {
     await database
       .prepare(
@@ -1481,6 +1860,10 @@ export async function saveOnboardingForUser(sessionId: string, viewer: Viewer, o
   if (!assessment) throw new StoreError("SESSION_NOT_FOUND", 404);
   const versions = parseJson<Record<string, string>>(assessment.versions_json, {});
   if (assessment.test_id !== T_SKILLS_TEST_ID && versions.assessment !== T_SKILLS_VERSION_IDS.assessment) throw new StoreError("ONBOARDING_NOT_AVAILABLE", 409);
+  if (isTSkillsTeenVersion(versions.assessment)) {
+    const teenIssue = teenOnboardingIssue(normalized);
+    if (teenIssue) throw new StoreError(teenIssue, 422);
+  }
   if (!( ["PAID", "ENTITLED", "CONSENTED", "CORE_IN_PROGRESS"] as SessionState[]).includes(assessment.state)) {
     throw new StoreError("ONBOARDING_NOT_AVAILABLE", 409);
   }
@@ -1651,7 +2034,7 @@ export async function saveResponse(input: {
   const v2AdaptiveItem = isV2Session(session)
     ? (session.adaptiveItems as GeneratedAdaptiveQuestion[]).find((item) => item.questionId === input.itemId)
     : undefined;
-  const tSkillsCoreItem = isTSkillsSession(session) ? T_SKILLS_PAIRWISE_ITEM_BY_ID.get(input.itemId) : undefined;
+  const tSkillsCoreItem = isTSkillsSession(session) ? tSkillsCoreItemById(session).get(input.itemId) : undefined;
   const coreResponseItem = v2CoreItem ?? v2AdaptiveItem;
   const responseValid = isTSkillsSession(session)
     ? validTSkillsResponse(session, input.itemId, input.response)
@@ -1864,7 +2247,7 @@ async function completeCoreTSkillsForUser(session: DurableSession, viewer: Viewe
     T_SKILLS_PAIRWISE_BANK_V1.map((item) => [item.id, session.responses[item.id]]),
   ) as Record<string, -2 | -1 | 0 | 1 | 2>;
   const pairwise = scorePairwiseV1({ items: T_SKILLS_PAIRWISE_BANK_V1, traits: T_SKILLS_WORKING_TAXONOMY, answers });
-  const preliminary = pairwiseScoreToProfile(pairwise, 0);
+  const preliminary = pairwiseScoreToProfile(pairwise, 0, { responseTimes: session.responseTimes, answers });
   const questions = T_SKILLS_ADAPTIVE_BANK_V1.map((question) => {
     const validation = validateAdaptiveQuestion(question);
     if (!validation.ok) throw new StoreError("ADAPTIVE_FALLBACK_INVALID", 500);
@@ -1925,6 +2308,95 @@ async function completeCoreTSkillsForUser(session: DurableSession, viewer: Viewe
   }
   await serverTelemetry({ name: "core_completed", userId: viewer.userId, assessmentId: session.id, metadata: { count: coreAnswered, status: "CORE_COMPLETE", assessment_version: T_SKILLS_VERSION_IDS.assessment } });
   await serverTelemetry({ name: "adaptive_started", userId: viewer.userId, assessmentId: session.id, metadata: { provider: "approved-fallback", fallback: true, mode: "approved-fallback", count: questions.length } });
+  const updated = await loadSession(session.id, viewer.userId);
+  if (!updated) throw new StoreError("SESSION_NOT_FOUND", 404);
+  return { session: updated, selection: tSkillsSelection(updated), run: null, reused: false };
+}
+
+/**
+ * Teen pathway: after all 75 pairs, the server picks the situational
+ * questions of the most ambiguous traits (30% of 25 = 8) from the approved
+ * pool. Selection is deterministic, so a retry re-derives the same set.
+ */
+async function completeCoreTeenForUser(session: DurableSession, viewer: Viewer) {
+  if (session.adaptiveItems.length && session.profile && [
+    "ADAPTIVE_IN_PROGRESS",
+    "ADAPTIVE_FALLBACK",
+    "REPORT_GENERATING",
+    "REPORT_FAILED_RETRYABLE",
+    "COMPLETE",
+  ].includes(session.state)) {
+    return { session, selection: tSkillsSelection(session), run: null, reused: true };
+  }
+  const versions = teenVersionIdsForAssessment(session.versions.assessment) ?? T_SKILLS_TEEN_VERSION_IDS;
+  const coreItems = tSkillsCoreBank(session);
+  const coreAnswered = coreItems.filter((item) => typeof session.responses[item.id] === "number").length;
+  if (coreAnswered < coreItems.length) throw new StoreError("CORE_INCOMPLETE", 422);
+  if (!canSessionTransition(session.state, "ADAPTIVE_IN_PROGRESS")) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
+
+  const questions = selectTeenClarificationQuestions(session.responses, session.versions.assessment);
+  if (!questions.length) throw new StoreError("CLARIFICATION_SELECTION_FAILED", 500);
+  const preliminary = teenTotalsToProfile(
+    teenFinalTotals(session.responses, [], session.versions.assessment),
+    0,
+    { responseTimes: session.responseTimes, answers: session.responses },
+    versions,
+  );
+  const database = ensureDatabase();
+  const timestamp = now();
+  const questionStatements = await Promise.all(questions.map(async (question) => database.prepare(
+    `INSERT INTO adaptive_questions
+      (id, assessment_id, question_id, format, prompt, options_json,
+       target_traits_json, reason_code, semantic_intent, semantic_cluster,
+       confidence, provider, model_id, provider_request_id, prompt_version,
+       adaptive_version, validation_status, question_hash, generated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    newId("aq"),
+    session.id,
+    question.id,
+    TEEN_CLARIFICATION_FORMAT,
+    question.prompt,
+    JSON.stringify(question.options),
+    JSON.stringify([question.id.replace(/^t2-/, "")]),
+    "AMBIGUOUS_TRAIT",
+    question.id.replace(/^t2-/, ""),
+    `teen-${question.id}`,
+    1,
+    "approved-bank",
+    null,
+    null,
+    versions.adaptivePrompt,
+    versions.adaptive,
+    "accepted",
+    await hashText(JSON.stringify(question)),
+    timestamp,
+  )));
+
+  try {
+    await database.batch([
+      ...questionStatements,
+      database.prepare(
+        `UPDATE assessments SET state = 'ADAPTIVE_IN_PROGRESS', adaptive_item_ids_json = ?,
+           selection_mode = 'approved-fallback', preliminary_score_json = ?,
+           adaptive_generation_status = 'READY', adaptive_fallback_used = 0,
+           adaptive_generation_lock = 0, adaptive_generation_attempts = adaptive_generation_attempts + 1,
+           updated_at = ? WHERE id = ? AND user_id = ? AND state IN ('CONSENTED', 'CORE_IN_PROGRESS')`,
+      ).bind(
+        JSON.stringify(questions.map((question) => question.id)),
+        JSON.stringify(preliminary),
+        timestamp,
+        session.id,
+        viewer.userId,
+      ),
+    ]);
+  } catch {
+    const concurrent = await loadSession(session.id, viewer.userId);
+    if (concurrent?.adaptiveItems.length) return { session: concurrent, selection: tSkillsSelection(concurrent), run: null, reused: true };
+    throw new StoreError("CLARIFICATION_SAVE_FAILED", 500);
+  }
+  await serverTelemetry({ name: "core_completed", userId: viewer.userId, assessmentId: session.id, metadata: { count: coreAnswered, status: "CORE_COMPLETE", assessment_version: session.versions.assessment } });
+  await serverTelemetry({ name: "adaptive_started", userId: viewer.userId, assessmentId: session.id, metadata: { provider: "approved-bank", fallback: false, mode: "teen-ambiguity", count: questions.length } });
   const updated = await loadSession(session.id, viewer.userId);
   if (!updated) throw new StoreError("SESSION_NOT_FOUND", 404);
   return { session: updated, selection: tSkillsSelection(updated), run: null, reused: false };
@@ -2100,6 +2572,7 @@ async function completeCoreV2ForUser(session: DurableSession, viewer: Viewer) {
 export async function completeCoreForUser(sessionId: string, viewer: Viewer) {
   const session = await getSessionForUser(sessionId, viewer);
   if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
+  if (isTeenSession(session)) return completeCoreTeenForUser(session, viewer);
   if (isTSkillsSession(session)) return completeCoreTSkillsForUser(session, viewer);
   if (isV2Session(session)) return completeCoreV2ForUser(session, viewer);
   if (
@@ -2237,16 +2710,14 @@ function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-async function loadPublishedV1CareerCatalog(database: ReturnType<typeof ensureDatabase>) {
+async function loadPublishedV1CareerCatalog(database: ReturnType<typeof ensureDatabase>, sessionModelVersion?: string) {
   const versionRow = await database.prepare(
     `SELECT version FROM career_catalog_versions WHERE status = 'PUBLISHED' ORDER BY published_at DESC LIMIT 1`,
   ).first<{ version: string }>();
   if (!versionRow) return { version: T_SKILLS_VERSION_IDS.careerCatalog, modelVersion: T_SKILLS_VERSION_IDS.careerMatching, catalog: productionCareerCatalog() };
-  const assessmentVersion = await database.prepare(
-    `SELECT career_model_version FROM assessment_versions
-     WHERE product_id = ? AND status = 'PUBLISHED' ORDER BY published_at DESC LIMIT 1`,
-  ).bind(T_SKILLS_TEST_ID).first<{ career_model_version: string }>();
-  const modelVersion = assessmentVersion?.career_model_version ?? T_SKILLS_VERSION_IDS.careerMatching;
+  // A session keeps the career model it started with, even after a newer
+  // assessment version (e.g. t-skills-teen-v2) becomes the published one.
+  const modelVersion = sessionModelVersion ?? T_SKILLS_VERSION_IDS.careerMatching;
   const modelRow = await database.prepare(
     `SELECT version, status, config_json FROM career_model_versions WHERE version = ? AND status = 'PUBLISHED' LIMIT 1`,
   ).bind(modelVersion).first<{ version: string; status: string; config_json: string }>();
@@ -2290,7 +2761,7 @@ async function buildTSkillsCareerPersistence(session: DurableSession, viewer: Vi
   const onboarding = await getOnboardingForUser(session.id, viewer);
   const context: OnboardingContext = onboarding ?? { age: 18, educationLevel: "unknown", favoriteSubjects: [] };
   const evidence = careerEvidenceForSession(session);
-  const catalog = await loadPublishedV1CareerCatalog(database);
+  const catalog = await loadPublishedV1CareerCatalog(database, "careerMatching" in session.versions ? session.versions.careerMatching : undefined);
   const rankingHistory: Array<ReturnType<typeof matchCareers>> = [];
   let consumedAnswers: AdaptiveAnswer[] = [];
   let candidates = matchCareers({ traits: pairwise.traitResults, onboarding: context, catalog: catalog.catalog, adaptiveQuestions: evidence.questions });
@@ -2340,6 +2811,60 @@ async function buildTSkillsCareerPersistence(session: DurableSession, viewer: Vi
   };
 }
 
+export async function buildTeenCareerPersistence(session: DurableSession, viewer: Viewer, totals: ReturnType<typeof teenFinalTotals>, database: ReturnType<typeof ensureDatabase>) {
+  const versions = teenVersionIdsForAssessment(session.versions.assessment) ?? T_SKILLS_TEEN_VERSION_IDS;
+  const teenOnboarding = teenOnboardingFrom(await getOnboardingForUser(session.id, viewer));
+  if (!teenOnboarding) throw new StoreError("ONBOARDING_REQUIRED", 422);
+  // Каталог — из сохранённых версий сессии: отсутствующее поле исторической
+  // сессии подразумевает контракт (v1), явная неизвестная версия и
+  // несовпадение с контрактом отклоняются до расчёта.
+  let teenCatalogVersion: string;
+  try {
+    teenCatalogVersion = teenCatalogVersionForSession(session.versions.assessment, session.versions);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("TEEN_CAREER_CATALOG_")) {
+      throw new StoreError(error.message.split(":")[0], 422, error.message);
+    }
+    throw error;
+  }
+  const candidates = teenCareerRanking(totals, teenOnboarding, teenCatalogVersion);
+  const evidence = careerEvidenceForSession(session);
+  const snapshot = {
+    traitProfile: Object.entries(totals).map(([traitId, total]) => ({ traitId, total })),
+    candidates,
+    adaptiveAnswers: evidence.answers,
+    careerPreferences: [],
+    topValues: teenTopValues(teenOnboarding),
+    valueRanking: teenOnboarding.valueRanking,
+    subjects: teenOnboarding.subjects,
+    adaptiveQuestionIds: session.adaptiveItemIds,
+    consumedResponseItemIds: session.adaptiveItemIds,
+    assessmentVersion: session.versions.assessment,
+    scoringVersion: session.versions.scoring,
+    adaptiveVersion: versions.adaptive,
+    reportVersion: session.versions.report,
+    contentVersion: session.versions.itemBank,
+    matchingVersion: versions.careerMatching,
+    careerCatalogVersion: teenCatalogVersion,
+  };
+  return {
+    candidates,
+    statements: [
+      database.prepare(
+        `INSERT INTO t_skills_career_results
+           (id, assessment_id, phase, candidates_json, recommendations_json,
+            career_catalog_version, career_matching_version, career_tiebreak_version, created_at)
+         VALUES (?, ?, 'FINAL', ?, ?, ?, ?, ?, ?)`,
+      ).bind(newId("career_result"), session.id, JSON.stringify(candidates), JSON.stringify(candidates.slice(0, 5)), teenCatalogVersion, versions.careerMatching, "none-v1", now()),
+      database.prepare(
+        `INSERT INTO career_match_snapshots
+           (id, assessment_id, phase, candidates_json, matching_version, career_catalog_version, created_at)
+         VALUES (?, ?, 'FINAL', ?, ?, ?, ?)`,
+      ).bind(newId("career_snapshot"), session.id, JSON.stringify(snapshot), versions.careerMatching, teenCatalogVersion, now()),
+    ],
+  };
+}
+
 export async function completeAssessmentForUser(sessionId: string, viewer: Viewer) {
   const session = await getSessionForUser(sessionId, viewer);
   if (!session) throw new StoreError("SESSION_NOT_FOUND", 404);
@@ -2351,7 +2876,9 @@ export async function completeAssessmentForUser(sessionId: string, viewer: Viewe
   if (missing.length) throw new StoreError("ADAPTIVE_INCOMPLETE", 422);
   if (!canSessionTransition(session.state, "REPORT_GENERATING")) throw new StoreError("INVALID_SESSION_TRANSITION", 409);
 
-  const tSkillsPairwise = isTSkillsSession(session)
+  const teenVersionIds = isTeenSession(session) ? teenVersionIdsForAssessment(session.versions.assessment) : null;
+  const teenTotals = teenVersionIds ? teenFinalTotals(session.responses, session.adaptiveItemIds, session.versions.assessment) : null;
+  const tSkillsPairwise = isTSkillsSession(session) && !teenTotals
     ? scorePairwiseV1({
         items: T_SKILLS_PAIRWISE_BANK_V1,
         traits: T_SKILLS_WORKING_TAXONOMY,
@@ -2360,10 +2887,13 @@ export async function completeAssessmentForUser(sessionId: string, viewer: Viewe
         ) as Record<string, -2 | -1 | 0 | 1 | 2>,
       })
     : null;
-  const calculatedProfile = isTSkillsSession(session)
+  const calculatedProfile = teenTotals
+    ? teenTotalsToProfile(teenTotals, session.adaptiveItemIds.length, { responseTimes: session.responseTimes, answers: session.responses }, teenVersionIds!)
+    : isTSkillsSession(session)
     ? pairwiseScoreToProfile(
         tSkillsPairwise!,
         session.adaptiveItemIds.length,
+        { responseTimes: session.responseTimes, answers: session.responses },
       )
     : isV2Session(session)
       ? scoreCore60(session.responses, session.responseTimes, (session.adaptiveItems as GeneratedAdaptiveQuestion[]).map(generatedQuestionToResponseItem))
@@ -2374,7 +2904,9 @@ export async function completeAssessmentForUser(sessionId: string, viewer: Viewe
   const reportId = newId("rep");
   const database = ensureDatabase();
   const timestamp = now();
-  const careerPersistence = isTSkillsSession(session) && tSkillsPairwise
+  const careerPersistence = teenTotals
+    ? await buildTeenCareerPersistence(session, viewer, teenTotals, database)
+    : isTSkillsSession(session) && tSkillsPairwise
     ? await buildTSkillsCareerPersistence(session, viewer, tSkillsPairwise, database)
     : { candidates: [], statements: [] as D1PreparedStatement[] };
   try {
@@ -2437,6 +2969,7 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
     const versionSnapshot = parseJson<Record<string, string>>(assessmentMeta?.versions_json, score.versions);
     const adaptiveQuestionCount = parseJson<string[]>(assessmentMeta?.adaptive_item_ids_json, []).length || score.adaptiveAnswered;
     const isTSkillsReport = assessmentMeta?.test_id === T_SKILLS_TEST_ID || versionSnapshot.assessment.startsWith("t-skills");
+    const isTeenReport = isTSkillsTeenVersion(versionSnapshot.assessment);
     const careerSnapshotRow = isTSkillsReport
       ? await database.prepare(`SELECT candidates_json, matching_version, career_catalog_version FROM career_match_snapshots WHERE assessment_id = ? ORDER BY created_at DESC LIMIT 1`).bind(row.assessment_id).first<{ candidates_json: string; matching_version: string; career_catalog_version: string }>()
       : null;
@@ -2456,12 +2989,16 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
         report: String(careerSnapshot.reportVersion ?? versionSnapshot.report ?? ""),
         content: String(careerSnapshot.contentVersion ?? versionSnapshot.itemBank ?? ""),
       },
+      ...(isTeenReport ? {
+        topValues: Array.isArray(careerSnapshot.topValues) ? careerSnapshot.topValues.map(String) : [],
+        subjects: Array.isArray(careerSnapshot.subjects) ? careerSnapshot.subjects.map(String) : [],
+      } : {}),
     } : undefined;
     const generated = isTSkillsReport
       ? {
-          report: buildTSkillsReport(score, adaptiveQuestionCount),
+          report: buildTSkillsReport(score, adaptiveQuestionCount, isTeenReport ? { coreQuestionCount: 75, versions: teenVersionIdsForAssessment(versionSnapshot.assessment) ?? T_SKILLS_TEEN_VERSION_IDS } : undefined),
           provider: "t-skills-deterministic",
-          promptVersion: T_SKILLS_VERSION_IDS.report,
+          promptVersion: isTeenReport ? (teenVersionIdsForAssessment(versionSnapshot.assessment) ?? T_SKILLS_TEEN_VERSION_IDS).report : T_SKILLS_VERSION_IDS.report,
           modelId: null,
           inputHash: "t-skills-deterministic",
           outputHash: "t-skills-deterministic",
@@ -2472,9 +3009,9 @@ export async function generateReportForUser(reportId: string, viewer: Viewer) {
     const report = {
       ...generated.report,
       assessmentVersion: versionSnapshot.assessment ?? score.versions.assessment,
-      coreQuestionCount: isTSkillsReport ? 67 : versionSnapshot.assessment === V2_VERSION_IDS.assessment ? 60 : score.coreAnswered,
+      coreQuestionCount: isTeenReport ? 75 : isTSkillsReport ? 67 : versionSnapshot.assessment === V2_VERSION_IDS.assessment ? 60 : score.coreAnswered,
       adaptiveQuestionCount,
-      adaptiveProvider: assessmentMeta?.adaptive_provider ?? (isTSkillsReport || versionSnapshot.assessment === V2_VERSION_IDS.assessment ? "approved-fallback" : "legacy-selector"),
+      adaptiveProvider: assessmentMeta?.adaptive_provider ?? (isTeenReport ? "approved-bank" : isTSkillsReport || versionSnapshot.assessment === V2_VERSION_IDS.assessment ? "approved-fallback" : "legacy-selector"),
       adaptiveFallbackUsed: assessmentMeta?.adaptive_fallback_used === 1,
       adaptiveVersion: versionSnapshot.adaptive ?? versionSnapshot.selector ?? generated.report.adaptiveVersion,
       reportVersion: versionSnapshot.report ?? score.versions.report,

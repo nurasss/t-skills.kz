@@ -13,6 +13,7 @@ import {
   emptyTotals,
   normalizeTeenTotal,
   scoreTeenStage1,
+  scoreTeenStage1V1,
   selectTeenStage2,
   teenAmbiguity,
 } from "@/lib/t-skills/teen/scoring";
@@ -22,14 +23,22 @@ function pair(id: string, left: (typeof TEEN_TRAIT_IDS)[number], right: (typeof 
   return { id, leftTraitId: left, rightTraitId: right };
 }
 
-test("stage 1 is ipsative: totals sum to zero", () => {
+test("stage 1 follows the UI sign: negative selects left and positive selects right", () => {
   const items = [pair("q1", "curiosity", "discipline"), pair("q2", "discipline", "empathy")];
-  const { totals } = scoreTeenStage1(items, { q1: 2, q2: -1 });
+  const { totals } = scoreTeenStage1(items, { q1: -2, q2: 1 });
   assert.equal(totals.curiosity, 2);
   assert.equal(totals.discipline, -3);
   assert.equal(totals.empathy, 1);
   const sum = TEEN_TRAIT_IDS.reduce((acc, id) => acc + totals[id], 0);
   assert.equal(sum, 0);
+});
+
+test("frozen teen v1 sessions retain their historical score convention", () => {
+  const items = [pair("q1", "curiosity", "discipline"), pair("q2", "discipline", "empathy")];
+  const { totals } = scoreTeenStage1V1(items, { q1: 2, q2: -1 });
+  assert.equal(totals.curiosity, 2);
+  assert.equal(totals.discipline, -3);
+  assert.equal(totals.empathy, 1);
 });
 
 test("ambiguity prefers inconsistent traits over decided ones", () => {
@@ -164,7 +173,7 @@ test("full teen pipeline on real v1 bundle", async () => {
   const pattern = [2, 1, -1, -2, 2, -2];
   const answers: Record<string, number> = {};
   content.items75.forEach((item, i) => { answers[item.id] = pattern[i % pattern.length]; });
-  const stage1Result = scoreTeenStage1(
+  const stage1Result = scoreTeenStage1V1(
     content.items75.map((item) => ({ id: item.id, leftTraitId: item.leftTraitId, rightTraitId: item.rightTraitId })),
     answers,
   );
@@ -203,21 +212,52 @@ test("teen routing: /teen maps both ways with metadata", async () => {
 test("teen pdf validates payload and renders bytes", async () => {
   const { validateTeenReportPayload, renderTeenPdf } = await import("@/lib/teen-pdf");
   const { TEEN_VERSION_IDS, TEEN_TRAIT_IDS } = await import("@/lib/t-skills/teen/taxonomy");
+  const { teenRuntimeContent } = await import("@/lib/t-skills/teen/runtime");
+  const content = teenRuntimeContent("ru");
+  const profession = content.professions[0]!;
   type TeenReport = import("@/lib/t-skills/teen/report").TeenReport;
   assert.throws(() => validateTeenReportPayload(null), /TEEN_PDF:shape/);
   assert.throws(() => validateTeenReportPayload({ versions: {}, careers: [], traits: [] }), /TEEN_PDF:version/);
   const report: TeenReport = {
     versions: { ...TEEN_VERSION_IDS },
-    contentStatus: "DRAFT-UNAPPROVED",
-    traits: TEEN_TRAIT_IDS.map((traitId, i) => ({ traitId, name: traitId, total: 10 - i, normalized: (10 - i) / 12 })),
+    contentStatus: content.status,
+    traits: TEEN_TRAIT_IDS.map((traitId, i) => ({ traitId, name: content.traitNames[traitId], total: 10 - i, normalized: (10 - i) / 12 })),
     topTraits: [],
-    careers: [{ professionId: "p1", title: "Тестовая профессия", sphere: "Сфера", klimovType: "", education: "", description: "Описание.", totalScore: 1, traitScore: 1, valueBonus: 0, subjectBonus: 0 }],
+    careers: [{ professionId: profession.id, title: profession.title, sphere: profession.sphere, klimovType: profession.klimovType, education: profession.education, description: profession.description, totalScore: 1, traitScore: 1, valueBonus: 0, subjectBonus: 0 }],
     topValues: [],
     subjects: [],
   };
   report.topTraits = report.traits.slice(0, 5);
   const validate: (value: unknown) => void = validateTeenReportPayload;
   validate(report);
+  const legacyVersions = await import("@/lib/t-skills/teen/taxonomy").then((module) => module.TEEN_V1_VERSION_IDS);
+  const legacyReport: TeenReport = { ...report, versions: { ...legacyVersions } };
+  validate(legacyReport);
+  const career = report.careers[0]!;
+  const trait = report.traits[0]!;
+  const invalidPayloads: unknown[] = [
+    { ...report, contentStatus: "DRAFT" },
+    { ...report, careers: [] },
+    { ...report, careers: Array.from({ length: 6 }, () => career) },
+    { ...report, careers: [null] },
+    { ...report, careers: [{ ...career, professionId: "" }] },
+    { ...report, careers: [{ ...career, title: "x".repeat(257) }] },
+    { ...report, careers: [{ ...career, description: "x".repeat(2_049) }] },
+    { ...report, careers: [{ ...career, title: "Unapproved title" }] },
+    { ...report, careers: [{ ...career, totalScore: Number.NaN }] },
+    { ...report, traits: [] },
+    { ...report, traits: [{ ...trait, traitId: "unregistered" }, ...report.traits.slice(1)] },
+    { ...report, traits: [{ ...trait, total: Number.NaN }, ...report.traits.slice(1)] },
+    { ...report, topTraits: Array.from({ length: 6 }, () => trait) },
+    { ...report, topTraits: [null] },
+    { ...report, topValues: Array.from({ length: 4 }, () => ({ id: "growth", name: "growth" })) },
+    { ...report, topValues: [{ id: "unregistered", name: "unapproved" }] },
+    { ...report, subjects: Array.from({ length: 14 }, () => ({ id: "math", name: "math" })) },
+    { ...report, subjects: [{ id: "unregistered", name: "unapproved" }] },
+  ];
+  for (const payload of invalidPayloads) {
+    assert.throws(() => validate(payload), (error) => error instanceof Error && error.message.startsWith("TEEN_PDF:"));
+  }
   const bytes = await renderTeenPdf(report, {
     sans: new Uint8Array((await import("node:fs")).readFileSync("node_modules/@expo-google-fonts/roboto/400Regular/Roboto_400Regular.ttf")),
     sansBold: new Uint8Array((await import("node:fs")).readFileSync("node_modules/@expo-google-fonts/roboto/700Bold/Roboto_700Bold.ttf")),
@@ -235,13 +275,13 @@ test("kk bundle parses and drives the same pipeline", async () => {
   assert.equal(content.items75.length, 75);
   assert.equal(content.stage2.length, 25);
   assert.equal(content.professions.length, 170);
-  assert.equal(content.status, "DRAFT-UNAPPROVED-KK");
+  assert.equal(content.status, "PUBLISHED");
   assert.equal(content.traitNames.curiosity, "Қызығушылық");
   assert.ok(!content.items75.some((item) => (content.items75Texts[item.id].left.match(/Могу часами/) ?? []).length > 0));
 
   const answers: Record<string, number> = {};
   content.items75.forEach((item, i) => { answers[item.id] = [2, 1, -1, -2][i % 4]; });
-  const stage = scoreTeenStage1(
+  const stage = scoreTeenStage1V1(
     content.items75.map((item) => ({ id: item.id, leftTraitId: item.leftTraitId, rightTraitId: item.rightTraitId })),
     answers,
   );
@@ -268,13 +308,16 @@ test("kk pdf renders with kazakh strings", async () => {
   const { readFileSync } = await import("node:fs");
   const { renderTeenPdf } = await import("@/lib/teen-pdf");
   const { TEEN_VERSION_IDS, TEEN_TRAIT_IDS } = await import("@/lib/t-skills/teen/taxonomy");
+  const { teenRuntimeContent } = await import("@/lib/t-skills/teen/runtime");
+  const content = teenRuntimeContent("kk");
+  const profession = content.professions[0]!;
   type TeenReport = import("@/lib/t-skills/teen/report").TeenReport;
   const report: TeenReport = {
     versions: { ...TEEN_VERSION_IDS },
-    contentStatus: "DRAFT-UNAPPROVED-KK",
-    traits: TEEN_TRAIT_IDS.map((traitId, i) => ({ traitId, name: traitId, total: 10 - i, normalized: (10 - i) / 12 })),
+    contentStatus: content.status,
+    traits: TEEN_TRAIT_IDS.map((traitId, i) => ({ traitId, name: content.traitNames[traitId], total: 10 - i, normalized: (10 - i) / 12 })),
     topTraits: [],
-    careers: [{ professionId: "p1", title: "Тестілік мамандық", sphere: "Сала", klimovType: "", education: "", description: "Сипаттама.", totalScore: 1, traitScore: 1, valueBonus: 0, subjectBonus: 0 }],
+    careers: [{ professionId: profession.id, title: profession.title, sphere: profession.sphere, klimovType: profession.klimovType, education: profession.education, description: profession.description, totalScore: 1, traitScore: 1, valueBonus: 0, subjectBonus: 0 }],
     topValues: [],
     subjects: [],
   };

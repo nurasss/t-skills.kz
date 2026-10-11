@@ -1,5 +1,7 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = process.cwd();
@@ -17,20 +19,30 @@ function assert(condition, message) {
   if (!condition) throw new Error(`BETA_SMOKE_ASSERTION_FAILED: ${message}`);
 }
 
-execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
+// Portable: build via the current node binary instead of the `npm` shim
+// (unresolvable without a shell on some platforms).
+execFileSync(process.execPath, ["scripts/run-framework.mjs", "build"], { cwd: root, stdio: "inherit" });
 const migrationSql = readdirSync("drizzle")
   .filter((entry) => /^\d+_.*\.sql$/.test(entry))
   .sort()
   .map((entry) => readFileSync(`drizzle/${entry}`, "utf8"))
   .join("\n");
-runWrangler(["d1", "execute", "DB", "--local", "--config", configPath, "--persist-to", stateDir, "--command", migrationSql]);
+// Portable: migrations go through --file (command-line length limits vary).
+const migrationDir = mkdtempSync(join(tmpdir(), "orbita-beta-migrations-"));
+const migrationFile = join(migrationDir, "migrations.sql");
+writeFileSync(migrationFile, migrationSql);
+try {
+  runWrangler(["d1", "execute", "DB", "--local", "--config", configPath, "--persist-to", stateDir, "--file", migrationFile]);
+} finally {
+  rmSync(migrationDir, { recursive: true, force: true });
+}
 
 let output = "";
 const child = spawn(process.execPath, [
   "--import", "./scripts/sites-env.mjs", "./node_modules/wrangler/bin/wrangler.js",
   "dev", "--config", configPath, "--local", "--persist-to", stateDir,
   "--ip", "127.0.0.1", "--inspector-port", "0", "--port", String(port),
-  "--var", "ORBITA_ENV:development", "--var", "PAYMENTS_ENABLED:false",
+  "--var", "APP_ENV:development", "--var", "ORBITA_ENV:development", "--var", "LEGAL_DOCUMENTS_APPROVED:false", "--var", "PAYMENTS_ENABLED:false",
   "--var", "ENTITLEMENT_MODE:beta-free", "--var", "AI_ENABLED:false",
   "--var", "ADAPTIVE_PROVIDER:fallback", "--var", "MERCURY_MODEL:mercury-2.5", "--var", "REPORT_PROVIDER:approved-library",
   "--var", "PDF_SIGNING_SECRET:beta-smoke-signing",
@@ -55,10 +67,10 @@ try {
 
   const catalog = await fetch(`${baseUrl}/api/catalog`, { headers });
   const catalogBody = await catalog.json();
-  assert(catalog.ok && catalogBody.test?.assessmentVersion === "t-skills_pairwise_v1" && catalogBody.test?.accessMode === "beta-free" && catalogBody.test?.availableForCheckout === false, "beta catalog access mode and current T-Skills version");
+  assert(catalog.ok && catalogBody.test?.assessmentVersion === "t-skills-teen-v2" && catalogBody.test?.accessMode === "beta-free" && catalogBody.test?.availableForCheckout === false, "beta catalog access mode and current T-Skills version");
 
   const checkout = await fetch(`${baseUrl}/api/checkout`, { method: "POST", headers, body: JSON.stringify({ test_id: "t-skills" }) });
-  assert(checkout.status === 503, "checkout is disabled");
+  assert(checkout.status === 503, `checkout is disabled (received ${checkout.status}: ${await checkout.text()})`);
 
   const assessment = await fetch(`${baseUrl}/api/assessments`, { method: "POST", headers, body: JSON.stringify({ test_id: "t-skills" }) });
   const assessmentBody = await assessment.json();

@@ -15,6 +15,17 @@ const pairs = [
   ["cookie body", "#F7F4EE", "#173D32"],
   ["cookie link", "#F2D29A", "#173D32"],
   ["cookie primary button", "#173D32", "#F2D29A"],
+  ["results coral badge", "#FFFFFF", "#00754A"],
+  ["results rose badge", "#111111", "#B78D97"],
+  ["results lavender badge", "#111111", "#9B93B5"],
+  ["results overuse label", "#111111", "#FAFAFA"],
+  // Orbita app primary (view-base.css --primary/--primary-hover/--accent):
+  // white-on-green button/badge/lang-toggle text and primary text on soft fill.
+  ["orbita primary on white", "#FFFFFF", "#007A3E"],
+  ["orbita primary hover on white", "#FFFFFF", "#006E36"],
+  ["orbita primary text on soft", "#007A3E", "#E6F5ED"],
+  ["orbita muted on soft", "#6B6B6B", "#FAFAFA"],
+  ["orbita muted on paper", "#6B6B6B", "#EFEDED"],
 ];
 
 function rgb(hex) {

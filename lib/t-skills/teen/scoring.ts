@@ -23,10 +23,10 @@ export function emptyTotals(): TeenStage1Totals {
   return Object.fromEntries(TEEN_TRAIT_IDS.map((id) => [id, 0])) as TeenStage1Totals;
 }
 
-/** Этап 1: суммирование знаковых вкладов + сами вклады для неоднозначности. */
-export function scoreTeenStage1(
+function scoreTeenStage1WithConvention(
   items: readonly TeenPairwiseItem[],
   answers: Record<string, number>,
+  legacyV1: boolean,
 ): { totals: TeenStage1Totals; contributions: TeenContributions } {
   const totals = emptyTotals();
   const contributions = Object.fromEntries(TEEN_TRAIT_IDS.map((id) => [id, [] as number[]])) as TeenContributions;
@@ -34,12 +34,33 @@ export function scoreTeenStage1(
     const answer = answers[item.id];
     if (typeof answer !== "number" || !Number.isFinite(answer)) continue;
     const a = Math.max(-2, Math.min(2, Math.round(answer)));
-    totals[item.leftTraitId] += a;
-    totals[item.rightTraitId] -= a;
-    contributions[item.leftTraitId].push(a);
-    contributions[item.rightTraitId].push(-a);
+    // UI contract: -2 means "strongly left", +2 means "strongly right".
+    // V1 accidentally applied the sign in the opposite direction; preserve
+    // that behavior only when replaying a frozen v1 session.
+    const leftContribution = legacyV1 ? a : -a;
+    const rightContribution = -leftContribution;
+    totals[item.leftTraitId] += leftContribution;
+    totals[item.rightTraitId] += rightContribution;
+    contributions[item.leftTraitId].push(leftContribution);
+    contributions[item.rightTraitId].push(rightContribution);
   }
   return { totals, contributions };
+}
+
+/** Current scorer follows the assessment UI's left/right response labels. */
+export function scoreTeenStage1(
+  items: readonly TeenPairwiseItem[],
+  answers: Record<string, number>,
+) {
+  return scoreTeenStage1WithConvention(items, answers, false);
+}
+
+/** Historical scorer retained only for already-created t-skills-teen-v1 sessions. */
+export function scoreTeenStage1V1(
+  items: readonly TeenPairwiseItem[],
+  answers: Record<string, number>,
+) {
+  return scoreTeenStage1WithConvention(items, answers, true);
 }
 
 function std(values: readonly number[]): number {

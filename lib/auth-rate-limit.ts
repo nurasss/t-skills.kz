@@ -1,5 +1,6 @@
 import { getRuntimeEnv } from "@/db";
 import { consumeRateLimit } from "@/lib/durable-store";
+import { isLocalAuthEnvironment } from "@/lib/auth-utils";
 
 async function digest(value: string) {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -7,10 +8,10 @@ async function digest(value: string) {
 }
 
 function rateLimitSecret() {
-  const configured = getRuntimeEnv().AUTH_RATE_LIMIT_SECRET?.trim();
+  const env = getRuntimeEnv();
+  const configured = env.AUTH_RATE_LIMIT_SECRET?.trim();
   if (configured) return configured;
-  const environment = (getRuntimeEnv().APP_ENV ?? getRuntimeEnv().ORBITA_ENV ?? "").trim().toLowerCase();
-  if (["development", "test", "local"].includes(environment)) return "local-rate-limit-salt";
+  if (isLocalAuthEnvironment(env)) return "local-rate-limit-salt";
   // Never silently run a production limiter with a predictable salt.
   throw new Error("AUTH_RATE_LIMIT_SECRET_MISSING");
 }

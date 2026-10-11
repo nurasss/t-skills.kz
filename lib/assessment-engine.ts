@@ -5,7 +5,7 @@ import {
   INTERPRETATION_LIBRARY_VERSION,
 } from "@/lib/interpretation-library";
 import { buildReportSourceKeys } from "@/lib/report-safety";
-import { T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import { teenVersionIdsForAssessment, T_SKILLS_TEEN_V1_FIX_VERSION_IDS, T_SKILLS_TEEN_V1_VERSION_IDS, T_SKILLS_TEEN_V3_VERSION_IDS, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 
 export const VERSION_IDS = {
   assessment: "orbita30_ru_v1",
@@ -31,7 +31,7 @@ export const V2_VERSION_IDS = {
   translation: "ru-source-v1",
 } as const;
 
-export type AssessmentVersionIds = typeof VERSION_IDS | typeof V2_VERSION_IDS | typeof T_SKILLS_VERSION_IDS;
+export type AssessmentVersionIds = typeof VERSION_IDS | typeof V2_VERSION_IDS | typeof T_SKILLS_VERSION_IDS | typeof T_SKILLS_TEEN_V1_VERSION_IDS | typeof T_SKILLS_TEEN_V1_FIX_VERSION_IDS | typeof T_SKILLS_TEEN_VERSION_IDS | typeof T_SKILLS_TEEN_V3_VERSION_IDS | typeof T_SKILLS_TEEN_V4_VERSION_IDS;
 
 type NormStatus = "unvalidated" | "pilot" | "normed";
 
@@ -157,6 +157,10 @@ export type ReportJSON = {
     careerPreferences: Array<{ questionId: string; optionId: string }>;
     ranking: Array<Record<string, unknown>>;
     versions: Record<string, string>;
+    /** Top-3 ranked value ids (T-Skills Teen onboarding). */
+    topValues?: string[];
+    /** Selected subject ids (T-Skills Teen onboarding). */
+    subjects?: string[];
   };
   sourceKeys: {
     executiveSummary: string[];
@@ -247,7 +251,9 @@ function qualityAssessment(responses: ResponseMap, likertResponses: number[], re
     .filter(([itemId, value]) => ITEM_BANK.some((item) => item.id === itemId) && Number.isFinite(value) && value >= 0)
     .map(([, value]) => value);
   const tooFastShare = timedResponses.length ? timedResponses.filter((value) => value < 650).length / timedResponses.length : 0;
-  if (timedResponses.length >= 20 && tooFastShare >= 0.8) {
+  // 0.5 ≡ медиана < 650 мс: спешка должна ловиться и при 60% сверхбыстрых
+  // ответов, а не только при почти полном отсутствии раздумий.
+  if (timedResponses.length >= 20 && tooFastShare >= 0.5) {
     flags.push("TOO_FAST");
   }
 
@@ -423,7 +429,9 @@ export function normalizeScoreProfile(value: unknown): ScoreProfile {
   const rawVersions = raw.versions && typeof raw.versions === "object" ? raw.versions as Record<string, unknown> : {};
   const isV2 = rawVersions.assessment === V2_VERSION_IDS.assessment;
   const isTSkills = rawVersions.assessment === T_SKILLS_VERSION_IDS.assessment;
-  const versionDefaults = isV2 ? V2_VERSION_IDS : isTSkills ? T_SKILLS_VERSION_IDS : VERSION_IDS;
+  const teenVersionDefaults = teenVersionIdsForAssessment(rawVersions.assessment);
+  const isTeen = teenVersionDefaults !== null;
+  const versionDefaults = isV2 ? V2_VERSION_IDS : teenVersionDefaults ?? (isTSkills ? T_SKILLS_VERSION_IDS : VERSION_IDS);
   const traits = Array.isArray(raw.traits) ? raw.traits.map((candidate) => {
     if (!candidate || typeof candidate !== "object") return null;
     const trait = candidate as Record<string, unknown>;
@@ -431,12 +439,13 @@ export function normalizeScoreProfile(value: unknown): ScoreProfile {
     const legacyIndex = Number.isFinite(trait.percentile) ? Number(trait.percentile) : standardScore;
     const profileIndex = Number.isFinite(trait.profileIndex) ? Number(trait.profileIndex) : legacyIndex;
     const legacyRange = Array.isArray(trait.ci95) ? trait.ci95 : [standardScore - 5, standardScore + 5];
-    const uncertaintyRange = Array.isArray(trait.uncertaintyRange) ? trait.uncertaintyRange : legacyRange;
+    const uncertaintyRange = isTeen ? [1, 99] : Array.isArray(trait.uncertaintyRange) ? trait.uncertaintyRange : legacyRange;
     const currentTrait = { ...trait };
     delete currentTrait.percentile;
     delete currentTrait.ci95;
     return {
       ...currentTrait,
+      se: isTeen ? 1 : Number.isFinite(trait.se) ? Number(trait.se) : 0.42,
       profileIndex,
       uncertaintyRange: [Number(uncertaintyRange[0]) || 1, Number(uncertaintyRange[1]) || 99] as [number, number],
     } as ScoreTrait;

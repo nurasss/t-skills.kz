@@ -22,7 +22,7 @@ import { applySecurityHeaders, REQUEST_ID_HEADER, SECURITY_HEADERS } from "@/lib
 import { buildRequestLog } from "@/lib/observability";
 import { validateReportSafety } from "@/lib/report-safety";
 import { parseStrictJsonProviderOutput, providerFailureReason, ProviderResponseTooLargeError, readBoundedResponseJson } from "@/lib/provider-contract";
-import { nextPaymentStatus } from "@/lib/payment-event-policy";
+import { nextPaymentStatus, paymentStatusTransitionSqlCase } from "@/lib/payment-event-policy";
 import { evaluateOperationalAlerts, latencyBucket } from "@/lib/ops-monitoring";
 import { selectionFromPayload } from "@/lib/adaptive-contract";
 import { validatePdfGrantClaims } from "@/lib/pdf-token-policy";
@@ -191,10 +191,14 @@ test("payment operational state is monotonic across retries, refunds, and disput
   assert.equal(nextPaymentStatus("PAYMENT_PENDING", "PAID"), "PAID");
   assert.equal(nextPaymentStatus("PAID", "PAYMENT_FAILED"), "PAID");
   assert.equal(nextPaymentStatus("PAID", "REFUNDED"), "REFUNDED");
+  assert.equal(nextPaymentStatus("PAID", "PARTIALLY_REFUNDED"), "PARTIALLY_REFUNDED");
+  assert.equal(nextPaymentStatus("PARTIALLY_REFUNDED", "REFUND_FAILED"), "PARTIALLY_REFUNDED");
+  assert.equal(nextPaymentStatus("PARTIALLY_REFUNDED", "PAID"), "PARTIALLY_REFUNDED");
   assert.equal(nextPaymentStatus("REFUNDED", "PAID"), "REFUNDED");
   assert.equal(nextPaymentStatus("REFUNDED", "DISPUTED"), "DISPUTED");
   assert.equal(nextPaymentStatus("DISPUTED", "DISPUTE_CLOSED"), "DISPUTE_CLOSED");
   assert.equal(nextPaymentStatus("DISPUTE_CLOSED", "PAYMENT_FAILED"), "DISPUTE_CLOSED");
+  assert.match(paymentStatusTransitionSqlCase("PAID"), /WHEN 'REFUNDED' THEN 'REFUNDED'/);
 });
 
 test("operational SLO helpers produce explicit alert events and latency buckets", () => {

@@ -27,8 +27,12 @@ function snapshotTree(directory) {
 }
 
 const before = snapshotTree(join(root, "drizzle"));
-run("npx", ["drizzle-kit", "check"]);
-run("npm", ["run", "db:generate"]);
+// Portable: run the bundled drizzle-kit entry with the current node binary
+// instead of shelling out to `npx`/`npm` shims (unresolvable without a shell
+// on some platforms and slower everywhere).
+const drizzleKitBin = join(root, "node_modules", "drizzle-kit", "bin.cjs");
+run(process.execPath, [drizzleKitBin, "check"]);
+run(process.execPath, [drizzleKitBin, "generate"]);
 const after = snapshotTree(join(root, "drizzle"));
 const beforeMap = new Map(before);
 const afterMap = new Map(after);

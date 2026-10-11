@@ -125,78 +125,150 @@ export function viewStateForPath(pathname: string, state?: unknown): ViewRouteSt
   return null;
 }
 
-const VIEW_METADATA: Record<View, ViewMetadata> = {
-  home: {
-    title: "T-Skills · Профиль ваших сильных сторон",
-    description: "Развивающая оценка устойчивых поведенческих предпочтений и сильных сторон.",
+const VIEW_METADATA: Record<"ru" | "kk", Record<View, ViewMetadata>> = {
+  ru: {
+    home: {
+      title: "T-Skills · Профиль ваших сильных сторон",
+      description: "Развивающая оценка устойчивых поведенческих предпочтений и сильных сторон.",
+    },
+    catalog: {
+      title: "Оценки · T-Skills",
+      description: "Выберите доступную развивающую оценку T-Skills.",
+    },
+    detail: {
+      title: "Тест T-Skills",
+      description: "Описание теста T-Skills: формат, ограничения интерпретации и результат.",
+    },
+    checkout: {
+      title: "Оформление доступа · T-Skills",
+      description: "Безопасное оформление доступа к оценке T-Skills.",
+    },
+    consent: {
+      title: "Перед началом · T-Skills",
+      description: "Ознакомьтесь с условиями и политикой конфиденциальности перед началом оценки.",
+    },
+    onboarding: {
+      title: "Короткая анкета · T-Skills",
+      description: "Короткий контекст для карьерного уточнения T-Skills.",
+    },
+    assessment: {
+      title: "Оценка · T-Skills",
+      description: "Продолжение защищённой сессии развивающей оценки T-Skills.",
+    },
+    processing: {
+      title: "Формирование отчёта · T-Skills",
+      description: "Подготовка вашего персонального отчёта T-Skills.",
+    },
+    results: {
+      title: "Результаты · T-Skills",
+      description: "Ваш персональный отчёт T-Skills.",
+    },
+    account: {
+      title: "Личный кабинет · T-Skills",
+      description: "Ваши сессии, отчёты и настройки данных T-Skills.",
+    },
+    methodology: {
+      title: "Методология · T-Skills",
+      description: "Как устроена развивающая оценка T-Skills и как читать её результаты.",
+    },
+    privacy: {
+      title: "Политика конфиденциальности · T-Skills",
+      description: "Как T-Skills собирает, использует и защищает персональные данные.",
+    },
+    terms: {
+      title: "Условия использования · T-Skills",
+      description: "Правила использования сервиса T-Skills и доступа к оценке.",
+    },
+    faq: {
+      title: "Частые вопросы · T-Skills",
+      description: "Ответы на частые вопросы об оценке, отчёте и сохранении данных T-Skills.",
+    },
+    support: {
+      title: "Поддержка · T-Skills",
+      description: "Помощь с доступом, сессией, оплатой и отчётом T-Skills.",
+    },
+    admin: {
+      title: "Администрирование · T-Skills",
+      description: "Защищённая панель операционных метрик T-Skills.",
+    },
+    teen: {
+      title: "Тест для подростков · T-Skills",
+      description: "Развивающая оценка для подростков: 75 сравнений, уточнение и подбор направлений.",
+    },
   },
-  catalog: {
-    title: "Оценки · T-Skills",
-    description: "Выберите доступную развивающую оценку T-Skills.",
-  },
-  detail: {
-    title: "Тест T-Skills",
-    description: "Описание теста T-Skills: формат, ограничения интерпретации и результат.",
-  },
-  checkout: {
-    title: "Оформление доступа · T-Skills",
-    description: "Безопасное оформление доступа к оценке T-Skills.",
-  },
-  consent: {
-    title: "Перед началом · T-Skills",
-    description: "Ознакомьтесь с условиями и политикой конфиденциальности перед началом оценки.",
-  },
-  onboarding: {
-    title: "Короткая анкета · T-Skills",
-    description: "Короткий контекст для карьерного уточнения T-Skills.",
-  },
-  assessment: {
-    title: "Оценка · T-Skills",
-    description: "Продолжение защищённой сессии развивающей оценки T-Skills.",
-  },
-  processing: {
-    title: "Формирование отчёта · T-Skills",
-    description: "Подготовка вашего персонального отчёта T-Skills.",
-  },
-  results: {
-    title: "Результаты · T-Skills",
-    description: "Ваш персональный отчёт T-Skills.",
-  },
-  account: {
-    title: "Личный кабинет · T-Skills",
-    description: "Ваши сессии, отчёты и настройки данных T-Skills.",
-  },
-  methodology: {
-    title: "Методология · T-Skills",
-    description: "Как устроена развивающая оценка T-Skills и как читать её результаты.",
-  },
-  privacy: {
-    title: "Политика конфиденциальности · T-Skills",
-    description: "Как T-Skills собирает, использует и защищает персональные данные.",
-  },
-  terms: {
-    title: "Условия использования · T-Skills",
-    description: "Правила использования сервиса T-Skills и доступа к оценке.",
-  },
-  faq: {
-    title: "Частые вопросы · T-Skills",
-    description: "Ответы на частые вопросы об оценке, отчёте и сохранении данных T-Skills.",
-  },
-  support: {
-    title: "Поддержка · T-Skills",
-    description: "Помощь с доступом, сессией, оплатой и отчётом T-Skills.",
-  },
-  admin: {
-    title: "Администрирование · T-Skills",
-    description: "Защищённая панель операционных метрик T-Skills.",
-  },
-  teen: {
-    title: "Тест для подростков · T-Skills",
-    description: "Развивающая оценка для подростков: 75 сравнений, уточнение и подбор направлений.",
+  kk: {
+    home: {
+      title: "T-Skills · Сіздің мықты жақтарыңыздың бейіні",
+      description: "Тұрақты мінез-құлықтық басымдықтар мен мықты жақтарды дамытушы бағалау.",
+    },
+    catalog: {
+      title: "Бағалаулар · T-Skills",
+      description: "Қолжетімді дамытушы T-Skills бағалауын таңдаңыз.",
+    },
+    detail: {
+      title: "T-Skills тесті",
+      description: "T-Skills тестінің сипаттамасы: форматы, шектеулері және нәтижесі.",
+    },
+    checkout: {
+      title: "Қолжетімділікті ресімдеу · T-Skills",
+      description: "T-Skills бағалауына қауіпсіз қолжетімділік ресімдеу.",
+    },
+    consent: {
+      title: "Бастамас бұрын · T-Skills",
+      description: "Бағалауды бастамас бұрын шарттармен және құпиялылық саясатымен танысыңыз.",
+    },
+    onboarding: {
+      title: "Қысқаша сауалнама · T-Skills",
+      description: "T-Skills мансаптық нақтылауы үшін қысқаша контекст.",
+    },
+    assessment: {
+      title: "Бағалау · T-Skills",
+      description: "T-Skills дамытушы бағалауының қорғалған сессиясын жалғастыру.",
+    },
+    processing: {
+      title: "Есепті қалыптастыру · T-Skills",
+      description: "Сіздің жеке T-Skills есебіңізді дайындау.",
+    },
+    results: {
+      title: "Нәтижелер · T-Skills",
+      description: "Сіздің жеке T-Skills есебіңіз.",
+    },
+    account: {
+      title: "Жеке кабинет · T-Skills",
+      description: "Сіздің сессияларыңыз, есептеріңіз және T-Skills деректер параметрлері.",
+    },
+    methodology: {
+      title: "Әдіснама · T-Skills",
+      description: "T-Skills дамытушы бағалауы қалай құрылған және оның нәтижелерін қалай түсіну керек.",
+    },
+    privacy: {
+      title: "Құпиялылық саясаты · T-Skills",
+      description: "T-Skills жеке деректерді қалай жинайды, пайдаланады және қорғайды.",
+    },
+    terms: {
+      title: "Пайдалану шарттары · T-Skills",
+      description: "T-Skills сервисін пайдалану және бағалауға қол жеткізу ережелері.",
+    },
+    faq: {
+      title: "Жиі қойылатын сұрақтар · T-Skills",
+      description: "T-Skills бағалауы, есебі және деректерді сақтау туралы жиі қойылатын сұрақтарға жауаптар.",
+    },
+    support: {
+      title: "Қолдау · T-Skills",
+      description: "T-Skills қолжетімділігі, сессиясы, төлемі және есебі бойынша көмек.",
+    },
+    admin: {
+      title: "Әкімшілік басқару · T-Skills",
+      description: "T-Skills операциялық көрсеткіштерінің қорғалған панелі.",
+    },
+    teen: {
+      title: "Жасөспірімдерге арналған тест · T-Skills",
+      description: "Жасөспірімдерге арналған дамытушы бағалау: 75 салыстыру, нақтылау және бағыттарды таңдау.",
+    },
   },
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- фаза оставлена в сигнатуре для совместимости вызовов.
-export function metadataForView(view: View, _phase: Phase = "core") {
-  return VIEW_METADATA[view];
+export function metadataForView(view: View, _phase: Phase = "core", lang: "ru" | "kk" = "ru") {
+  return VIEW_METADATA[lang]?.[view] ?? VIEW_METADATA.ru[view];
 }

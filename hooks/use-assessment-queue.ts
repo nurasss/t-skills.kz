@@ -11,6 +11,13 @@ export function useAssessmentQueue({ onStatus, savedText, offlineText }: { onSta
   const pendingPromisesRef = useRef(new Map<string, Promise<void>>());
   const laneTailsRef = useRef(new Map<string, Promise<void>>());
   const serverSavedRef = useRef(new Set<string>());
+  // Тексты статуса читаются в момент завершения запроса, а не в момент его
+  // старта: если язык переключили, пока ответ сохранялся, сообщение придёт
+  // на новом языке, а не вернётся на прежний.
+  const textsRef = useRef({ savedText, offlineText });
+  useEffect(() => {
+    textsRef.current = { savedText, offlineText };
+  }, [savedText, offlineText]);
 
   const sendPendingResponse = async (pending: PendingResponse) => {
     try {
@@ -27,9 +34,9 @@ export function useAssessmentQueue({ onStatus, savedText, offlineText }: { onSta
       serverSavedRef.current.add(pending.itemId);
       pendingRef.current = removePending(pendingRef.current, pending.idempotencyKey);
       writePendingResponses(pendingRef.current);
-      onStatus(savedText ?? "ответ сохранён");
+      onStatus(textsRef.current.savedText ?? "ответ сохранён");
     } catch (error) {
-      onStatus(offlineText ?? "ожидает соединения");
+      onStatus(textsRef.current.offlineText ?? "ожидает соединения");
       throw error;
     }
   };

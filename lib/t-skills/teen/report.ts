@@ -3,7 +3,7 @@
  * Без выдуманных описаний: только имена/баллы трейтов, топ-5 профессий
  * из каталога, эхо онбординга и версии пайплайна.
  */
-import { TEEN_VALUE_FIT_TOP, TEEN_VERSION_IDS, type TeenOnboarding, type TeenStage1Totals, type TeenTraitId } from "@/lib/t-skills/teen/taxonomy";
+import { TEEN_VALUE_FIT_TOP, TEEN_V1_FIX_VERSION_IDS, TEEN_V1_VERSION_IDS, TEEN_V3_VERSION_IDS, TEEN_V4_VERSION_IDS, TEEN_VERSION_IDS, type TeenOnboarding, type TeenStage1Totals, type TeenTraitId } from "@/lib/t-skills/teen/taxonomy";
 import { normalizeTeenTotal } from "@/lib/t-skills/teen/scoring";
 import type { TeenCareerScore } from "@/lib/t-skills/teen/matching";
 import type { TeenContentBundle } from "@/lib/t-skills/teen/content";
@@ -29,7 +29,7 @@ export type TeenProfessionResult = {
 };
 
 export type TeenReport = {
-  versions: typeof TEEN_VERSION_IDS;
+  versions: typeof TEEN_V4_VERSION_IDS | typeof TEEN_V3_VERSION_IDS | typeof TEEN_VERSION_IDS | typeof TEEN_V1_VERSION_IDS | typeof TEEN_V1_FIX_VERSION_IDS;
   contentStatus: string;
   traits: TeenTraitResult[];
   topTraits: TeenTraitResult[];
@@ -45,6 +45,7 @@ export function buildTeenReport(
   onboarding: TeenOnboarding | null,
   topCount = 5,
   topTraitCount = 5,
+  versions: TeenReport["versions"] = TEEN_V3_VERSION_IDS,
 ): TeenReport {
   const traits: TeenTraitResult[] = (Object.keys(totals) as TeenTraitId[]).map((traitId) => ({
     traitId,
@@ -73,7 +74,7 @@ export function buildTeenReport(
   });
 
   return {
-    versions: TEEN_VERSION_IDS,
+    versions,
     contentStatus: content.status,
     traits,
     topTraits: traits.slice(0, topTraitCount),

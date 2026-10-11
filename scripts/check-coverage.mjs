@@ -18,7 +18,7 @@ if ((summary.total?.branches?.pct ?? 0) < 80) {
   failures.push("TOTAL_LIB_BRANCH_COVERAGE:" + (summary.total?.branches?.pct ?? 0) + "<80");
 }
 for (const [suffix, minimum] of requirements) {
-  const entry = Object.entries(summary).find(([path]) => path.endsWith("/lib/" + suffix));
+  const entry = Object.entries(summary).find(([path]) => path.replace(/\\/g, "/").endsWith("/lib/" + suffix));
   const actual = entry?.[1]?.branches?.pct ?? 0;
   if (actual < minimum) failures.push(suffix + ":" + actual + "<" + minimum);
 }

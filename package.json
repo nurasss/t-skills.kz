@@ -25,6 +25,7 @@
     "content:t-skills:v5:check": "tsx scripts/validate-t-skills-v5-content.ts",
     "content:t-skills:v5:import": "tsx scripts/import-t-skills-v5-content.ts",
     "test": "tsx --test tests/*.test.ts",
+    "test:integration": "node --no-warnings --import tsx/esm --import ./tests/helpers/cf-register.mjs --loader ./scripts/ttf-inline-loader.mjs --test tests/integration/*.test.ts",
     "test:coverage": "c8 --all --include='lib/**/*.ts' --reporter=text --reporter=json-summary tsx --test tests/*.test.ts && node scripts/check-coverage.mjs",
     "test:properties": "tsx --test tests/property.test.ts",
     "test:faults": "tsx --test tests/fault-injection.test.ts",
@@ -53,7 +54,7 @@
     "@pdf-lib/fontkit": "^1.1.1",
     "drizzle-orm": "0.45.2",
     "lucide-react": "^1.46.0",
-    "next": "16.3.5",
+    "next": "16.3.8",
     "nodemailer": "^10.0.10",
     "pdf-lib": "^1.17.1",
     "react": "19.3.0",
@@ -61,8 +62,8 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.54.11",
-    "@cloudflare/workers-types": "5.20260917.1",
+    "@cloudflare/vite-plugin": "1.62.4",
+    "@cloudflare/workers-types": "5.20261002.1",
     "@playwright/test": "1.61.0",
     "@tailwindcss/postcss": "4.3.3",
     "@tailwindcss/vite": "4.3.3",
@@ -84,13 +85,14 @@
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.13",
     "typescript": "5.9.3",
-    "vinext": "1.0.0-beta.10",
+    "vinext": "1.0.1",
     "vite": "8.3.0",
-    "wrangler": "4.133.0"
+    "wrangler": "4.146.0"
   },
   "overrides": {
+    "fflate": "0.7.5",
     "@esbuild-kit/core-utils": {
-      "esbuild": "0.25.12"
+      "esbuild": "^0.25.12"
     }
   },
   "type": "module"

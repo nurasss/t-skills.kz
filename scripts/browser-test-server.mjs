@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
-import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = process.cwd();
@@ -20,7 +21,16 @@ const migrationSql = readdirSync("drizzle")
   .sort()
   .map((entry) => readFileSync(join("drizzle", entry), "utf8"))
   .join("\n");
-wrangler(["d1", "execute", "DB", "--local", "--config", config, "--persist-to", state, "--command", migrationSql]);
+// Portable: pass migrations via --file instead of a giant --command argument
+// (command-line length limits vary by platform).
+const migrationDir = mkdtempSync(join(tmpdir(), "orbita-migrations-"));
+const migrationFile = join(migrationDir, "migrations.sql");
+writeFileSync(migrationFile, migrationSql);
+try {
+  wrangler(["d1", "execute", "DB", "--local", "--config", config, "--persist-to", state, "--file", migrationFile]);
+} finally {
+  rmSync(migrationDir, { recursive: true, force: true });
+}
 
 const child = spawn(
   process.execPath,
@@ -41,7 +51,13 @@ const child = spawn(
     "--port",
     "8790",
     "--var",
+    "APP_ENV:development",
+    "--var",
     "ORBITA_ENV:development",
+    "--var",
+    "LEGAL_DOCUMENTS_APPROVED:false",
+    "--var",
+    "TEEN_BANK_ENABLED:true",
     "--var",
     "ASSESSMENT_PRICE_MINOR:150000",
     "--var",

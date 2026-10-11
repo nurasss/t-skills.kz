@@ -58,7 +58,7 @@ function gitStatusIsClean() {
 }
 
 function manifestIsConsistent() {
-  if (manifest.schema_version !== "orbita-30-release-manifest-v2") return false;
+  if (manifest.schema_version !== "orbita-30-release-manifest-v2" && manifest.schema_version !== "t-skills-release-manifest-v3") return false;
   if (!/^[0-9a-f]{40}$/.test(manifest.source_git_sha ?? "")) return false;
   if (manifest.node_version !== "22.13.0" || manifest.runtime?.required_node !== "22.13.0") return false;
   if (manifest.artifact_sha256 !== manifest.source_package?.sha256) return false;

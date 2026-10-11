@@ -1,7 +1,12 @@
-import { getRuntimeEnv } from "@/db";
+import { getRuntimeEnv, type OrbitaRuntimeEnv } from "@/db";
+import { publicIndexingAllowedForEnvironment } from "@/lib/legal-policy";
 
 export function publicIndexingEnabled() {
-  return getRuntimeEnv().PUBLIC_INDEXING_ENABLED?.trim().toLowerCase() === "true";
+  return publicIndexingEnabledForEnvironment(getRuntimeEnv());
+}
+
+export function publicIndexingEnabledForEnvironment(environment: Partial<OrbitaRuntimeEnv>) {
+  return publicIndexingAllowedForEnvironment(environment);
 }
 
 export function configuredAppOrigin() {

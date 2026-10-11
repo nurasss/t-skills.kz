@@ -7,6 +7,7 @@
 import type { AssessmentItem } from "@/app/orbita-view-types";
 import type { PairwiseItem } from "@/lib/t-skills/contracts";
 import bundle from "@/lib/adult-kk.json";
+import { localizeTeenQuestion } from "@/lib/t-skills/teen/runtime";
 
 type AdultKkBundle = {
   status: string;
@@ -56,7 +57,7 @@ export function localizeAdaptiveItem<T extends AssessmentItem>(item: T, lang: "r
 }
 
 export function localizeAssessmentItem<T extends AssessmentItem>(item: T, lang: "ru" | "kk"): T {
-  return localizeAdaptiveItem(localizePairwiseItem(item, lang), lang);
+  return localizeTeenQuestion(localizeAdaptiveItem(localizePairwiseItem(item, lang), lang), lang);
 }
 
 /** Казахские имя/определение/риск legacy-трейта для approved library. */

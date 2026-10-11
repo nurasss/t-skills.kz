@@ -1,11 +1,12 @@
 import { getD1, getRuntimeEnv } from "@/db";
 import { attachCheckoutSession, createPendingOrder, findOrderIdByPaymentId, markOrderPaymentFailed, handlePaymentEvent } from "@/lib/durable-store";
 import type { PaymentEventStatus } from "@/lib/payment-event-policy";
-import { T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import { T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEST_ID } from "@/lib/t-skills/versions";
 import { verifyStripeSignature } from "@/lib/stripe-signature";
 import type { Viewer } from "@/lib/server-auth";
 import { paymentsEnabled } from "@/lib/runtime-config";
 import { paymentsFeatureEnabled } from "@/lib/feature-flags";
+import { isCheckoutEnabled } from "@/lib/system-settings";
 import { trustedAppBaseUrl } from "@/lib/app-auth";
 import { readBoundedResponseJson, readBoundedResponseText } from "@/lib/provider-contract";
 import { isHostedStripeCheckoutUrl } from "@/lib/payment-url";
@@ -17,10 +18,9 @@ export class PaymentProviderError extends Error {
   }
 }
 
-function requiredAmount() {
-  const value = Number(getRuntimeEnv().ASSESSMENT_PRICE_MINOR ?? "0");
-  if (!Number.isSafeInteger(value) || value <= 0) throw new PaymentProviderError("PAYMENT_PRICE_NOT_CONFIGURED");
-  return value;
+async function failPendingCheckout(orderId: string, code: string): Promise<never> {
+  await markOrderPaymentFailed(orderId, code);
+  throw new PaymentProviderError(code);
 }
 
 function currency() {
@@ -53,14 +53,14 @@ export function getPublicTestConfig(): PublicTestConfig {
   return {
     id: T_SKILLS_TEST_ID,
     name: "T-Skills",
-    assessmentVersion: T_SKILLS_VERSION_IDS.assessment,
+    assessmentVersion: T_SKILLS_TEEN_V4_VERSION_IDS.assessment,
     amountMinor,
     currency: validCurrency ? configuredCurrency : "KZT",
     availableForCheckout: paymentFlowEnabled && amountMinor !== null && validCurrency && provider === "stripe" && Boolean(runtimeEnv.STRIPE_SECRET_KEY?.trim() && runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim() && runtimeEnv.PDF_SIGNING_SECRET?.trim()),
     accessMode: paymentFlowEnabled ? "payment" : "beta-free",
     includesPdf: true,
     oneTime: true,
-    description: "67 парных сравнений 25 качеств и 8 коротких карьерных ситуаций",
+    description: "75 парных сравнений 25 качеств и 8 ситуативных уточнений",
   };
 }
 
@@ -88,12 +88,13 @@ export async function getPublicTestConfigAsync(): Promise<PublicTestConfig> {
   const runtimeEnv = getRuntimeEnv();
   const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
   const paymentFlowEnabled = await paymentsFeatureEnabled();
-  if (!pricing) return { ...base, availableForCheckout: paymentFlowEnabled && base.availableForCheckout, accessMode: paymentFlowEnabled ? "payment" : "beta-free" };
+  const checkoutAllowed = paymentFlowEnabled && (await isCheckoutEnabled());
+  if (!pricing) return { ...base, availableForCheckout: checkoutAllowed && base.availableForCheckout, accessMode: paymentFlowEnabled ? "payment" : "beta-free" };
   return {
     ...base,
     amountMinor: pricing.amountMinor,
     currency: pricing.currency,
-    availableForCheckout: paymentFlowEnabled && provider === "stripe" && Boolean(
+    availableForCheckout: checkoutAllowed && provider === "stripe" && Boolean(
       runtimeEnv.STRIPE_SECRET_KEY?.trim() && runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim() && runtimeEnv.PDF_SIGNING_SECRET?.trim(),
     ),
     accessMode: paymentFlowEnabled ? "payment" : "beta-free",
@@ -103,14 +104,13 @@ export async function getPublicTestConfigAsync(): Promise<PublicTestConfig> {
 async function currentPricing(testId: string) {
   const pricing = await registryPricing(testId);
   if (pricing) return pricing;
-  return { amountMinor: requiredAmount(), currency: currency() };
+  const raw = Number(getRuntimeEnv().ASSESSMENT_PRICE_MINOR ?? "0");
+  const amountMinor = Number.isSafeInteger(raw) && raw > 0 ? raw : 150000;
+  return { amountMinor, currency: currency() };
 }
 
 export async function createCheckout(input: { viewer: Viewer; testId: string; request: Request; idempotencyKey: string; promoCode?: string }) {
   const runtimeEnv = getRuntimeEnv();
-  if (!await paymentsFeatureEnabled()) throw new PaymentProviderError("PAYMENTS_DISABLED");
-  const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
-  if (provider !== "stripe") throw new PaymentProviderError("PAYMENT_PROVIDER_UNSUPPORTED");
   const pricing = await currentPricing(input.testId);
   const orderResult = await createPendingOrder({
     viewer: input.viewer,
@@ -122,13 +122,24 @@ export async function createCheckout(input: { viewer: Viewer; testId: string; re
     promoCode: input.promoCode,
   });
   if (orderResult.order.freeAccess) return { ...orderResult, checkoutUrl: null };
-  const secret = runtimeEnv.STRIPE_SECRET_KEY?.trim();
-  if (!secret) throw new PaymentProviderError("STRIPE_SECRET_KEY_MISSING");
-  if (!runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim()) throw new PaymentProviderError("STRIPE_WEBHOOK_SECRET_MISSING");
-  if (!runtimeEnv.PDF_SIGNING_SECRET?.trim()) throw new PaymentProviderError("PDF_SIGNING_SECRET_MISSING");
+  if (!await paymentsFeatureEnabled()) {
+    if (orderResult.order.checkoutUrl) throw new PaymentProviderError("PAYMENTS_DISABLED");
+    return failPendingCheckout(orderResult.order.id, "PAYMENTS_DISABLED");
+  }
+  if (!await isCheckoutEnabled()) {
+    if (orderResult.order.checkoutUrl) throw new PaymentProviderError("CHECKOUT_DISABLED");
+    return failPendingCheckout(orderResult.order.id, "CHECKOUT_DISABLED");
+  }
   if (orderResult.order.checkoutUrl) return { ...orderResult, checkoutUrl: orderResult.order.checkoutUrl };
+  const provider = (runtimeEnv.PAYMENT_PROVIDER ?? "stripe").trim().toLowerCase();
+  if (provider !== "stripe") return failPendingCheckout(orderResult.order.id, "PAYMENT_PROVIDER_UNSUPPORTED");
+  const secret = runtimeEnv.STRIPE_SECRET_KEY?.trim();
+  if (!secret) return failPendingCheckout(orderResult.order.id, "STRIPE_SECRET_KEY_MISSING");
+  if (!runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim()) return failPendingCheckout(orderResult.order.id, "STRIPE_WEBHOOK_SECRET_MISSING");
+  if (!runtimeEnv.PDF_SIGNING_SECRET?.trim()) return failPendingCheckout(orderResult.order.id, "PDF_SIGNING_SECRET_MISSING");
 
   const baseUrl = trustedAppBaseUrl(input.request);
+  const expiresAtSec = Math.floor(Date.now() / 1000) + 30 * 60;
   const form = new URLSearchParams();
   form.set("mode", "payment");
   form.set("line_items[0][price_data][currency]", pricing.currency.toLowerCase());
@@ -136,6 +147,7 @@ export async function createCheckout(input: { viewer: Viewer; testId: string; re
   form.set("line_items[0][price_data][product_data][name]", "T-Skills");
   form.set("line_items[0][price_data][product_data][description]", "Развивающий профиль способа действовать");
   form.set("line_items[0][quantity]", "1");
+  form.set("expires_at", String(expiresAtSec));
   form.set("client_reference_id", orderResult.order.id);
   form.set("metadata[order_id]", orderResult.order.id);
   form.set("metadata[test_id]", input.testId);
@@ -169,9 +181,9 @@ export async function createCheckout(input: { viewer: Viewer; testId: string; re
     console.error("stripe_checkout_error", { status: response.status });
     throw new PaymentProviderError("STRIPE_CHECKOUT_FAILED");
   }
-  let payload: { id?: string; url?: string };
+  let payload: { id?: string; url?: string; expires_at?: number };
   try {
-    payload = await readBoundedResponseJson(response, 64 * 1024) as { id?: string; url?: string };
+    payload = await readBoundedResponseJson(response, 64 * 1024) as { id?: string; url?: string; expires_at?: number };
   } catch {
     await markOrderPaymentFailed(orderResult.order.id, "STRIPE_RESPONSE_INVALID");
     throw new PaymentProviderError("STRIPE_RESPONSE_INVALID");
@@ -181,7 +193,15 @@ export async function createCheckout(input: { viewer: Viewer; testId: string; re
     console.error("stripe_checkout_url_invalid", { error_code: "STRIPE_RESPONSE_INVALID" });
     throw new PaymentProviderError("STRIPE_RESPONSE_INVALID");
   }
-  await attachCheckoutSession({ viewer: input.viewer, orderId: orderResult.order.id, providerCheckoutId: payload.id, checkoutUrl: payload.url });
+  const stripeExpiresAtMs = typeof payload.expires_at === "number" ? payload.expires_at * 1000 : (expiresAtSec * 1000);
+  const reservationExpiresAtMs = stripeExpiresAtMs + 120_000;
+  await attachCheckoutSession({
+    viewer: input.viewer,
+    orderId: orderResult.order.id,
+    providerCheckoutId: payload.id,
+    checkoutUrl: payload.url,
+    expiresAt: reservationExpiresAtMs,
+  });
   return { ...orderResult, checkoutUrl: payload.url };
 }
 
@@ -218,9 +238,32 @@ export async function processStripeWebhook(payload: string, signature: string | 
   if (!orderId) return { ignored: true, eventId: event.id, reason: "ORDER_ID_MISSING" };
 
   let status: PaymentEventStatus | null = null;
+  let amountMinor = typeof object.amount_total === "number" ? object.amount_total : null;
+  let eventCurrency = typeof object.currency === "string" ? object.currency : null;
   if ((event.type === "checkout.session.completed" && object.payment_status === "paid") || (event.type === "checkout.session.async_payment_succeeded" && object.payment_status === "paid")) status = "PAID";
   if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") status = "PAYMENT_FAILED";
-  if (event.type === "charge.refunded" || event.type === "refund.created" || event.type === "refund.updated") status = "REFUNDED";
+  if (event.type === "charge.refunded") {
+    const chargeAmount = object.amount;
+    const amountRefunded = object.amount_refunded;
+    if (!Number.isSafeInteger(chargeAmount) || !Number.isSafeInteger(amountRefunded) || (chargeAmount as number) <= 0 || (amountRefunded as number) <= 0 || (amountRefunded as number) > (chargeAmount as number)) {
+      throw new PaymentProviderError("STRIPE_PAYLOAD_INVALID");
+    }
+    status = (amountRefunded as number) >= (chargeAmount as number) ? "REFUNDED" : "PARTIALLY_REFUNDED";
+    amountMinor = amountRefunded as number;
+    eventCurrency = typeof object.currency === "string" ? object.currency : null;
+  }
+  if (["refund.created", "refund.updated", "refund.failed"].includes(event.type)) {
+    const refundStatus = typeof object.status === "string" ? object.status.trim().toLowerCase() : "";
+    const refundAmount = object.amount;
+    if (!Number.isSafeInteger(refundAmount) || (refundAmount as number) <= 0) {
+      throw new PaymentProviderError("STRIPE_PAYLOAD_INVALID");
+    }
+    amountMinor = refundAmount as number;
+    eventCurrency = typeof object.currency === "string" ? object.currency : null;
+    if (event.type === "refund.failed" || refundStatus === "failed" || refundStatus === "canceled") status = "REFUND_FAILED";
+    else if (refundStatus === "pending" || refundStatus === "requires_action") status = "REFUND_PENDING";
+    else if (refundStatus === "succeeded") status = "REFUNDED";
+  }
   if (event.type === "charge.dispute.created") status = "DISPUTED";
   if (event.type === "charge.dispute.closed") status = "DISPUTE_CLOSED";
   if (!status) return { ignored: true, eventId: event.id, reason: "EVENT_NOT_ACTIONABLE" };
@@ -232,8 +275,8 @@ export async function processStripeWebhook(payload: string, signature: string | 
     status,
     providerPaymentId: paymentId,
     providerCheckoutId: typeof object.id === "string" ? object.id : null,
-    amountMinor: typeof object.amount_total === "number" ? object.amount_total : null,
-    currency: typeof object.currency === "string" ? object.currency : null,
+    amountMinor,
+    currency: eventCurrency,
     testId: typeof metadata.test_id === "string" ? metadata.test_id : null,
     paymentStatus: typeof object.payment_status === "string" ? object.payment_status : null,
     payloadHash: await sha256(payload),

@@ -1,6 +1,6 @@
 /**
  * Загрузчик и валидатор бандла teen-контента v1 (scripts/convert-teen-bank.py).
- * Бандл имеет статус DRAFT-UNAPPROVED до аппрува владельцем.
+ * Бандл утверждён владельцем (status PUBLISHED, 2026-09-26).
  */
 import {
   TEEN_SUBJECTS,
@@ -24,6 +24,23 @@ export type TeenContentBundle = {
   stage2: (TeenStage2Question & { scenario: string; options: { id: string; value: number; text: string }[] })[];
   professions: (TeenProfession & { title: string; sphere: string; klimovType: string; education: string; description: string })[];
 };
+
+/**
+ * Apply a versioned display-side layout without changing statement text or
+ * trait identity. Swapping selected pairs balances each trait at three left
+ * and three right exposures in t-skills-teen-items-v2.
+ */
+export function applyTeenPairSideLayout(bundle: TeenContentBundle, swapQuestionNumbers: readonly number[]): TeenContentBundle {
+  const swapIds = new Set(swapQuestionNumbers.map((number) => `t75-${number}`));
+  const items75 = bundle.items75.map((item) => swapIds.has(item.id)
+    ? { ...item, leftTraitId: item.rightTraitId, rightTraitId: item.leftTraitId }
+    : item);
+  const items75Texts = Object.fromEntries(Object.entries(bundle.items75Texts).map(([id, texts]) => [
+    id,
+    swapIds.has(id) ? { left: texts.right, right: texts.left } : texts,
+  ]));
+  return { ...bundle, items75, items75Texts };
+}
 
 function assertInList(value: string, list: readonly string[], what: string): void {
   if (!list.includes(value)) throw new Error(`TEEN_CONTENT:${what}:${value}`);

@@ -37,7 +37,7 @@ The Sites initializer copies the shared starter with the explicit `--execution-p
 
 Whenever reopening or moving a checkout, follow the plugin's instructions to run `configure-execution-profile.mjs --execution-profile <portable|managed-linux>` before project commands. Profile changes do not alter tracked source or require reinstalling otherwise-valid dependencies; restart an existing preview to use the new selection. Do not commit or upload `.sites-runtime/`.
 
-The current closed-beta deployment uses `wrangler.jsonc` named `staging` and `production` environments. Secrets are managed outside Git with Wrangler/Cloudflare; only secret names and safe defaults belong in tracked configuration.
+The repository defines Cloudflare Worker `staging` and `production` environments in `wrangler.jsonc` and a separate Node/SQLite VPS adapter in `deploy/vps/`. Read-only checks on 2026-10-04 found the public `t-skills.kz` host on the VPS path while both Cloudflare Workers remained Access-protected. Neither response exposed a source SHA, so confirm the intended production target and live revision before treating either as current-source deployment evidence.
 
 `install:ci` runs `npm ci` once against the shared lockfile, disables parent-workspace discovery, and includes required dev/optional dependencies despite production/omit settings. Sharp defaults to prebuilt binaries unless explicitly configured otherwise. Do not overlap installers.
 
@@ -54,7 +54,7 @@ The portable profile supports a preview-only identity header for local smoke tes
 
 The Worker entrypoint is `worker/index.ts`. It delegates HTTP requests to `vinext/server/fetch-handler` and also exports the scheduled retention handler. After building, `npm start` runs that Worker locally through Wrangler on `127.0.0.1`, sharing `.wrangler/state` with dev preview and local D1 migrations; it does not deploy the site or simulate sign-in. Use the URL printed by the server. Pass `npm start -- --port <port>` to select a different built-preview port.
 
-Vercel Preview is configured as a separate Nitro target for visual and runtime compatibility checks: `npm run build:vercel`, then `vercel deploy --prebuilt`. The Vercel target intentionally does not emulate Cloudflare D1/R2 or the D1-backed application auth; public pages plus storage-independent endpoints can be smoke-tested there, while assessment, account, report, PDF and retention flows remain on the canonical Cloudflare Worker. Never copy Cloudflare, Resend or Inception secrets into the Vercel build unless a separate Vercel storage/auth architecture is approved.
+Vercel Preview is configured as a separate Nitro target for visual and runtime compatibility checks: `npm run build:vercel`, then `vercel deploy --prebuilt`. The Vercel target intentionally does not emulate the Cloudflare D1/R2 or VPS SQLite/file bindings; only public pages and storage-independent endpoints can be smoke-tested there. Do not copy Cloudflare, VPS, Resend or Inception secrets into the Vercel build unless a separate Vercel storage/auth architecture is approved.
 
 Local previews use Miniflare's placeholder `Request.cf` metadata without a network lookup. Set `CLOUDFLARE_CF_FETCH_ENABLED=true` to opt into fetching preview metadata; this setting does not change hosted request metadata.
 
@@ -94,6 +94,7 @@ Set non-secret runtime values in the matching Cloudflare Worker environment; nev
 
 ```text
 ORBITA_ENV=production
+LEGAL_DOCUMENTS_APPROVED=false  # Set true only after the signed legal approval record and all operator fields are verified.
 PAYMENT_PROVIDER=stripe
 ASSESSMENT_CURRENCY=KZT
 APP_BASE_URL=https://orbita-30.yzh905284.chatgpt.site
@@ -105,6 +106,8 @@ MERCURY_TIMEOUT_MS=12000
 MERCURY_MAX_RETRIES=2
 RETENTION_DAYS=365
 ```
+
+Production legal fields are not synthesized from defaults. Until `LEGAL_DOCUMENTS_APPROVED=true` and every required operator/legal value is present, public legal pages show only a draft warning and configured support contact, legal approval metadata does not block registration, assessment creation or checkout. Indexing follows the explicit `PUBLIC_INDEXING_ENABLED` switch.
 
 Staging overrides are explicit:
 
@@ -214,6 +217,8 @@ npm run test:e2e
 - `npm run contrast:check`: critical text/button color-pair WCAG AA gate
 - `npm run ci:verify`: lint, secret scan, full dependency audit, CSP/contrast/prompt/dead-code/dependency/bundle checks, TypeScript, tests, coverage, build, migration/retention and browser smoke
 - `npm run package:source`: create a clean, reproducible source archive without generated/dependency artifacts
+
+Audit status (2026-10-04): production dependency audit passes with zero findings. The full audit and `npm run ci:verify` currently stop on the unpatched, development-only `braces@3.0.3` stack-exhaustion advisory; see [`SECURITY_REVIEW.md`](./SECURITY_REVIEW.md). A read-only check found the public VPS site is not proven to match this checkout and still serves the earlier unreviewed legal fallback; the current source redacts that fallback. Legal approval metadata no longer blocks production intake; indexing follows its explicit switch. The release gate also remains blocked until the release manifest, exact Git snapshot, verified sender, deployment target and external approvals are current; see [`DEPLOYMENT_EVIDENCE.md`](./DEPLOYMENT_EVIDENCE.md).
 
 When using the Sites plugin, follow its skill instructions for installation, builds, and publishing. These npm commands remain available for standalone use.
 
