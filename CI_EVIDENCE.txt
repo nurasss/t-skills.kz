@@ -1,0 +1,147 @@
+ORBITA-30 MASTER release verification record
+Date: 2026-09-16
+Source Git SHA: 1211f83a58de72962d5695a5a9dd902215b28c96
+Source package SHA256: b45dac72a5b2fb79c15228144653ea9597696a793e120c158a96d134150ddeb6
+Evidence commit: 9c176f2fa12f10cab279dd2b06b6e2676bea19fe
+Node: release verification PASS in Linux container v22.13.0; local host v25.9.0 is not used for release manifest generation
+
+Commands and results:
+  npm ci                                      PASS — lockfile install; clean Ubuntu run is defined in .github/workflows/ci.yml
+  npm run lint                                PASS
+  npm run security:scan                      PASS
+  npm run check:gates                        PASS — all computed statuses NO; local_release_checks=PASS; hosted_ci=MISSING
+  npx tsc --noEmit                           PASS
+  npm test                                   PASS — 34 unit/contract/property/fault/routing/queue tests
+  npm run test:coverage                      PASS — total lib branches 88.65%; critical gate PASS
+  npm run build                              PASS
+  npm run test:e2e                           PASS — sess_e4192af859d04bafa7728e44
+  npm run test:browser                       PASS — strict nonce CSP and checkout navigation
+  npm run test:pdf-visual                    PASS — four 24-page A4 fixtures and render QA
+  npm run test:load                          PASS — responses=304 p50=279.1ms p95=1543.4ms p99=2437.8ms; assessment=2 p50=153.3ms p95=30399.9ms p99=30399.9ms; complete-core=2 p50=629.8ms p95=642.7ms p99=642.7ms; error_rate=0; 429=0; retryable_conflicts=29; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_IN_PROGRESS
+  npm run test:backup                        PASS — BACKUP_RESTORE_SMOKE=PASS
+  npm audit --omit=dev --audit-level=high    PASS — 0 production vulnerabilities in recorded run
+  npm run db:check                            PASS — MIGRATION_DRIFT=PASS
+  npm run test:retention-plan                 PASS — indexed purge query plan
+  Prior clean-room release archive            PASS — the preceding source release completed Linux Node 22.13.0 browser/PDF/E2E/load/backup checks; the final source is covered by the current local suite below
+  Node 22.13.0 release:verify                 PASS — source SHA 1211f83a58de72962d5695a5a9dd902215b28c96; exact archive reproduced twice; flat manifest fields cross-checked
+  git status --porcelain                     PASS after evidence commit — clean tree required
+
+PDF QA:
+  output/pdf/orbita-30-*.pdf                 PASS — four deterministic PDF fixtures, 24 A4 pages each, render and visual review PASS
+
+Reproducibility:
+Two source package runs in Node 22.13.0     PASS — identical SHA256 b45dac72a5b2fb79c15228144653ea9597696a793e120c158a96d134150ddeb6
+
+The local E2E uses an isolated Wrangler D1/R2 state directory and e2e-only test values. It never uses production secrets or data. A GitHub Actions Ubuntu run is required before promoting READY_FOR_ENGINEERING_100=YES.
+
+T-Skills admin control-plane verification record
+Date: 2026-09-22
+Source Git SHA: 17a7d9ad79357ecf034d9dd5e9717e57e7c8fe8c
+Source package SHA256: 14aa86c2b18d82f0899c1a773221456fe8a5f415d0c84092d7ab15315bf591c5
+Node: v22.13.0 for package and release verification
+
+Commands and results:
+  npx tsc --noEmit                           PASS
+  npm run lint                               PASS
+  npm test                                   PASS — 117 tests
+  npm run test:coverage                      PASS — total lib branches 84.35%
+  npm run build                              PASS
+  npm run db:check                           PASS — MIGRATION_DRIFT=PASS
+  npm run test:retention-plan                PASS — RETENTION_QUERY_PLAN=PASS
+  npm run test:e2e                           PASS — post-fix isolated Worker/D1/R2 smoke
+  npm run test:browser                       PASS — strict CSP browser test
+  npm run security:scan                      PASS — no tracked secrets
+  npm run audit:check                        PASS — 0 vulnerabilities
+  npm run package:source:check               PASS — 453 tracked source files, forbidden paths absent
+  Node 22.13.0 release:verify                PASS — archive reproduced twice with exact SHA
+
+Clean Linux note:
+  ATTEMPTED, NOT ATTESTED. Docker's VZ-backed Colima disk returned an I/O error while persisting the clean Node 22.13.0 image. A separate QEMU profile cannot start because qemu-img is not installed. No project gate was skipped locally; an independent Ubuntu/CI runner remains required before claiming clean-Linux evidence.
+
+T-Skills production readiness & concurrency verification record
+Date: 2026-09-25
+Source Git SHA: 2c8b65b8a7ce676e7e09e3e7107c222515c5d171
+Source package SHA256: d90d6f5ab999fea6d7029fe57d2fb18c949575a894665f0888af02edc8528bc6
+
+Commands and results:
+  npx tsc --noEmit                           PASS
+  npm run lint                               PASS
+  npm test                                   PASS — 128 tests
+  npm run build                              PASS
+  npm run db:check                           PASS — MIGRATION_DRIFT=PASS
+  npm run security:scan                      PASS — SECRET_SCAN=PASS
+  Node 22.13.0 release:verify                PASS — archive reproduced twice with exact SHA
+
+Current workspace audit record
+Date: 2026-10-04
+Node: v22.13.0; `npm ci --no-audit --no-fund` installed 658 locked packages
+Git HEAD: 8713135038136a7a2608f8ca2102f026a25dc1e2; worktree contains local modifications and new source files
+
+Commands and results:
+  npm run lint                                PASS — no warnings after cleanup
+  npx tsc --noEmit                            PASS
+  npm test                                    PASS — 184/184, including teen UI-sign scoring, v1/v1-fix/v2 version routing, 3/3 pair-side exposure, v1-session migration, and the existing payment/CMS/legal/auth regression suites
+  npm run test:coverage                       PASS — total lib branches 84.82%; configured gates pass
+  npm run build                               PASS
+  npm run test:browser                        PASS — 2/2 strict CSP/hydration and full Teen client/PDF flow
+  npm run test:e2e                            PASS — isolated local Worker/D1/R2; teen-v2 publish/create/75+8 scoring/report, legal fallback redaction, disabled production intake, delayed Stripe payment/reservation, late-paid-after-refund guard, partial/full/pending/failed refund webhooks and admin health counters, refund CSRF/missing-key gates, FAQ version CAS/stale-publish rejection, deterministic rate-limit boundary, Teen PDF byte limit, and missing-key promo release
+  npm run test:beta                           PASS — payments=OFF, ai=OFF, normStatus=unvalidated
+  npm run test:load                           PASS — responses=93 p50=86.7ms p95=910.8ms p99=911.5ms; assessment p95=53.9ms; complete-core p95=156.5ms; error_rate=0; lost=0; duplicated=0; idempotency=PASS; state=ADAPTIVE_FALLBACK
+  npm run test:backup                         PASS — BACKUP_RESTORE_SMOKE=PASS
+  npm run test:pdf-visual                     PASS — four 24-page A4 fixtures render
+  npm run security:scan                       PASS — SECRET_SCAN=PASS
+  npm audit --omit=dev --audit-level=moderate PASS — 0 production vulnerabilities
+  npm audit --audit-level=moderate            FAIL — 10 dependency paths to one dev-only high severity braces advisory; no patched upstream release
+  npm run ci:verify                            FAIL — halts at the full dependency audit above; remaining gates were run individually
+  npm run csp:check                           PASS
+  npm run contrast:check                      PASS — 22 pairs, minimum ratio 4.57
+  npm run prompts:check                       PASS
+  npm run unused-deps                         PASS
+  npm run dead-code                           EXIT 0 — Knip reports 42 unused exports, 5 unused exported types, and one stale ignore hint
+  npm run bundle:check                        PASS — 76 client bundle files, 3,424,573 bytes
+  npm run db:check                            PASS — MIGRATION_DRIFT=PASS
+  npm run test:retention-plan                 PASS — assessments_purge_due_idx
+  npm run package:source:check                PASS — 454-file archive from committed HEAD; excludes uncommitted worktree changes
+  npm run deploy:config-check                 FAIL — DEPLOY_CONFIG_EMAIL_FROM_MISSING:staging
+  npm run release:verify                      PASS — exact archive reproduced for manifest SHA `2c8b65b…` after fetching Git history; this remains a historical commit, not the current dirty worktree
+  npm run check:gates                         PASS as evaluator; all readiness statuses NO, local_release_checks=FAIL, hosted_ci=MISSING
+
+VPS safety deployment record
+Date: 2026-10-04
+Target: kz-vps / https://t-skills.kz
+Build: `npm run build:vps` PASS under Node 22.13.0
+Runtime artifact SHA256: 82a0773ebb5115484e04c3558530d6cd0feaa0b6cba43a83caa7ba6944db4ab9
+Image ID: 9229867a173e6e2ad405702f9bbd27d4d20ed246e3d24804a54793a975934ddb
+Previous image retained: `t-skills:pre-20261004-01`
+SQLite/files backup: `/opt/t-skills-backups/tskills-data-20261004-before-deploy.tgz` (mode 0600)
+Post-deploy: migration `applied=0`; homepage/health/catalog/privacy/terms 200; unauthenticated admin overview 401; checkout unavailable; legal approval false; production intake false; robots disallow and sitemap empty. See `DEPLOYMENT_EVIDENCE.md` for hashes and rollback command.
+
+This was an explicitly requested manual safety deployment of a dirty worktree, not a clean release or hosted CI attestation. The current app now avoids presenting unapproved legal defaults and blocks intake/indexing. Public paid launch remains blocked until the intended source snapshot is reviewed/committed, hosted CI is available, real operator/legal values and approval are supplied, and operational/security/research gates are completed. Cloudflare Worker environments were not deployed in this SSH operation.
+
+Teen assessment review and v2 rollout
+Date: 2026-10-04
+Test review: `TEEN_ASSESSMENT_REVIEW.md`
+Source Git HEAD: `8713135038136a7a2608f8ca2102f026a25dc1e2` plus dirty worktree changes
+Runtime artifact SHA256: `ec48ded86c95ecb0721c26d685b0c13a23fba429a1f0bc58cbfebcd1be474957`
+Production image ID: `a2f14aafdb22fd5cac1e8961a3d7738a68e327b752f420fcba10ae88379bea6f`
+Previous legal-gated image retained: `t-skills:pre-teen-v2-scorer-20261004` (`9229867a173e6e2ad405702f9bbd27d4d20ed246e3d24804a54793a975934ddb`)
+Migration: `0024_teen_scoring_direction_v2` is applied; v2 is PUBLISHED, v1 RETIRED, one unfinished session uses the v1-fix bridge.
+Database snapshots (both restricted mode 0600): post-v2 `/opt/t-skills-backups/tskills-data-post-teen-v2-20261004.tgz` SHA256 `37ba6e82a18b22f144a6d87c40cd80e0624ec400fbe44287df9ef544274c1483`; v1-compatible rollback `/opt/t-skills-backups/tskills-data-pre-teen-v2-rollback-20261004.tgz` SHA256 `caf243787e49e3b1837e12fd64f50c22435d47953ef9e159ee4d1de951dee808`.
+
+Commands and results:
+  npm test                                    PASS — 184/184
+  npm run test:coverage                       PASS — 84.82% lib branch coverage
+  npm run lint                                PASS
+  npx tsc --noEmit                            PASS
+  npm run db:check                            PASS — MIGRATION_DRIFT=PASS, chain 0000–0024
+  npm run test:e2e                            PASS — isolated Worker/D1/R2; active Teen v2 flow and migration 0024
+  npm run test:browser                        PASS — 2/2, Teen 75+8 client flow and PDF
+  npm run test:beta                           PASS — payments=OFF, ai=OFF, normStatus=unvalidated
+  npm run test:retention-plan                 PASS — assessments_purge_due_idx
+  npm run test:pdf-visual                     PASS — four 24-page A4 fixtures
+  npm run security:scan                       PASS — SECRET_SCAN=PASS
+  npm audit --omit=dev --audit-level=moderate PASS — 0 production vulnerabilities
+  npm audit --audit-level=moderate            FAIL — unpatched dev-only `braces@3.0.3` advisory
+  VPS: `/api/health`, `/api/catalog`, `/robots.txt`, homepage, privacy/terms and admin auth verified after deployment; checkout/intake/indexing remain closed by the legal gate.
+
+The v1/v2 behavioral regression is now explicit: a left choice maps to a positive contribution for the left trait in v2; v1-fix preserves the old item orientation for unfinished attempts. Completed v1 reports are not recalculated and are visibly warned; existing stored PDF files were not rewritten. This dirty worktree has no clean release SHA or hosted CI attestation. Public/paid launch and psychometric claims remain blocked pending legal/operator approvals, hosted CI, external security review and validation evidence.

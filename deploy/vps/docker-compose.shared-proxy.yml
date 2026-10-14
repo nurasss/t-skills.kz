@@ -1,0 +1,22 @@
+# Shared-reverse-proxy variant: use when the VPS already has a front proxy
+# (e.g. another Caddy holding ports 80/443). The app joins that proxy's
+# network under a stable container name; no ports are published and no local
+# Caddy is started.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.shared-proxy.yml up -d --build app
+# Then add to the front proxy, e.g. Caddy:
+#   t-skills.kz {
+#       encode gzip
+#       reverse_proxy tskills-app:3000
+#   }
+services:
+  app:
+    container_name: tskills-app
+    networks:
+      - shared
+
+networks:
+  shared:
+    name: timetrack_timetrack
+    external: true

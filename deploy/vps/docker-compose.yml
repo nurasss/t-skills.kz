@@ -1,0 +1,41 @@
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile
+    image: t-skills:vps
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SQLITE_DB_PATH: /data/app.db
+      VPS_FILE_DIR: /data/files
+      TRUST_PROXY: "true"
+      PORT: "3000"
+    volumes:
+      - tskills-data:/data
+    networks:
+      - tskills
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+    networks:
+      - tskills
+
+volumes:
+  tskills-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  tskills:
