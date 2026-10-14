@@ -23,6 +23,7 @@ import {
   T_SKILLS_TEEN_V1_VERSION_IDS,
   T_SKILLS_TEEN_V3_VERSION_IDS,
   T_SKILLS_TEEN_V4_VERSION_IDS,
+  T_SKILLS_TEEN_V5_VERSION_IDS,
   T_SKILLS_TEEN_VERSION_IDS,
 } from "@/lib/t-skills/versions";
 
@@ -276,10 +277,10 @@ test("same answers give identical trait totals on v3 and v4", () => {
   assert.deepEqual(v4, v3);
 });
 
-test("demo runs on 111 with v4 versions", () => {
+test("demo runs on 111 with v5 versions", () => {
   const { profile, report } = buildTeenDemoData();
-  assert.equal(profile.versions.assessment, T_SKILLS_TEEN_V4_VERSION_IDS.assessment);
-  assert.equal(report.assessmentVersion, T_SKILLS_TEEN_V4_VERSION_IDS.assessment);
+  assert.equal(profile.versions.assessment, T_SKILLS_TEEN_V5_VERSION_IDS.assessment);
+  assert.equal(report.assessmentVersion, T_SKILLS_TEEN_V5_VERSION_IDS.assessment);
   const ranking = report.career?.ranking ?? [];
   assert.equal(ranking.length, 5);
   for (const entry of ranking) {

@@ -3,16 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { TeenOnboardingView } from "@/app/views/onboarding/teen-onboarding-view";
 import { teenRuntimeContent } from "@/lib/t-skills/teen/runtime";
-import { scoreTeenStage1, selectTeenStage2, applyTeenStage2Correction } from "@/lib/t-skills/teen/scoring";
+import { scoreTeenStage1, selectTeenStage2, teenTotalsForScoringVersion } from "@/lib/t-skills/teen/scoring";
 import { scoreTeenCareers } from "@/lib/t-skills/teen/matching";
 import { buildTeenReport, type TeenReport } from "@/lib/t-skills/teen/report";
 import { TEEN_UI, type TeenLocale } from "@/lib/t-skills/teen/ui-strings";
 import { TEEN_CAREER_CATALOG_V2, teenCareerCatalog, teenCareerEntry } from "@/lib/t-skills/teen/careers";
 import { traitDomainHex } from "@/lib/trait-domains";
-import { TEEN_V4_VERSION_IDS, type TeenOnboarding } from "@/lib/t-skills/teen/taxonomy";
+import { TEEN_V5_VERSION_IDS, type TeenOnboarding } from "@/lib/t-skills/teen/taxonomy";
 import "@/app/views/teen/teen.css";
 
-const STORAGE_KEY = "t-skills-teen-flow-v4";
+// v5 swaps the sides of 14 pairs, so v4 drafts must not be replayed.
+const STORAGE_KEY = "t-skills-teen-flow-v5";
 const LOCALE_KEY = "t-skills-teen-locale";
 const STATE_TTL_MS = 24 * 60 * 60 * 1000;
 const STATIC_VALUES = [-2, -1, 0, 1, 2];
@@ -76,7 +77,7 @@ function LocaleToggle({ locale, onChange }: { locale: TeenLocale; onChange: (nex
 
 export function TeenFlowView({ onHome }: { onHome: () => void }) {
   const [locale, setLocale] = useState<TeenLocale>("ru");
-  const content = useMemo(() => teenRuntimeContent(locale), [locale]);
+  const content = useMemo(() => teenRuntimeContent(locale, TEEN_V5_VERSION_IDS.assessment), [locale]);
   const strings = TEEN_UI[locale];
   const [state, setState] = useState<PersistedState>(EMPTY_STATE);
   const [hydrated, setHydrated] = useState(false);
@@ -120,20 +121,19 @@ export function TeenFlowView({ onHome }: { onHome: () => void }) {
     [content, stage2Traits],
   );
   const totalsAfterStage2 = useMemo(() => {
-    let totals = stage1.totals;
-    for (const question of stage2Questions) {
-      const answer = state.stage2answers[question.id];
-      if (typeof answer === "number") totals = applyTeenStage2Correction(totals, question.traitId, answer);
-    }
-    return totals;
-  }, [stage1, stage2Questions, state.stage2answers]);
+    const stage2 = stage2Questions
+      .filter((question) => typeof state.stage2answers[question.id] === "number")
+      .map((question) => ({ traitId: question.traitId, value: state.stage2answers[question.id] }));
+    const items = content.items75.map((item) => ({ id: item.id, leftTraitId: item.leftTraitId, rightTraitId: item.rightTraitId }));
+    return teenTotalsForScoringVersion(TEEN_V5_VERSION_IDS.scoring, items, state.answers75, stage2);
+  }, [content, stage2Questions, state.answers75, state.stage2answers]);
   const ranked = useMemo(
-    () => (state.onboarding ? scoreTeenCareers(totalsAfterStage2, teenCareerCatalog(TEEN_CAREER_CATALOG_V2, locale), state.onboarding) : []),
+    () => (state.onboarding ? scoreTeenCareers(totalsAfterStage2, teenCareerCatalog(TEEN_CAREER_CATALOG_V2, locale), state.onboarding, TEEN_V5_VERSION_IDS.careerMatching) : []),
     [totalsAfterStage2, locale, state.onboarding],
   );
   const report: TeenReport | null = useMemo(
-    () => (state.onboarding ? buildTeenReport(content, totalsAfterStage2, ranked, state.onboarding, 5, 5, TEEN_V4_VERSION_IDS) : null),
-    [content, totalsAfterStage2, ranked, state.onboarding],
+    () => (state.onboarding ? buildTeenReport(content, totalsAfterStage2, ranked, state.onboarding, 5, 5, TEEN_V5_VERSION_IDS, stage1.totals) : null),
+    [content, totalsAfterStage2, ranked, state.onboarding, stage1.totals],
   );
 
   if (!hydrated) return null;

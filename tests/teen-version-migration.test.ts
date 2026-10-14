@@ -54,8 +54,9 @@ test("teen v4 migration publishes catalog-111 without rewriting stored sessions"
   const db = new DatabaseSync(":memory:");
   try {
     db.exec("PRAGMA foreign_keys = OFF");
+    // State as of 0026; the 0027 v5 revision is covered by its own test below.
     const migrations = readdirSync("drizzle")
-      .filter((file) => file.endsWith(".sql"))
+      .filter((file) => file.endsWith(".sql") && file <= "0026_teen_v4_catalog_111.sql")
       .sort();
     assert.ok(migrations.includes("0026_teen_v4_catalog_111.sql"));
     for (const migration of migrations) {

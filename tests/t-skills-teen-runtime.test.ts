@@ -19,10 +19,11 @@ import {
   TEEN_PAIRWISE_ITEMS_V2,
   TEEN_PAIRWISE_ITEMS_V3,
   TEEN_PAIRWISE_ITEMS_V4,
+  TEEN_PAIRWISE_ITEMS_V5,
 } from "@/lib/t-skills/teen/runtime";
 import { TEEN_VALUES } from "@/lib/t-skills/teen/taxonomy";
 import { careerRuntimeForAssessmentVersion, executableAssessmentVersionReason } from "@/lib/assessment-runtime-registry";
-import { T_SKILLS_TEEN_V1_FIX_VERSION_IDS, T_SKILLS_TEEN_V1_VERSION_IDS, T_SKILLS_TEEN_V3_VERSION_IDS, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import { T_SKILLS_TEEN_V1_FIX_VERSION_IDS, T_SKILLS_TEEN_V1_VERSION_IDS, T_SKILLS_TEEN_V3_VERSION_IDS, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEEN_V5_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 import { TEEN_CAREER_CATALOG_V2 } from "@/lib/t-skills/teen/careers";
 import { validateOnboarding } from "@/lib/t-skills/onboarding";
 
@@ -30,23 +31,23 @@ function answersWith(pattern: (index: number) => number) {
   return Object.fromEntries(TEEN_PAIRWISE_ITEMS.map((item, index) => [item.id, pattern(index)]));
 }
 
-test("current pathway (v4) serves the corrected 75 pairs verbatim and an 8-of-25 situational pool", () => {
-  assert.equal(TEEN_PAIRWISE_ITEMS.length, 75);
-  assert.equal(new Set(TEEN_PAIRWISE_ITEMS.map((item) => item.id)).size, 75);
-  assert.ok(TEEN_PAIRWISE_ITEMS.every((item) => item.version === T_SKILLS_TEEN_V4_VERSION_IDS.itemBank && item.leftText && item.rightText));
-  assert.deepEqual(TEEN_PAIRWISE_ITEMS, TEEN_PAIRWISE_ITEMS_V4);
+test("frozen v4 serves the corrected 75 pairs verbatim and an 8-of-25 situational pool", () => {
+  assert.equal(TEEN_PAIRWISE_ITEMS_V4.length, 75);
+  assert.equal(new Set(TEEN_PAIRWISE_ITEMS_V4.map((item) => item.id)).size, 75);
+  assert.ok(TEEN_PAIRWISE_ITEMS_V4.every((item) => item.version === T_SKILLS_TEEN_V4_VERSION_IDS.itemBank && item.leftText && item.rightText));
+  assert.deepEqual(TEEN_PAIRWISE_ITEMS, TEEN_PAIRWISE_ITEMS_V5);
   // v4 pairs are byte-identical to the frozen v3 pairs (only the catalog changed).
   assert.deepEqual(
     TEEN_PAIRWISE_ITEMS_V4.map((item) => ({ ...item, version: "v4" })),
     TEEN_PAIRWISE_ITEMS_V3.map((item) => ({ ...item, version: "v4" })),
   );
   // Corrected short wording from the approved DOCX (no paraphrasing, A left / B right).
-  assert.equal(TEEN_PAIRWISE_ITEMS[0]!.leftText, "Могу часами изучать тему, которая меня увлекла, даже если она не нужна для учёбы.");
-  assert.equal(TEEN_PAIRWISE_ITEMS[0]!.rightText, "Прежде чем начать, я прикидываю, к чему это приведёт потом.");
+  assert.equal(TEEN_PAIRWISE_ITEMS_V4[0]!.leftText, "Могу часами изучать тему, которая меня увлекла, даже если она не нужна для учёбы.");
+  assert.equal(TEEN_PAIRWISE_ITEMS_V4[0]!.rightText, "Прежде чем начать, я прикидываю, к чему это приведёт потом.");
   // Each trait still has 6 total exposures; v3 follows the documents verbatim
   // (no balancing swaps), so left/right is not 3:3 — that balance lives only in frozen v2.
   const total = new Map<string, number>();
-  for (const item of TEEN_PAIRWISE_ITEMS) {
+  for (const item of TEEN_PAIRWISE_ITEMS_V4) {
     total.set(item.leftTraitId, (total.get(item.leftTraitId) ?? 0) + 1);
     total.set(item.rightTraitId, (total.get(item.rightTraitId) ?? 0) + 1);
   }
@@ -169,9 +170,15 @@ test("situational answers map A–D to −2/−1/+1/+2 and add a ×2 correction 
   const traitId = question.id.replace(/^t2-/, "") as keyof ReturnType<typeof teenFinalTotals>;
   assert.deepEqual([0, 1, 2, 3].map((index) => teenStage2ValueForIndex(question.id, index)), [-2, -1, 1, 2]);
   assert.equal(teenStage2ValueForIndex(question.id, 4), null);
-  const base = teenFinalTotals(responses, []);
-  const corrected = teenFinalTotals({ ...responses, [question.id]: 3 }, [question.id]);
+  // Frozen v4 (teen-scoring-v2): ×2 correction.
+  const v4 = T_SKILLS_TEEN_V4_VERSION_IDS.assessment;
+  const base = teenFinalTotals(responses, [], v4);
+  const corrected = teenFinalTotals({ ...responses, [question.id]: 3 }, [question.id], v4);
   assert.equal(corrected[traitId], base[traitId] + 4);
+  // Current v5 (teen-scoring-v3): one situational answer weighs like one pair.
+  const baseV5 = teenFinalTotals(responses, []);
+  const correctedV5 = teenFinalTotals({ ...responses, [question.id]: 3 }, [question.id]);
+  assert.equal(correctedV5[traitId], baseV5[traitId] + 2);
   assert.throws(() => teenFinalTotals(responses, [question.id]), /TEEN_CLARIFICATION_ANSWER/);
 });
 
@@ -180,7 +187,7 @@ test("profile ranks all 25 traits under the current pathway version", () => {
   const profile = teenTotalsToProfile(totals, 8);
   assert.equal(profile.traits.length, 25);
   assert.deepEqual(profile.traits.map((trait) => trait.rank), Array.from({ length: 25 }, (_, index) => index + 1));
-  assert.equal(profile.versions.assessment, T_SKILLS_TEEN_V4_VERSION_IDS.assessment);
+  assert.equal(profile.versions.assessment, T_SKILLS_TEEN_V5_VERSION_IDS.assessment);
   assert.equal(profile.coreAnswered, 75);
   assert.equal(profile.adaptiveAnswered, 8);
   assert.ok(profile.traits.every((trait) => trait.se === 1 && trait.uncertaintyRange[0] === 1 && trait.uncertaintyRange[1] === 99), "teen uncertainty stays maximally broad until calibration");

@@ -4,10 +4,10 @@ import { ArrowRight, SectionHeading } from "@/app/views/shared/section-heading";
 import type { View } from "@/app/orbita-view-types";
 import { useSiteLang } from "@/lib/site-lang";
 import { METHOD_STRINGS } from "@/lib/site-strings";
-import { TEEN_TRAIT_IDS } from "@/lib/t-skills/teen/taxonomy";
+import { TEEN_TRAIT_IDS, TEEN_STAGE2_CORRECTION_WEIGHT_V3 } from "@/lib/t-skills/teen/taxonomy";
 import { getTeenTraitMeta } from "@/lib/t-skills/teen/trait-interpretations";
 import { traitDomainColorKey } from "@/lib/trait-domains";
-import { T_SKILLS_TEEN_CLARIFICATION_COUNT, T_SKILLS_TEEN_STATIC_ITEM_COUNT, T_SKILLS_TEEN_V4_VERSION_IDS } from "@/lib/t-skills/versions";
+import { T_SKILLS_TEEN_CLARIFICATION_COUNT, T_SKILLS_TEEN_STATIC_ITEM_COUNT, T_SKILLS_TEEN_V5_VERSION_IDS } from "@/lib/t-skills/versions";
 
 export type MethodologyViewProps = {
   onNavigate: (view: View) => void;
@@ -51,8 +51,8 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
               </header>
               <p>
                 {lang === "kk"
-                  ? `Жаңартылатын таксономия ${TEEN_TRAIT_IDS.length} қасиет, нұсқа ${T_SKILLS_TEEN_V4_VERSION_IDS.traitTaxonomy}. ${t.b1b}`
-                  : `Живая таксономия ${TEEN_TRAIT_IDS.length} качеств версии ${T_SKILLS_TEEN_V4_VERSION_IDS.traitTaxonomy}. ${t.b1b}`}
+                  ? `Жаңартылатын таксономия ${TEEN_TRAIT_IDS.length} қасиет, нұсқа ${T_SKILLS_TEEN_V5_VERSION_IDS.traitTaxonomy}. ${t.b1b}`
+                  : `Живая таксономия ${TEEN_TRAIT_IDS.length} качеств версии ${T_SKILLS_TEEN_V5_VERSION_IDS.traitTaxonomy}. ${t.b1b}`}
               </p>
               <div className="ov-method-traits">
                 {traits.map((trait, index) => (
@@ -83,10 +83,10 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
                 ))}
               </div>
               <div className="ov-method-versions">
-                <span className="ov-badge ov-badge-outline">assessment {T_SKILLS_TEEN_V4_VERSION_IDS.assessment}</span>
-                <span className="ov-badge ov-badge-outline">items {T_SKILLS_TEEN_V4_VERSION_IDS.itemBank}</span>
-                <span className="ov-badge ov-badge-outline">scoring {T_SKILLS_TEEN_V4_VERSION_IDS.scoring}</span>
-                <span className="ov-badge ov-badge-outline">norm {T_SKILLS_TEEN_V4_VERSION_IDS.norms}</span>
+                <span className="ov-badge ov-badge-outline">assessment {T_SKILLS_TEEN_V5_VERSION_IDS.assessment}</span>
+                <span className="ov-badge ov-badge-outline">items {T_SKILLS_TEEN_V5_VERSION_IDS.itemBank}</span>
+                <span className="ov-badge ov-badge-outline">scoring {T_SKILLS_TEEN_V5_VERSION_IDS.scoring}</span>
+                <span className="ov-badge ov-badge-outline">norm {T_SKILLS_TEEN_V5_VERSION_IDS.norms}</span>
               </div>
               <p className="ov-method-warning">
                 {t.normWarn}
@@ -119,7 +119,7 @@ export function MethodologyView({ onNavigate }: MethodologyViewProps) {
                 </div>
                 <div>
                   <span>{t.adScoring}</span>
-                  <strong>×2</strong>
+                  <strong>×{TEEN_STAGE2_CORRECTION_WEIGHT_V3}</strong>
                   <small>{t.adScoringV}</small>
                 </div>
               </div>

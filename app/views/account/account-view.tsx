@@ -6,7 +6,7 @@ import type { AccountOverview, View } from "@/app/orbita-view-types";
 import type { ScoreProfile } from "@/lib/assessment-engine";
 import { useSiteLang } from "@/lib/site-lang";
 import { ACCOUNT_STRINGS } from "@/lib/site-strings";
-import { isTSkillsTeenVersion, T_SKILLS_TEEN_V1_VERSION_IDS, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import { isTSkillsTeenVersion, T_SKILLS_TEEN_V1_VERSION_IDS, T_SKILLS_TEEN_V5_VERSION_IDS, T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 import { T_SKILLS_V5_VERSION_IDS } from "@/lib/t-skills/v5/versions";
 
 function humanizeAssessmentState(state: string | undefined, lang: "ru" | "kk") {
@@ -92,11 +92,11 @@ export function AccountView({
   const isTSkillsTeen = isTSkillsTeenVersion(assessmentVersion) || !latestAssessment ||
     (latestAssessment.testId === T_SKILLS_TEST_ID && !assessmentVersion);
   const isTSkillsV4 = assessmentVersion === T_SKILLS_VERSION_IDS.assessment;
-  const assessmentLabel = isTSkillsTeen ? assessmentVersion ?? T_SKILLS_TEEN_V4_VERSION_IDS.assessment : isTSkillsV5 ? T_SKILLS_V5_VERSION_IDS.assessment : isTSkillsV4 ? T_SKILLS_VERSION_IDS.assessment : "orbita30_ru_v2";
+  const assessmentLabel = isTSkillsTeen ? assessmentVersion ?? T_SKILLS_TEEN_V5_VERSION_IDS.assessment : isTSkillsV5 ? T_SKILLS_V5_VERSION_IDS.assessment : isTSkillsV4 ? T_SKILLS_VERSION_IDS.assessment : "orbita30_ru_v2";
   const staticQuestionCount = isTSkillsTeen || isTSkillsV5 ? "75" : isTSkillsV4 ? "67" : "60";
   const adaptiveDescription = isTSkillsTeen ? t.adTeen : isTSkillsV5 ? t.adV5 : isTSkillsV4 ? t.adV4 : t.adLegacy;
   const scoringVersion = isTSkillsTeen
-    ? latestAssessment?.versions?.scoring ?? (assessmentVersion === T_SKILLS_TEEN_V1_VERSION_IDS.assessment ? T_SKILLS_TEEN_V1_VERSION_IDS.scoring : T_SKILLS_TEEN_V4_VERSION_IDS.scoring)
+    ? latestAssessment?.versions?.scoring ?? (assessmentVersion === T_SKILLS_TEEN_V1_VERSION_IDS.assessment ? T_SKILLS_TEEN_V1_VERSION_IDS.scoring : T_SKILLS_TEEN_V5_VERSION_IDS.scoring)
     : isTSkillsV5 ? "pairwise25-v1" : isTSkillsV4 ? "pairwise-scoring-v1" : "mvp-0.5-core60";
   const fullDisplayName = overview?.user.displayName ?? t.fallbackName;
   const displayName = shortenDisplayName(fullDisplayName);

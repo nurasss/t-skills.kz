@@ -1,7 +1,7 @@
 import { getD1, getRuntimeEnv } from "@/db";
 import { attachCheckoutSession, createPendingOrder, findOrderIdByPaymentId, markOrderPaymentFailed, handlePaymentEvent } from "@/lib/durable-store";
 import type { PaymentEventStatus } from "@/lib/payment-event-policy";
-import { T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEST_ID } from "@/lib/t-skills/versions";
+import { T_SKILLS_TEEN_V5_VERSION_IDS, T_SKILLS_TEST_ID } from "@/lib/t-skills/versions";
 import { verifyStripeSignature } from "@/lib/stripe-signature";
 import type { Viewer } from "@/lib/server-auth";
 import { paymentsEnabled } from "@/lib/runtime-config";
@@ -53,7 +53,7 @@ export function getPublicTestConfig(): PublicTestConfig {
   return {
     id: T_SKILLS_TEST_ID,
     name: "T-Skills",
-    assessmentVersion: T_SKILLS_TEEN_V4_VERSION_IDS.assessment,
+    assessmentVersion: T_SKILLS_TEEN_V5_VERSION_IDS.assessment,
     amountMinor,
     currency: validCurrency ? configuredCurrency : "KZT",
     availableForCheckout: paymentFlowEnabled && amountMinor !== null && validCurrency && provider === "stripe" && Boolean(runtimeEnv.STRIPE_SECRET_KEY?.trim() && runtimeEnv.STRIPE_WEBHOOK_SECRET?.trim() && runtimeEnv.PDF_SIGNING_SECRET?.trim()),

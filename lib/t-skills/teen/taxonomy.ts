@@ -61,6 +61,23 @@ export const TEEN_V4_VERSION_IDS = {
   onboarding: "teen-onboarding-v1",
 } as const;
 
+/**
+ * Accuracy revision (2026-10): same 75 pairs, texts, situational bank and
+ * 111 catalog as v4, but balanced 3:3 left/right layout, graph-based trait
+ * estimation (teen-scoring-v3) and weight-norm-fair matching
+ * (teen-career-matching-v2). See TEEN_SCORING_V3_REPORT.md.
+ */
+export const TEEN_V5_VERSION_IDS = {
+  assessment: "t-skills-teen-v5",
+  itemBank: "t-skills-teen-items-v5",
+  traitTaxonomy: "t-skills-teen-traits-v1",
+  scoring: "teen-scoring-v3",
+  stage2: "teen-clarification-v1",
+  careerCatalog: "t-skills-teen-careers-v2",
+  careerMatching: "teen-career-matching-v2",
+  onboarding: "teen-onboarding-v1",
+} as const;
+
 export const TEEN_TRAIT_IDS = [  "curiosity",
   "strategic-thinking",
   "innovativeness",
@@ -109,6 +126,16 @@ export const TEEN_STAGE2_MAX = 15;
 
 /** Этап 2: вес точечной коррекции поверх балла этапа 1. */
 export const TEEN_STAGE2_CORRECTION_WEIGHT = 2;
+/** teen-scoring-v3: один ситуативный ответ весит как одна пара (×2 перевешивал 6 пар). */
+export const TEEN_STAGE2_CORRECTION_WEIGHT_V3 = 1;
+/** teen-scoring-v3: гребневая регуляризация оценки по графу сравнений. */
+export const TEEN_GRAPH_RIDGE = 1;
+/**
+ * teen-career-matching-v2: опорная L2-норма весов профессии (медиана
+ * каталога careers-v2 = √5.25). Балл качества приводится к этой норме,
+ * чтобы профессии с большим числом/величиной весов не получали преимущество.
+ */
+export const TEEN_CAREER_REFERENCE_WEIGHT_NORM = Math.sqrt(5.25);
 
 /** Бонусы матчинга. PENDING_METHODOLOGIST: величины по умолчанию, ждёт методолога. */
 export const TEEN_VALUE_FIT_BONUS = 0.15;

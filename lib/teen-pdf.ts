@@ -5,7 +5,7 @@
 import { PDFDocument, PageSizes, rgb, type PDFDocument as PDFDoc, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 
-import { TEEN_SUBJECTS, TEEN_TRAIT_IDS, TEEN_V1_FIX_VERSION_IDS, TEEN_V1_VERSION_IDS, TEEN_V3_VERSION_IDS, TEEN_V4_VERSION_IDS, TEEN_VALUES, TEEN_VERSION_IDS } from "@/lib/t-skills/teen/taxonomy";
+import { TEEN_SUBJECTS, TEEN_TRAIT_IDS, TEEN_V1_FIX_VERSION_IDS, TEEN_V1_VERSION_IDS, TEEN_V3_VERSION_IDS, TEEN_V4_VERSION_IDS, TEEN_V5_VERSION_IDS, TEEN_VALUES, TEEN_VERSION_IDS } from "@/lib/t-skills/teen/taxonomy";
 import { teenRuntimeContent, type TeenRuntimeLocale } from "@/lib/t-skills/teen/runtime";
 import { TEEN_CAREER_CATALOG_V1, teenCareerEntry } from "@/lib/t-skills/teen/careers";
 import type { TeenReport } from "@/lib/t-skills/teen/report";
@@ -89,6 +89,7 @@ export function validateTeenReportPayload(value: unknown, locale: TeenRuntimeLoc
     : report.versions?.assessment === TEEN_V1_FIX_VERSION_IDS.assessment
       ? TEEN_V1_FIX_VERSION_IDS
       : report.versions?.assessment === TEEN_VERSION_IDS.assessment ? TEEN_VERSION_IDS
+        : report.versions?.assessment === TEEN_V5_VERSION_IDS.assessment ? TEEN_V5_VERSION_IDS
         : report.versions?.assessment === TEEN_V4_VERSION_IDS.assessment ? TEEN_V4_VERSION_IDS
         : report.versions?.assessment === TEEN_V3_VERSION_IDS.assessment ? TEEN_V3_VERSION_IDS : null;
   if (!expectedVersions) throw new Error("TEEN_PDF:version:assessment");

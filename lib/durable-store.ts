@@ -44,7 +44,7 @@ import { T_SKILLS_PAIRWISE_ITEM_BY_ID } from "@/lib/t-skills/item-bank";
 import { pairwiseScoreToProfile } from "@/lib/t-skills/profile-adapter";
 import { buildTSkillsReport } from "@/lib/t-skills/report-adapter";
 import { scorePairwiseV1 } from "@/lib/t-skills/scoring";
-import { isTSkillsTeenVersion, teenVersionIdsForAssessment, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS, T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import { isTSkillsTeenVersion, teenVersionIdsForAssessment, T_SKILLS_TEEN_V5_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS, T_SKILLS_TEST_ID, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 import {
   selectTeenClarificationQuestions,
   teenCareerRanking,
@@ -1441,7 +1441,7 @@ async function publishedAssessmentVersions(database: ReturnType<typeof ensureDat
     adaptive_version: string | null;
     item_count: number;
   }>();
-  if (!row) return T_SKILLS_TEEN_V4_VERSION_IDS;
+  if (!row) return T_SKILLS_TEEN_V5_VERSION_IDS;
   const runtimeReason = executableAssessmentVersionReason({
     productId: testId,
     version: row.version,
@@ -2827,7 +2827,7 @@ export async function buildTeenCareerPersistence(session: DurableSession, viewer
     }
     throw error;
   }
-  const candidates = teenCareerRanking(totals, teenOnboarding, teenCatalogVersion);
+  const candidates = teenCareerRanking(totals, teenOnboarding, teenCatalogVersion, versions.careerMatching);
   const evidence = careerEvidenceForSession(session);
   const snapshot = {
     traitProfile: Object.entries(totals).map(([traitId, total]) => ({ traitId, total })),

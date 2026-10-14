@@ -101,8 +101,29 @@ export const T_SKILLS_TEEN_V4_VERSION_IDS = {
   careerCatalog: "t-skills-teen-careers-v2",
 } as const;
 
+/**
+ * Accuracy revision (2026-10): same 75 pairs, texts, situational bank and
+ * 111-profession catalog as v4. Changes only measurement:
+ * - item bank v5 shows every trait 3× left / 3× right (orientation-v2 swaps,
+ *   the proven minimum of 14), so a habit of pressing one side no longer
+ *   inflates particular traits;
+ * - teen-scoring-v3 estimates traits on the comparison graph (ridge LS),
+ *   weights a situational answer like one pair and breaks ties explicitly;
+ * - teen-career-matching-v2 removes the advantage of professions with
+ *   larger weight vectors.
+ * Frozen v1–v4 contracts stay untouched. See TEEN_SCORING_V3_REPORT.md.
+ */
+export const T_SKILLS_TEEN_V5_VERSION_IDS = {
+  ...T_SKILLS_TEEN_V4_VERSION_IDS,
+  assessment: "t-skills-teen-v5",
+  itemBank: "t-skills-teen-items-v5",
+  scoring: "teen-scoring-v3",
+  careerMatching: "teen-career-matching-v2",
+} as const;
+
 export function isTSkillsTeenVersion(assessmentVersion: unknown) {
   return assessmentVersion === T_SKILLS_TEEN_VERSION_IDS.assessment
+    || assessmentVersion === T_SKILLS_TEEN_V5_VERSION_IDS.assessment
     || assessmentVersion === T_SKILLS_TEEN_V3_VERSION_IDS.assessment
     || assessmentVersion === T_SKILLS_TEEN_V4_VERSION_IDS.assessment
     || assessmentVersion === T_SKILLS_TEEN_V1_VERSION_IDS.assessment
@@ -110,6 +131,7 @@ export function isTSkillsTeenVersion(assessmentVersion: unknown) {
 }
 
 export function teenVersionIdsForAssessment(assessmentVersion: unknown) {
+  if (assessmentVersion === T_SKILLS_TEEN_V5_VERSION_IDS.assessment) return T_SKILLS_TEEN_V5_VERSION_IDS;
   if (assessmentVersion === T_SKILLS_TEEN_V4_VERSION_IDS.assessment) return T_SKILLS_TEEN_V4_VERSION_IDS;
   if (assessmentVersion === T_SKILLS_TEEN_V3_VERSION_IDS.assessment) return T_SKILLS_TEEN_V3_VERSION_IDS;
   if (assessmentVersion === T_SKILLS_TEEN_VERSION_IDS.assessment) return T_SKILLS_TEEN_VERSION_IDS;

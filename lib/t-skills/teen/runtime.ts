@@ -3,10 +3,13 @@
  *
  * - t-skills-teen-v1: frozen legacy bank (inverted scorer, retired).
  * - t-skills-teen-v2: frozen balanced bank (3:3 exposure via orientation-v2).
- * - t-skills-teen-v3 (current): corrected short wording from the approved
+ * - t-skills-teen-v3: corrected short wording from the approved
  *   RU/KK DOCX pair (75 pairs verbatim, A left / B right, no balancing swaps).
  *   Scoring convention is unchanged from v2 (teen-scoring-v2: UI -2 selects
  *   left, +2 selects right). Language switch changes only display texts.
+ * - t-skills-teen-v4: v3 pairs + 111-profession catalog.
+ * - t-skills-teen-v5 (current): v4 texts/catalog with balanced 3:3 sides,
+ *   graph-based scoring (teen-scoring-v3) and fair matching (v2).
  * The same pure functions run on the server (authoritative scoring)
  * and on the client (question rendering), so both read one bundle.
  */
@@ -14,7 +17,7 @@ import type { ScoreProfile, ScoreTrait } from "@/lib/assessment-engine";
 import type { AdaptiveOption, AdaptiveQuestion, PairwiseItem } from "@/lib/t-skills/contracts";
 import { applyTeenPairSideLayout, parseTeenContentBundle, type TeenContentBundle } from "@/lib/t-skills/teen/content";
 import { scoreTeenCareers } from "@/lib/t-skills/teen/matching";
-import { applyTeenStage2Correction, normalizeTeenTotal, scoreTeenStage1, scoreTeenStage1V1, selectTeenStage2 } from "@/lib/t-skills/teen/scoring";
+import { normalizeTeenTotal, rankTeenTraitIds, scoreTeenStage1, scoreTeenStage1V1, selectTeenStage2, teenTotalsForScoringVersion, TEEN_SCORING_V3 } from "@/lib/t-skills/teen/scoring";
 import {
   TEEN_SUBJECTS,
   TEEN_TRAIT_EXPOSURE,
@@ -26,7 +29,7 @@ import {
   type TeenTraitId,
   type TeenValueId,
 } from "@/lib/t-skills/teen/taxonomy";
-import { teenVersionIdsForAssessment, T_SKILLS_TEEN_V1_FIX_VERSION_IDS, T_SKILLS_TEEN_V1_VERSION_IDS, T_SKILLS_TEEN_V3_VERSION_IDS, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS } from "@/lib/t-skills/versions";
+import { teenVersionIdsForAssessment, T_SKILLS_TEEN_V1_FIX_VERSION_IDS, T_SKILLS_TEEN_V1_VERSION_IDS, T_SKILLS_TEEN_V3_VERSION_IDS, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEEN_V5_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS } from "@/lib/t-skills/versions";
 import { TEEN_CAREER_CATALOG_V1, TEEN_CAREER_CATALOG_V2, teenCareerCatalog } from "@/lib/t-skills/teen/careers";
 import { teenResponseQuality, type TeenQualityInput } from "@/lib/t-skills/profile-adapter";
 import bundleRu from "@/lib/t-skills/teen/content.v1.json";
@@ -69,11 +72,22 @@ const CONTENT_V4: Record<TeenRuntimeLocale, TeenContentBundle> = {
   kk: parseTeenContentBundle(bundleV4Kk),
 };
 
-export function teenRuntimeContent(locale: TeenRuntimeLocale = "ru", assessmentVersion: string = T_SKILLS_TEEN_V4_VERSION_IDS.assessment) {
+/**
+ * V5 content: V4 texts, stage2 and catalog with the balanced side layout
+ * (every trait 3× left / 3× right). The 14 swaps are the proven minimum for
+ * this pair graph and coincide with orientation-v2.
+ */
+const CONTENT_V5: Record<TeenRuntimeLocale, TeenContentBundle> = {
+  ru: applyTeenPairSideLayout(CONTENT_V4.ru, orientationV2.swapLeftRight),
+  kk: applyTeenPairSideLayout(CONTENT_V4.kk, orientationV2.swapLeftRight),
+};
+
+export function teenRuntimeContent(locale: TeenRuntimeLocale = "ru", assessmentVersion: string = T_SKILLS_TEEN_V5_VERSION_IDS.assessment) {
   const itemBank = teenVersionIdsForAssessment(assessmentVersion)?.itemBank;
   if (itemBank === T_SKILLS_TEEN_V1_VERSION_IDS.itemBank) return CONTENT_V1[locale];
   if (itemBank === T_SKILLS_TEEN_VERSION_IDS.itemBank) return CONTENT_V2[locale];
   if (itemBank === T_SKILLS_TEEN_V4_VERSION_IDS.itemBank) return CONTENT_V4[locale];
+  if (itemBank === T_SKILLS_TEEN_V5_VERSION_IDS.itemBank) return CONTENT_V5[locale];
   return CONTENT_V3[locale];
 }
 
@@ -97,20 +111,23 @@ export const TEEN_PAIRWISE_ITEMS_V1 = pairwiseItems(CONTENT_V1.ru, T_SKILLS_TEEN
 export const TEEN_PAIRWISE_ITEMS_V2: readonly PairwiseItem[] = pairwiseItems(CONTENT_V2.ru, T_SKILLS_TEEN_VERSION_IDS.itemBank);
 export const TEEN_PAIRWISE_ITEMS_V3: readonly PairwiseItem[] = pairwiseItems(CONTENT_V3.ru, T_SKILLS_TEEN_V3_VERSION_IDS.itemBank);
 export const TEEN_PAIRWISE_ITEMS_V4: readonly PairwiseItem[] = pairwiseItems(CONTENT_V4.ru, T_SKILLS_TEEN_V4_VERSION_IDS.itemBank);
-/** Current pathway items (v4 = v3 pairs + 111 catalog). Frozen v1/v2/v3 aliases stay for old sessions. */
-export const TEEN_PAIRWISE_ITEMS: readonly PairwiseItem[] = TEEN_PAIRWISE_ITEMS_V4;
+export const TEEN_PAIRWISE_ITEMS_V5: readonly PairwiseItem[] = pairwiseItems(CONTENT_V5.ru, T_SKILLS_TEEN_V5_VERSION_IDS.itemBank);
+/** Current pathway items (v5 = v4 texts with balanced sides). Frozen v1–v4 aliases stay for old sessions. */
+export const TEEN_PAIRWISE_ITEMS: readonly PairwiseItem[] = TEEN_PAIRWISE_ITEMS_V5;
 
 export const TEEN_PAIRWISE_ITEM_BY_ID: ReadonlyMap<string, PairwiseItem> = new Map(TEEN_PAIRWISE_ITEMS.map((item) => [item.id, item]));
 export const TEEN_PAIRWISE_ITEM_BY_ID_V1: ReadonlyMap<string, PairwiseItem> = new Map(TEEN_PAIRWISE_ITEMS_V1.map((item) => [item.id, item]));
 export const TEEN_PAIRWISE_ITEM_BY_ID_V2: ReadonlyMap<string, PairwiseItem> = new Map(TEEN_PAIRWISE_ITEMS_V2.map((item) => [item.id, item]));
 export const TEEN_PAIRWISE_ITEM_BY_ID_V3: ReadonlyMap<string, PairwiseItem> = new Map(TEEN_PAIRWISE_ITEMS_V3.map((item) => [item.id, item]));
-export const TEEN_PAIRWISE_ITEM_BY_ID_V4: ReadonlyMap<string, PairwiseItem> = TEEN_PAIRWISE_ITEM_BY_ID;
+export const TEEN_PAIRWISE_ITEM_BY_ID_V4: ReadonlyMap<string, PairwiseItem> = new Map(TEEN_PAIRWISE_ITEMS_V4.map((item) => [item.id, item]));
+export const TEEN_PAIRWISE_ITEM_BY_ID_V5: ReadonlyMap<string, PairwiseItem> = TEEN_PAIRWISE_ITEM_BY_ID;
 
 export function teenPairwiseItemsForAssessmentVersion(assessmentVersion: string): readonly PairwiseItem[] {
   const itemBank = teenVersionIdsForAssessment(assessmentVersion)?.itemBank;
   if (itemBank === T_SKILLS_TEEN_V1_VERSION_IDS.itemBank) return TEEN_PAIRWISE_ITEMS_V1;
   if (itemBank === T_SKILLS_TEEN_VERSION_IDS.itemBank) return TEEN_PAIRWISE_ITEMS_V2;
   if (itemBank === T_SKILLS_TEEN_V4_VERSION_IDS.itemBank) return TEEN_PAIRWISE_ITEMS_V4;
+  if (itemBank === T_SKILLS_TEEN_V5_VERSION_IDS.itemBank) return TEEN_PAIRWISE_ITEMS_V5;
   return TEEN_PAIRWISE_ITEMS_V3;
 }
 
@@ -119,6 +136,7 @@ export function teenPairwiseItemMapForAssessmentVersion(assessmentVersion: strin
   if (itemBank === T_SKILLS_TEEN_V1_VERSION_IDS.itemBank) return TEEN_PAIRWISE_ITEM_BY_ID_V1;
   if (itemBank === T_SKILLS_TEEN_VERSION_IDS.itemBank) return TEEN_PAIRWISE_ITEM_BY_ID_V2;
   if (itemBank === T_SKILLS_TEEN_V4_VERSION_IDS.itemBank) return TEEN_PAIRWISE_ITEM_BY_ID_V4;
+  if (itemBank === T_SKILLS_TEEN_V5_VERSION_IDS.itemBank) return TEEN_PAIRWISE_ITEM_BY_ID_V5;
   return TEEN_PAIRWISE_ITEM_BY_ID_V3;
 }
 
@@ -131,7 +149,7 @@ export function isTeenStage2QuestionId(questionId: string) {
   return STAGE2_BY_ID.has(questionId);
 }
 
-function stage2Question(questionId: string, locale: TeenRuntimeLocale, assessmentVersion: string = T_SKILLS_TEEN_V4_VERSION_IDS.assessment): AdaptiveQuestion | null {
+function stage2Question(questionId: string, locale: TeenRuntimeLocale, assessmentVersion: string = T_SKILLS_TEEN_V5_VERSION_IDS.assessment): AdaptiveQuestion | null {
   const question = teenRuntimeContent(locale, assessmentVersion).stage2.find((candidate) => candidate.id === questionId);
   if (!question) return null;
   const options = question.options.map((option) => ({ id: option.id as AdaptiveOption["id"], text: option.text, signals: [] }));
@@ -145,46 +163,49 @@ export function teenStage2ValueForIndex(questionId: string, optionIndex: number)
   return option ? option.value : null;
 }
 
-function stage1For(responses: Record<string, number>, assessmentVersion: string = T_SKILLS_TEEN_V4_VERSION_IDS.assessment) {
+function stage1Items(assessmentVersion: string) {
+  return teenPairwiseItemsForAssessmentVersion(assessmentVersion)
+    .map((item) => ({ id: item.id, leftTraitId: item.leftTraitId as TeenTraitId, rightTraitId: item.rightTraitId as TeenTraitId }));
+}
+
+function stage1For(responses: Record<string, number>, assessmentVersion: string = T_SKILLS_TEEN_V5_VERSION_IDS.assessment) {
   const legacyV1 = teenVersionIdsForAssessment(assessmentVersion)?.scoring === T_SKILLS_TEEN_V1_VERSION_IDS.scoring;
-  const items = teenPairwiseItemsForAssessmentVersion(assessmentVersion);
   const score = legacyV1 ? scoreTeenStage1V1 : scoreTeenStage1;
-  return score(items.map((item) => ({ id: item.id, leftTraitId: item.leftTraitId as TeenTraitId, rightTraitId: item.rightTraitId as TeenTraitId })), responses);
+  return score(stage1Items(assessmentVersion), responses);
 }
 
 /** Stage 2: the ambiguous traits' situational questions, in selection order. */
-export function selectTeenClarificationQuestions(responses: Record<string, number>, assessmentVersion: string = T_SKILLS_TEEN_V4_VERSION_IDS.assessment): AdaptiveQuestion[] {
+export function selectTeenClarificationQuestions(responses: Record<string, number>, assessmentVersion: string = T_SKILLS_TEEN_V5_VERSION_IDS.assessment): AdaptiveQuestion[] {
   const stage1 = stage1For(responses, assessmentVersion);
   return selectTeenStage2(stage1.totals, stage1.contributions)
     .map((traitId) => stage2Question(`t2-${traitId}`, "ru", assessmentVersion))
     .filter((question): question is AdaptiveQuestion => Boolean(question));
 }
 
-/** Final trait totals: stage 1 pairs plus ×2 situational corrections. */
+/** Final trait totals: stage 1 pairs plus situational corrections, per the session's scoring version. */
 export function teenFinalTotals(
   responses: Record<string, number>,
   clarificationIds: readonly string[],
-  assessmentVersion: string = T_SKILLS_TEEN_V4_VERSION_IDS.assessment,
+  assessmentVersion: string = T_SKILLS_TEEN_V5_VERSION_IDS.assessment,
 ): TeenStage1Totals {
-  let totals = stage1For(responses, assessmentVersion).totals;
-  for (const questionId of clarificationIds) {
+  const stage2 = clarificationIds.map((questionId) => {
     const question = STAGE2_BY_ID.get(questionId);
     const value = teenStage2ValueForIndex(questionId, responses[questionId]);
     if (!question || value === null) throw new Error(`TEEN_CLARIFICATION_ANSWER:${questionId}`);
-    totals = applyTeenStage2Correction(totals, question.traitId, value);
-  }
-  return totals;
+    return { traitId: question.traitId, value };
+  });
+  const scoring = teenVersionIdsForAssessment(assessmentVersion)?.scoring ?? T_SKILLS_TEEN_V5_VERSION_IDS.scoring;
+  return teenTotalsForScoringVersion(scoring, stage1Items(assessmentVersion), responses, stage2);
 }
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Ranked trait list (strongest first, id as deterministic tie-break). */
-function rankTeenTraits(totals: TeenStage1Totals) {
-  return (Object.keys(totals) as TeenTraitId[])
-    .map((traitId) => ({ traitId, total: totals[traitId], normalized: normalizeTeenTotal(totals[traitId]) }))
-    .sort((a, b) => b.normalized - a.normalized || (a.traitId < b.traitId ? -1 : 1));
+/** Ranked trait list (strongest first; v3 breaks ties by raw stage-1 sums, then id). */
+function rankTeenTraits(totals: TeenStage1Totals, tieBreak?: TeenStage1Totals) {
+  return rankTeenTraitIds(totals, tieBreak)
+    .map((traitId) => ({ traitId, total: totals[traitId], normalized: normalizeTeenTotal(totals[traitId]) }));
 }
 
 /** Transport-compatible profile for the existing results screen and PDF. */
@@ -192,10 +213,11 @@ export function teenTotalsToProfile(
   totals: TeenStage1Totals,
   adaptiveAnswered: number,
   quality: TeenQualityInput = {},
-  versions: typeof T_SKILLS_TEEN_V4_VERSION_IDS | typeof T_SKILLS_TEEN_V3_VERSION_IDS | typeof T_SKILLS_TEEN_VERSION_IDS | typeof T_SKILLS_TEEN_V1_VERSION_IDS | typeof T_SKILLS_TEEN_V1_FIX_VERSION_IDS = T_SKILLS_TEEN_V4_VERSION_IDS,
+  versions: typeof T_SKILLS_TEEN_V5_VERSION_IDS | typeof T_SKILLS_TEEN_V4_VERSION_IDS | typeof T_SKILLS_TEEN_V3_VERSION_IDS | typeof T_SKILLS_TEEN_VERSION_IDS | typeof T_SKILLS_TEEN_V1_VERSION_IDS | typeof T_SKILLS_TEEN_V1_FIX_VERSION_IDS = T_SKILLS_TEEN_V5_VERSION_IDS,
 ): ScoreProfile {
   const names = CONTENT_V4.ru.traitNames;
-  const traits: ScoreTrait[] = rankTeenTraits(totals).map((entry, index) => {
+  const tieBreak = versions.scoring === TEEN_SCORING_V3 ? stage1For(quality.answers ?? {}, versions.assessment).totals : undefined;
+  const traits: ScoreTrait[] = rankTeenTraits(totals, tieBreak).map((entry, index) => {
     const standardScore = Math.round(clamp(50 + entry.normalized * 34, 1, 99));
     return {
       code: entry.traitId as ScoreTrait["code"],
@@ -243,11 +265,12 @@ export function teenCareerRanking(
   totals: TeenStage1Totals,
   onboarding: TeenOnboarding,
   careerCatalogVersion: string = TEEN_CAREER_CATALOG_V1,
+  careerMatchingVersion?: string,
 ): TeenCareerRankingEntry[] {
   // Дефолт — боевой каталог 170; старые результаты и текущие сессии unaffected.
   const professions = teenCareerCatalog(careerCatalogVersion, "ru");
   const byId = new Map(professions.map((profession) => [profession.id, profession]));
-  return scoreTeenCareers(totals, professions, onboarding).map((entry, index) => {
+  return scoreTeenCareers(totals, professions, onboarding, careerMatchingVersion).map((entry, index) => {
     const profession = byId.get(entry.professionId)!;
     return {
       professionId: entry.professionId,
@@ -300,7 +323,9 @@ export function localizeTeenQuestion<T>(item: T, locale: TeenRuntimeLocale, asse
         ? T_SKILLS_TEEN_VERSION_IDS.assessment
         : "version" in item && (item as { version?: unknown }).version === T_SKILLS_TEEN_V4_VERSION_IDS.itemBank
           ? T_SKILLS_TEEN_V4_VERSION_IDS.assessment
-          : T_SKILLS_TEEN_V3_VERSION_IDS.assessment);
+          : "version" in item && (item as { version?: unknown }).version === T_SKILLS_TEEN_V5_VERSION_IDS.itemBank
+            ? T_SKILLS_TEEN_V5_VERSION_IDS.assessment
+            : T_SKILLS_TEEN_V3_VERSION_IDS.assessment);
   const content = teenRuntimeContent(locale, itemVersion);
   const id = String((item as { id: unknown }).id);
   const texts = content.items75Texts[id];
@@ -353,20 +378,20 @@ export function buildTeenDemoData(): { profile: ScoreProfile; report: ReportJSON
     valueRanking: ["growth", "creative-freedom", "income", "stability", "value-autonomy", "social-impact", "status", "work-life-balance"],
     subjects: ["informatics", "physics", "english"],
   };
-  const careers = teenCareerRanking(demoTotals, demoOnboarding, TEEN_CAREER_CATALOG_V2);
+  const careers = teenCareerRanking(demoTotals, demoOnboarding, TEEN_CAREER_CATALOG_V2, T_SKILLS_TEEN_V5_VERSION_IDS.careerMatching);
   const baseReport = buildTSkillsReport(profile, 8, {
     coreQuestionCount: 75,
-    versions: T_SKILLS_TEEN_V4_VERSION_IDS,
+    versions: T_SKILLS_TEEN_V5_VERSION_IDS,
   });
   const report: ReportJSON = {
     ...baseReport,
-    assessmentVersion: T_SKILLS_TEEN_V4_VERSION_IDS.assessment,
+    assessmentVersion: T_SKILLS_TEEN_V5_VERSION_IDS.assessment,
     coreQuestionCount: 75,
     adaptiveQuestionCount: 8,
     adaptiveProvider: "approved-bank",
     adaptiveFallbackUsed: false,
-    adaptiveVersion: T_SKILLS_TEEN_V4_VERSION_IDS.adaptive,
-    reportVersion: T_SKILLS_TEEN_V4_VERSION_IDS.report,
+    adaptiveVersion: T_SKILLS_TEEN_V5_VERSION_IDS.adaptive,
+    reportVersion: T_SKILLS_TEEN_V5_VERSION_IDS.report,
     career: {
       traitProfile: [],
       clarificationAnswers: [],
@@ -382,7 +407,7 @@ export function buildTeenDemoData(): { profile: ScoreProfile; report: ReportJSON
         subjectBonus: entry.subjectBonus,
         totalScore: entry.matchScore,
       })),
-      versions: T_SKILLS_TEEN_V4_VERSION_IDS,
+      versions: T_SKILLS_TEEN_V5_VERSION_IDS,
       topValues: demoOnboarding.valueRanking.slice(0, 3),
       subjects: demoOnboarding.subjects,
     },

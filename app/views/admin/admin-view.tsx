@@ -3,7 +3,7 @@
 import { ArrowRight } from "@/app/views/shared/section-heading";
 import type { AdminMetrics, View } from "@/app/orbita-view-types";
 import type { ScoreProfile } from "@/lib/assessment-engine";
-import { T_SKILLS_TEEN_CLARIFICATION_COUNT, T_SKILLS_TEEN_STATIC_ITEM_COUNT, T_SKILLS_TEEN_V4_VERSION_IDS } from "@/lib/t-skills/versions";
+import { T_SKILLS_TEEN_CLARIFICATION_COUNT, T_SKILLS_TEEN_STATIC_ITEM_COUNT, T_SKILLS_TEEN_V5_VERSION_IDS } from "@/lib/t-skills/versions";
 
 export type AdminViewProps = {
   profile?: ScoreProfile;
@@ -12,8 +12,8 @@ export type AdminViewProps = {
 };
 
 const ITEM_RANGES = [
-  { range: "t75-1–t75-75", type: "pairwise forced-choice", count: T_SKILLS_TEEN_STATIC_ITEM_COUNT, status: T_SKILLS_TEEN_V4_VERSION_IDS.assessment },
-  { range: "t2-* (8 из 25)", type: "situational clarification", count: T_SKILLS_TEEN_CLARIFICATION_COUNT, status: T_SKILLS_TEEN_V4_VERSION_IDS.adaptive },
+  { range: "t75-1–t75-75", type: "pairwise forced-choice", count: T_SKILLS_TEEN_STATIC_ITEM_COUNT, status: T_SKILLS_TEEN_V5_VERSION_IDS.assessment },
+  { range: "t2-* (8 из 25)", type: "situational clarification", count: T_SKILLS_TEEN_CLARIFICATION_COUNT, status: T_SKILLS_TEEN_V5_VERSION_IDS.adaptive },
   { range: "Q001–Q300", type: "legacy bank", count: 300, status: "legacy" },
 ];
 
@@ -41,7 +41,7 @@ export function AdminView({ profile, onNavigate, metrics }: AdminViewProps) {
           <article className="ov-admin-metric">
             <span>Pairwise bank</span>
             <strong>{T_SKILLS_TEEN_STATIC_ITEM_COUNT}</strong>
-            <small>{T_SKILLS_TEEN_V4_VERSION_IDS.assessment} · pilot / unvalidated</small>
+            <small>{T_SKILLS_TEEN_V5_VERSION_IDS.assessment} · pilot / unvalidated</small>
           </article>
           <article className="ov-admin-metric">
             <span>Users</span>

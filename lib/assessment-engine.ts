@@ -5,7 +5,7 @@ import {
   INTERPRETATION_LIBRARY_VERSION,
 } from "@/lib/interpretation-library";
 import { buildReportSourceKeys } from "@/lib/report-safety";
-import { teenVersionIdsForAssessment, T_SKILLS_TEEN_V1_FIX_VERSION_IDS, T_SKILLS_TEEN_V1_VERSION_IDS, T_SKILLS_TEEN_V3_VERSION_IDS, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
+import { teenVersionIdsForAssessment, T_SKILLS_TEEN_V1_FIX_VERSION_IDS, T_SKILLS_TEEN_V1_VERSION_IDS, T_SKILLS_TEEN_V3_VERSION_IDS, T_SKILLS_TEEN_V4_VERSION_IDS, T_SKILLS_TEEN_V5_VERSION_IDS, T_SKILLS_TEEN_VERSION_IDS, T_SKILLS_VERSION_IDS } from "@/lib/t-skills/versions";
 
 export const VERSION_IDS = {
   assessment: "orbita30_ru_v1",
@@ -31,7 +31,7 @@ export const V2_VERSION_IDS = {
   translation: "ru-source-v1",
 } as const;
 
-export type AssessmentVersionIds = typeof VERSION_IDS | typeof V2_VERSION_IDS | typeof T_SKILLS_VERSION_IDS | typeof T_SKILLS_TEEN_V1_VERSION_IDS | typeof T_SKILLS_TEEN_V1_FIX_VERSION_IDS | typeof T_SKILLS_TEEN_VERSION_IDS | typeof T_SKILLS_TEEN_V3_VERSION_IDS | typeof T_SKILLS_TEEN_V4_VERSION_IDS;
+export type AssessmentVersionIds = typeof VERSION_IDS | typeof V2_VERSION_IDS | typeof T_SKILLS_VERSION_IDS | typeof T_SKILLS_TEEN_V1_VERSION_IDS | typeof T_SKILLS_TEEN_V1_FIX_VERSION_IDS | typeof T_SKILLS_TEEN_VERSION_IDS | typeof T_SKILLS_TEEN_V3_VERSION_IDS | typeof T_SKILLS_TEEN_V4_VERSION_IDS | typeof T_SKILLS_TEEN_V5_VERSION_IDS;
 
 type NormStatus = "unvalidated" | "pilot" | "normed";
 

@@ -5,7 +5,7 @@ import { SectionHeading } from "@/app/views/shared/section-heading";
 import type { View } from "@/app/orbita-view-types";
 import { useSiteLang } from "@/lib/site-lang";
 import { CATALOG_STRINGS } from "@/lib/site-strings";
-import { T_SKILLS_TEEN_V4_VERSION_IDS } from "@/lib/t-skills/versions";
+import { T_SKILLS_TEEN_V5_VERSION_IDS } from "@/lib/t-skills/versions";
 import { traitDomainHex } from "@/lib/trait-domains";
 
 export type CatalogViewProps = {
@@ -30,7 +30,7 @@ export function CatalogView({ onNavigate }: CatalogViewProps) {
             <header className="ov-catalog-card-head">
               <div className="ov-catalog-tags">
                 <span className="ov-badge ov-badge-primary">{t.mainTest}</span>
-                <span className="ov-badge ov-badge-outline">{T_SKILLS_TEEN_V4_VERSION_IDS.assessment}</span>
+                <span className="ov-badge ov-badge-outline">{T_SKILLS_TEEN_V5_VERSION_IDS.assessment}</span>
               </div>
               <h2>T-Skills</h2>
               <p>{t.profile}</p>
