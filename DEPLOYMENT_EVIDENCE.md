@@ -328,3 +328,12 @@ No secret values belong in this file.
 - Checks against the public host: homepage/health/catalog/privacy/terms 200; unauthenticated admin overview 401; CSP/HSTS/nosniff/frame-denial headers present. Catalog reports `assessmentVersion=t-skills-teen-v2`, `availableForCheckout=false`, legal review as draft. Health reports `legalDocumentsApproved=false`, `productionDataIntakeEnabled=false`, payments off and AI off. `robots.txt` disallows indexing and sitemap is empty. Production migration log on restart reports `applied=0` after the initial v2 startup; the migration table confirms 0024 is present.
 - This deployment fixes new v2 scoring and balances left/right display exposure (3/3 per trait). It does not validate the questionnaire. Existing completed v1 results remain stored and are warned in the result view and regenerated PDFs; already stored PDF objects are not rewritten. No production assessment was created during verification.
 - The previous image is retained, but an image-only rollback is not compatible with migration 0024's v1-fix session metadata. Any rollback must restore a compatible database snapshot with the app stopped; inspect the snapshot date and data delta before restoring. Forward-fix is preferred.
+
+## 2026-10-15 — teen v5 accuracy revision on kz-vps
+
+- Source: Git `3c40c82` (`git archive`, tracked files only; `deploy/vps/.env` untouched, mode 0600), rolled out with `scripts/deploy-vps-v5.sh`.
+- New image `t-skills:vps` = `sha256:798ec80852cc…` (manifest list); container `tskills-app` running, 0 restarts.
+- Rollback image: `t-skills:vps-pre-v5-20261015-0105` (= previous `65e905ee2cf6`). Image-only rollback is unsafe after 0027 for sessions started on v5; restore the data snapshot or forward-fix.
+- Backups (restricted, contain personal data): `~/t-skills-backups/data-pre-v5-20261015-0105.tgz` (volume `vps_tskills-data`, taken with the app stopped), `~/t-skills-backups/src-pre-v5-20261015-0105.tgz`.
+- Migration 0027 applied on boot: `t-skills-teen-v5` PUBLISHED (`teen-scoring-v3`, `teen-career-matching-v2`); `t-skills-teen-v4` and older RETIRED. Stored sessions keep their own `versions_json`.
+- Public checks: `/api/health` ok (production, payments off, AI off, legal approval false, `normStatus=unvalidated`); `/api/catalog` → `t-skills-teen-v5`; `/methodology` shows v5 / `teen-scoring-v3`; `/`, `/tests/t-skills`, `/privacy`, `/terms`, `/robots.txt` 200; unauthenticated admin API 401; `/teen` 404 as before (feature flag `teen_enabled` off).
